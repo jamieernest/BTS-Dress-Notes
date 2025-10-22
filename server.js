@@ -27,10 +27,13 @@ try {
     console.log('Error loading tags.json, using default tags:', error.message);
     // Default tags if file doesn't exist
     tags = [
+        { id: 'safety', name: 'Safety', color: '#96CEB4' },
+        { id: 'technical', name: 'Technical', color: '#FFEAA7' },
+        { id: 'artistic', name: 'Artistic', color: '#DDA0DD' },
         { id: 'lighting', name: 'Lighting', color: '#FF6B6B' },
         { id: 'sound', name: 'Sound', color: '#4ECDC4' },
         { id: 'stage', name: 'Stage', color: '#45B7D1' },
-        { id: 'general', name: 'General', color: '#F7DC6F' }
+        { id: 'dsm', name: 'DSM', color: '#98D8C8' }
     ];
     
     // Save default tags to tags.json for future use

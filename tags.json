@@ -1,44 +1,44 @@
 {
   "tags": [
     {
+      "id": "safety",
+      "name": "Safety",
+      "color": "#E63946"
+    },
+    {
+      "id": "technical",
+      "name": "Technical",
+      "color": "#F4A261"
+    },
+    {
+      "id": "artistic",
+      "name": "Artistic",
+      "color": "#9B5DE5"
+    },
+    {
       "id": "lighting",
       "name": "Lighting",
-      "color": "#FF6B6B"
+      "color": "#00B4D8"
     },
     {
       "id": "sound",
       "name": "Sound",
-      "color": "#4ECDC4"
+      "color": "#06D6A0"
     },
     {
       "id": "stage",
       "name": "Stage",
-      "color": "#45B7D1"
+      "color": "#118AB2"
     },
     {
-      "id": "camera",
-      "name": "Camera",
-      "color": "#96CEB4"
+      "id": "dsm",
+      "name": "DSM",
+      "color": "#8AC926"
     },
     {
-      "id": "props",
-      "name": "Props",
-      "color": "#FFEAA7"
-    },
-    {
-      "id": "costume",
-      "name": "Costume",
-      "color": "#DDA0DD"
-    },
-    {
-      "id": "script",
-      "name": "Script",
-      "color": "#98D8C8"
-    },
-    {
-      "id": "general",
-      "name": "General",
-      "color": "#F7DC6F"
+      "id": "set",
+      "name": "Set",
+      "color": "#FF6F91"
     }
   ]
 }
