@@ -1,0 +1,1435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIDI Timecode Notes</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
+            color: white;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        
+        .container {
+            display: grid;
+            grid-template-columns: 1fr 400px;
+            gap: 2rem;
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        
+        header {
+            grid-column: 1 / -1;
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        .main-content {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+        
+        .timecode-section {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+        
+        .global-timecode, .personal-timecode {
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 15px;
+            padding: 2rem;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .personal-timecode.frozen {
+            border-color: #ff9800;
+            background: rgba(255, 152, 0, 0.1);
+        }
+        
+        .timecode {
+            font-family: 'Courier New', monospace;
+            font-size: 3.5rem;
+            font-weight: bold;
+            letter-spacing: 4px;
+            margin: 1rem 0;
+            text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+        
+        .timecode-label {
+            font-size: 1.1rem;
+            opacity: 0.8;
+            margin-bottom: 0.5rem;
+        }
+        
+        .time-mode-toggle {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 30px;
+        }
+        
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #4CAF50;
+            transition: .4s;
+            border-radius: 34px;
+        }
+        
+        .toggle-slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .toggle-slider {
+            background-color: #2196F3;
+        }
+        
+        input:checked + .toggle-slider:before {
+            transform: translateX(30px);
+        }
+        
+        .toggle-label {
+            font-size: 0.9rem;
+            font-weight: bold;
+        }
+        
+        .toggle-label.active {
+            color: #4CAF50;
+        }
+        
+        .toggle-label.inactive {
+            opacity: 0.7;
+        }
+        
+        .notes-section {
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 15px;
+            padding: 2rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .notes-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        
+        .export-buttons {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .note-input-area {
+            margin-bottom: 1rem;
+        }
+        
+        textarea {
+            width: 100%;
+            height: 120px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            padding: 1rem;
+            color: white;
+            font-size: 1rem;
+            resize: vertical;
+            margin-bottom: 1rem;
+        }
+        
+        textarea:focus {
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.6);
+            background: rgba(255, 255, 255, 0.15);
+        }
+        
+        .note-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: flex-end;
+        }
+        
+        .notes-log {
+            max-height: 400px;
+            overflow-y: auto;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            padding-top: 1rem;
+        }
+        
+        .note-item {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-left: 4px solid #4CAF50;
+            position: relative;
+        }
+        
+        .note-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+        
+        .note-user {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        
+        .note-timecode {
+            font-family: 'Courier New', monospace;
+        }
+        
+        .note-text {
+            line-height: 1.5;
+            margin-bottom: 0.5rem;
+        }
+        
+        .note-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.3rem;
+            margin-top: 0.5rem;
+        }
+        
+        .note-tag {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+        
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+        
+        .status-panel, .users-panel, .info-panel {
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .status-connected {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+        
+        .status-disconnected {
+            color: #f44336;
+            font-weight: bold;
+        }
+        
+        .users-list {
+            list-style: none;
+            margin-top: 1rem;
+        }
+        
+        .user-item {
+            display: flex;
+            align-items: center;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .user-typing {
+            color: #ff9800;
+            font-style: italic;
+            margin-left: auto;
+            font-size: 0.9rem;
+        }
+        
+        .typing-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            background: #ff9800;
+            border-radius: 50%;
+            margin-right: 0.5rem;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+        
+        button {
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(5px);
+        }
+        
+        button:hover {
+            background: rgba(255, 255, 255, 0.25);
+            transform: translateY(-2px);
+        }
+        
+        button.primary {
+            background: rgba(76, 175, 80, 0.3);
+            border-color: rgba(76, 175, 80, 0.5);
+        }
+        
+        button.secondary {
+            background: rgba(255, 152, 0, 0.3);
+            border-color: rgba(255, 152, 0, 0.5);
+        }
+        
+        button.small {
+            padding: 0.2rem 0.5rem;
+            font-size: 0.7rem;
+        }
+        
+        .source-badge {
+            display: inline-block;
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            margin-left: 1rem;
+            vertical-align: middle;
+        }
+        
+        .source-midi {
+            background: #4CAF50;
+        }
+        
+        .source-demo {
+            background: #ff9800;
+        }
+        
+        footer {
+            grid-column: 1 / -1;
+            text-align: center;
+            margin-top: 2rem;
+            opacity: 0.7;
+            font-size: 0.9rem;
+        }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f);
+            padding: 2rem;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 500px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .modal h2 {
+            margin-bottom: 1rem;
+            font-size: 1.8rem;
+        }
+
+        .modal p {
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }
+
+        .name-input {
+            width: 100%;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 8px;
+            color: white;
+            font-size: 1.1rem;
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .name-input:focus {
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.6);
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+            background: rgba(255, 255, 255, 0.1);
+            padding: 0.8rem;
+            border-radius: 10px;
+        }
+
+        .user-name-display {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+
+        .change-name-btn {
+            background: rgba(255, 152, 0, 0.3);
+            border-color: rgba(255, 152, 0, 0.5);
+            padding: 0.3rem 0.8rem;
+            font-size: 0.8rem;
+        }
+
+        /* Tag Styles */
+        .tags-section {
+            margin-bottom: 1rem;
+        }
+
+        .tags-label {
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+            opacity: 0.8;
+        }
+
+        .tags-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .tag-checkbox {
+            display: none;
+        }
+
+        .tag-label {
+            display: inline-block;
+            padding: 0.3rem 0.8rem;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .tag-label:hover {
+            transform: translateY(-2px);
+        }
+
+        .tag-checkbox:checked + .tag-label {
+            border-color: white;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+
+        .filter-section {
+            margin-bottom: 1rem;
+        }
+
+        .filter-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .filter-tag {
+            display: inline-block;
+            padding: 0.3rem 0.8rem;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .filter-tag.active {
+            border-color: white;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+
+        /* Edit Tags Modal */
+        .edit-tags-modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .edit-tags-content {
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f);
+            padding: 2rem;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .edit-tags-content h3 {
+            margin-bottom: 1rem;
+            text-align: center;
+        }
+
+        .edit-tags-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            justify-content: center;
+        }
+
+        .edit-tags-actions {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+        }
+
+        .note-actions-row {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+        
+        @media (max-width: 1200px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+            
+            .timecode-section {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .timecode {
+                font-size: 2.5rem;
+            }
+            
+            h1 {
+                font-size: 2rem;
+            }
+
+            .modal-content {
+                padding: 1.5rem;
+                margin: 1rem;
+            }
+
+            .edit-tags-content {
+                padding: 1.5rem;
+                margin: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Name Setting Modal -->
+    <div id="nameModal" class="modal">
+        <div class="modal-content">
+            <h2>Welcome to MIDI Timecode Notes!</h2>
+            <p>Please set your display name to get started</p>
+            <input type="text" id="nameInput" class="name-input" placeholder="Enter your name" maxlength="20">
+            <div class="modal-buttons">
+                <button id="confirmName" class="primary">Join Session</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Tags Modal -->
+    <div id="editTagsModal" class="edit-tags-modal">
+        <div class="edit-tags-content">
+            <h3>Edit Note Tags</h3>
+            <div class="edit-tags-container" id="editTagsContainer">
+                <!-- Tags for editing will be populated by JavaScript -->
+            </div>
+            <div class="edit-tags-actions">
+                <button id="cancelEditTags" class="secondary">Cancel</button>
+                <button id="saveEditTags" class="primary">Save Tags</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>MIDI Timecode Notes</h1>
+            <p class="subtitle">Personal timecode notes with automatic timestamping</p>
+        </header>
+        
+        <div class="main-content">
+            <div class="timecode-section">
+                <div class="global-timecode">
+                    <div class="timecode-label">
+                        <span id="timeModeLabel">MIDI TIMECODE</span>
+                        <span id="sourceBadge" class="source-badge source-demo">DEMO</span>
+                    </div>
+                    <div class="timecode" id="globalTimecode">00:00:00:00</div>
+                    <div class="frame-rate-display" id="globalFrameRate">Frame Rate: 30 fps</div>
+                    
+                    <div class="time-mode-toggle">
+                        <span class="toggle-label active" id="midiLabel">MIDI Time</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="timeModeToggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="toggle-label" id="realtimeLabel">Real Time</span>
+                    </div>
+                </div>
+                
+                <div class="personal-timecode" id="personalTimecode">
+                    <div class="timecode-label">YOUR NOTE TIMECODE</div>
+                    <div class="timecode" id="personalTimecodeDisplay">--:--:--:--</div>
+                    <div class="frame-rate-display">Timecode will freeze when you type</div>
+                </div>
+            </div>
+            
+            <div class="notes-section">
+                <div class="notes-header">
+                    <h2>Add Your Note</h2>
+                    <div class="export-buttons">
+                        <button id="exportJson">Export JSON</button>
+                        <button id="exportCsv">Export CSV</button>
+                    </div>
+                </div>
+                
+                <div class="note-input-area">
+                    <textarea id="noteInput" placeholder="Start typing your note here... (Your personal timecode will freeze)"></textarea>
+                    
+                    <div class="tags-section">
+                        <div class="tags-label">Add Tags:</div>
+                        <div class="tags-container" id="tagsContainer">
+                            <!-- Tags will be populated by JavaScript -->
+                        </div>
+                    </div>
+                    
+                    <div class="note-actions">
+                        <button id="cancelNote" class="secondary">Cancel</button>
+                        <button id="sendNote" class="primary" disabled>Send Note</button>
+                    </div>
+                </div>
+                
+                <div class="notes-log">
+                    <h3>All Notes</h3>
+                    
+                    <div class="filter-section">
+                        <div class="tags-label">Filter by Tags:</div>
+                        <div class="filter-tags" id="filterTags">
+                            <div class="filter-tag active" data-tag="all">All Notes</div>
+                            <!-- Filter tags will be populated by JavaScript -->
+                        </div>
+                    </div>
+                    
+                    <div id="notesList">
+                        <div style="text-align: center; opacity: 0.7; padding: 2rem;">
+                            No notes yet. Be the first to add one!
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="sidebar">
+            <div class="status-panel">
+                <div class="user-info">
+                    <span>You are: </span>
+                    <span class="user-name-display" id="currentUserName">Guest</span>
+                    <button id="changeNameBtn" class="change-name-btn">Change</button>
+                </div>
+                <div id="connectionStatus" class="status-disconnected">Disconnected from Server</div>
+                <div id="midiStatus" style="margin-top: 0.5rem;">MIDI Interface: Scanning...</div>
+                <div id="timeModeStatus" style="margin-top: 0.5rem;">Time Mode: MIDI Timecode</div>
+                <div id="userStatus" style="margin-top: 0.5rem;">Ready to take notes</div>
+            </div>
+            
+            <div class="users-panel">
+                <h3>Online Users</h3>
+                <ul class="users-list" id="usersList">
+                    <li class="user-item">Loading...</li>
+                </ul>
+            </div>
+            
+            <div class="info-panel">
+                <h3>How It Works</h3>
+                <p>• Start typing - your personal timecode freezes</p>
+                <p>• Send note - it gets timestamped with frozen timecode</p>
+                <p>• Add tags to categorize your notes</p>
+                <p>• Anyone can edit tags on any note</p>
+                <p>• Filter notes by tags to find what you need</p>
+                <p>• Export all notes as JSON or CSV with timestamps</p>
+                <p>• Toggle between Real Time and MIDI Timecode (Global)</p>
+            </div>
+        </div>
+        
+        <footer>
+            <p>MIDI Timecode Notes &copy; 2023 | Personal Timecode Note Taking</p>
+        </footer>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const globalTimecodeElement = document.getElementById('globalTimecode');
+            const globalFrameRateElement = document.getElementById('globalFrameRate');
+            const personalTimecodeElement = document.getElementById('personalTimecodeDisplay');
+            const personalTimecodeContainer = document.getElementById('personalTimecode');
+            const connectionStatus = document.getElementById('connectionStatus');
+            const midiStatus = document.getElementById('midiStatus');
+            const timeModeStatus = document.getElementById('timeModeStatus');
+            const userStatus = document.getElementById('userStatus');
+            const sourceBadge = document.getElementById('sourceBadge');
+            const timeModeLabel = document.getElementById('timeModeLabel');
+            const noteInput = document.getElementById('noteInput');
+            const sendNoteBtn = document.getElementById('sendNote');
+            const cancelNoteBtn = document.getElementById('cancelNote');
+            const usersList = document.getElementById('usersList');
+            const notesList = document.getElementById('notesList');
+            const exportJsonBtn = document.getElementById('exportJson');
+            const exportCsvBtn = document.getElementById('exportCsv');
+            const currentUserName = document.getElementById('currentUserName');
+            const changeNameBtn = document.getElementById('changeNameBtn');
+            
+            // Time mode toggle elements
+            const timeModeToggle = document.getElementById('timeModeToggle');
+            const realtimeLabel = document.getElementById('realtimeLabel');
+            const midiLabel = document.getElementById('midiLabel');
+            
+            // Modal elements
+            const nameModal = document.getElementById('nameModal');
+            const nameInput = document.getElementById('nameInput');
+            const confirmNameBtn = document.getElementById('confirmName');
+            
+            // Tag elements
+            const tagsContainer = document.getElementById('tagsContainer');
+            const filterTagsContainer = document.getElementById('filterTags');
+            
+            // Edit tags modal elements
+            const editTagsModal = document.getElementById('editTagsModal');
+            const editTagsContainer = document.getElementById('editTagsContainer');
+            const cancelEditTagsBtn = document.getElementById('cancelEditTags');
+            const saveEditTagsBtn = document.getElementById('saveEditTags');
+            
+            let currentUser = {
+                name: 'Guest',
+                id: null,
+                isTyping: false,
+                frozenTimecode: null,
+                currentFrameRate: 30
+            };
+            
+            let currentGlobalTimecode = {
+                hours: 0,
+                minutes: 0,
+                seconds: 0,
+                frames: 0,
+                frameRate: 30
+            };
+            
+            let allNotes = [];
+            let timeMode = 'midi'; // Will be set by server
+            let realTimeInterval = null;
+            let availableTags = [];
+            let selectedTags = [];
+            let filterTag = 'all';
+            let currentlyEditingNoteId = null;
+            let editTagsSelected = [];
+            
+            // Tag persistence functions
+            function loadTagsFromStorage() {
+                const storedTags = localStorage.getItem('midi-timecode-notes-tags');
+                if (storedTags) {
+                    availableTags = JSON.parse(storedTags);
+                    updateTagsDisplay();
+                    updateFilterTags();
+                }
+            }
+
+            function saveTagsToStorage() {
+                localStorage.setItem('midi-timecode-notes-tags', JSON.stringify(availableTags));
+            }
+
+            // Initialize tags when the page loads
+            function initializeTags() {
+                // First try to load from localStorage
+                loadTagsFromStorage();
+                
+                // If no tags in localStorage, wait for server to send them
+                if (availableTags.length === 0) {
+                    console.log('Waiting for tags from server...');
+                } else {
+                    console.log('Loaded tags from localStorage:', availableTags.length);
+                }
+            }
+
+            // Call this when the page loads
+            initializeTags();
+            
+            // Show name modal on load
+            nameModal.style.display = 'flex';
+            nameInput.focus();
+            
+            // Handle name confirmation
+            confirmNameBtn.addEventListener('click', function() {
+                const name = nameInput.value.trim();
+                if (name) {
+                    currentUser.name = name;
+                    currentUserName.textContent = name;
+                    nameModal.style.display = 'none';
+                    
+                    // Update server with new name
+                    socket.emit('user-name-change', name);
+                } else {
+                    alert('Please enter a name');
+                    nameInput.focus();
+                }
+            });
+            
+            // Allow pressing Enter to confirm name
+            nameInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    confirmNameBtn.click();
+                }
+            });
+            
+            // Handle name change
+            changeNameBtn.addEventListener('click', function() {
+                const newName = prompt('Enter your new name:', currentUser.name);
+                if (newName && newName.trim()) {
+                    currentUser.name = newName.trim();
+                    currentUserName.textContent = currentUser.name;
+                    
+                    // Update server with new name
+                    socket.emit('user-name-change', currentUser.name);
+                }
+            });
+            
+            // Handle time mode toggle - GLOBAL CHANGE
+            timeModeToggle.addEventListener('change', function() {
+                const newMode = this.checked ? 'realtime' : 'midi';
+                // Send change to server (will broadcast to all clients)
+                socket.emit('time-mode-change', newMode);
+            });
+            
+            // Edit tags modal handlers
+            cancelEditTagsBtn.addEventListener('click', function() {
+                editTagsModal.style.display = 'none';
+                currentlyEditingNoteId = null;
+                editTagsSelected = [];
+            });
+            
+            saveEditTagsBtn.addEventListener('click', function() {
+                if (currentlyEditingNoteId) {
+                    // Send updated tags to server
+                    socket.emit('note-update-tags', {
+                        noteId: currentlyEditingNoteId,
+                        tags: editTagsSelected
+                    });
+                    
+                    editTagsModal.style.display = 'none';
+                    currentlyEditingNoteId = null;
+                    editTagsSelected = [];
+                }
+            });
+            
+            function updateTimeModeDisplay() {
+                if (timeMode === 'realtime') {
+                    timeModeLabel.textContent = 'REAL TIME';
+                    timeModeStatus.textContent = 'Time Mode: Real Time (System Clock)';
+                    realtimeLabel.classList.add('active');
+                    midiLabel.classList.remove('active');
+                    timeModeToggle.checked = true; // Toggle RIGHT for realtime
+                    sourceBadge.style.display = 'none';
+                    globalFrameRateElement.textContent = 'Time Unit: Milliseconds';
+                    
+                    // Start real time updates
+                    startRealTimeMode();
+                } else {
+                    timeModeLabel.textContent = 'MIDI TIMECODE';
+                    timeModeStatus.textContent = 'Time Mode: MIDI Timecode';
+                    realtimeLabel.classList.remove('active');
+                    midiLabel.classList.add('active');
+                    timeModeToggle.checked = false; // Toggle LEFT for MIDI
+                    sourceBadge.style.display = 'inline-block';
+                    globalFrameRateElement.textContent = `Frame Rate: ${currentGlobalTimecode.frameRate} fps`;
+                    
+                    // Stop real time updates
+                    stopRealTimeMode();
+                    // Restore MIDI timecode display
+                    updateGlobalTimecodeDisplay(currentGlobalTimecode);
+                }
+            }
+            
+            function startRealTimeMode() {
+                // Clear any existing interval
+                if (realTimeInterval) {
+                    clearInterval(realTimeInterval);
+                }
+                
+                // Update immediately
+                updateRealTimeDisplay();
+                
+                // Update every 10ms for smooth millisecond display
+                realTimeInterval = setInterval(updateRealTimeDisplay, 10);
+            }
+            
+            function stopRealTimeMode() {
+                if (realTimeInterval) {
+                    clearInterval(realTimeInterval);
+                    realTimeInterval = null;
+                }
+            }
+            
+            function updateRealTimeDisplay() {
+                const now = new Date();
+                const hours = now.getHours();
+                const minutes = now.getMinutes();
+                const seconds = now.getSeconds();
+                const milliseconds = now.getMilliseconds();
+                
+                // Format as HH:MM:SS:MS (MS from 00-99)
+                const realTimeTimecode = {
+                    hours: hours,
+                    minutes: minutes,
+                    seconds: seconds,
+                    milliseconds: milliseconds,
+                    displayMode: 'realtime'
+                };
+                
+                updateGlobalTimecodeDisplay(realTimeTimecode);
+                
+                // Update personal timecode if not frozen
+                if (!currentUser.isTyping) {
+                    updatePersonalTimecodeDisplay(realTimeTimecode);
+                }
+            }
+            
+            function updateGlobalTimecodeDisplay(timecode) {
+                let formattedTimecode;
+                if (timecode.displayMode === 'realtime') {
+                    // Format as HH:MM:SS:MS (milliseconds 00-99)
+                    formattedTimecode = 
+                        `${timecode.hours.toString().padStart(2, '0')}:` +
+                        `${timecode.minutes.toString().padStart(2, '0')}:` +
+                        `${timecode.seconds.toString().padStart(2, '0')}:` +
+                        `${Math.floor(timecode.milliseconds / 10).toString().padStart(2, '0')}`;
+                } else {
+                    // Format as HH:MM:SS:FF (frames)
+                    formattedTimecode = formatTimecode(timecode);
+                }
+                
+                globalTimecodeElement.textContent = formattedTimecode;
+            }
+            
+            function updatePersonalTimecodeDisplay(timecode) {
+                let formattedTimecode;
+                if (timecode.displayMode === 'realtime') {
+                    // Format as HH:MM:SS:MS (milliseconds 00-99)
+                    formattedTimecode = 
+                        `${timecode.hours.toString().padStart(2, '0')}:` +
+                        `${timecode.minutes.toString().padStart(2, '0')}:` +
+                        `${timecode.seconds.toString().padStart(2, '0')}:` +
+                        `${Math.floor(timecode.milliseconds / 10).toString().padStart(2, '0')}`;
+                } else {
+                    // Format as HH:MM:SS:FF (frames)
+                    formattedTimecode = formatTimecode(timecode);
+                }
+                
+                personalTimecodeElement.textContent = formattedTimecode;
+            }
+            
+            function formatTimecode(tc) {
+                if (!tc || typeof tc !== 'object') {
+                    return '00:00:00:00';
+                }
+                return `${(tc.hours || 0).toString().padStart(2, '0')}:${(tc.minutes || 0).toString().padStart(2, '0')}:${(tc.seconds || 0).toString().padStart(2, '0')}:${(tc.frames || 0).toString().padStart(2, '0')}`;
+            }
+            
+            // Tag functions
+            function updateTagsDisplay() {
+                tagsContainer.innerHTML = '';
+                
+                availableTags.forEach(tag => {
+                    const tagId = `tag-${tag.id}`;
+                    const tagElement = `
+                        <input type="checkbox" id="${tagId}" class="tag-checkbox" value="${tag.id}">
+                        <label for="${tagId}" class="tag-label" style="background-color: ${tag.color}; color: #000;">
+                            ${tag.name}
+                        </label>
+                    `;
+                    tagsContainer.innerHTML += tagElement;
+                });
+                
+                // Add event listeners to tag checkboxes
+                availableTags.forEach(tag => {
+                    const checkbox = document.getElementById(`tag-${tag.id}`);
+                    if (checkbox) {
+                        checkbox.addEventListener('change', function() {
+                            if (this.checked) {
+                                selectedTags.push(this.value);
+                            } else {
+                                selectedTags = selectedTags.filter(t => t !== this.value);
+                            }
+                        });
+                    }
+                });
+            }
+            
+            function updateEditTagsDisplay(noteTags) {
+                editTagsContainer.innerHTML = '';
+                editTagsSelected = [...noteTags];
+                
+                availableTags.forEach(tag => {
+                    const tagId = `edit-tag-${tag.id}`;
+                    const isChecked = noteTags.includes(tag.id);
+                    const tagElement = `
+                        <input type="checkbox" id="${tagId}" class="tag-checkbox" value="${tag.id}" ${isChecked ? 'checked' : ''}>
+                        <label for="${tagId}" class="tag-label" style="background-color: ${tag.color}; color: #000;">
+                            ${tag.name}
+                        </label>
+                    `;
+                    editTagsContainer.innerHTML += tagElement;
+                });
+                
+                // Add event listeners to edit tag checkboxes
+                availableTags.forEach(tag => {
+                    const checkbox = document.getElementById(`edit-tag-${tag.id}`);
+                    if (checkbox) {
+                        checkbox.addEventListener('change', function() {
+                            if (this.checked) {
+                                editTagsSelected.push(this.value);
+                            } else {
+                                editTagsSelected = editTagsSelected.filter(t => t !== this.value);
+                            }
+                        });
+                    }
+                });
+            }
+            
+            function updateFilterTags() {
+                filterTagsContainer.innerHTML = '<div class="filter-tag active" data-tag="all">All Notes</div>';
+                
+                availableTags.forEach(tag => {
+                    const filterTagElement = `
+                        <div class="filter-tag" data-tag="${tag.id}" style="background-color: ${tag.color}; color: #000;">
+                            ${tag.name}
+                        </div>
+                    `;
+                    filterTagsContainer.innerHTML += filterTagElement;
+                });
+                
+                // Add event listeners to filter tags
+                document.querySelectorAll('.filter-tag').forEach(tag => {
+                    tag.addEventListener('click', function() {
+                        const tagId = this.getAttribute('data-tag');
+                        filterTag = tagId;
+                        
+                        // Update active state
+                        document.querySelectorAll('.filter-tag').forEach(t => t.classList.remove('active'));
+                        this.classList.add('active');
+                        
+                        // Filter notes
+                        filterNotes();
+                    });
+                });
+            }
+            
+            function filterNotes() {
+                const noteItems = document.querySelectorAll('.note-item');
+                noteItems.forEach(item => {
+                    if (filterTag === 'all') {
+                        item.style.display = 'block';
+                    } else {
+                        const itemTags = item.getAttribute('data-tags').split(',');
+                        if (itemTags.includes(filterTag)) {
+                            item.style.display = 'block';
+                        } else {
+                            item.style.display = 'none';
+                        }
+                    }
+                });
+            }
+            
+            // Connect to WebSocket server
+            const socket = io();
+            
+            socket.on('connect', function() {
+                connectionStatus.textContent = 'Connected to Server';
+                connectionStatus.className = 'status-connected';
+                console.log('Connected to server');
+                
+                // Store the socket ID as the user ID
+                currentUser.id = socket.id;
+                
+                // If tags aren't received within 2 seconds, use localStorage tags
+                setTimeout(() => {
+                    if (availableTags.length === 0) {
+                        console.log('No tags received from server, using localStorage fallback');
+                        loadTagsFromStorage();
+                    }
+                }, 2000);
+            });
+            
+            socket.on('disconnect', function() {
+                connectionStatus.textContent = 'Disconnected from Server';
+                connectionStatus.className = 'status-disconnected';
+                console.log('Disconnected from server');
+            });
+            
+            // Handle global time mode updates from server
+            socket.on('time-mode-update', function(newMode) {
+                timeMode = newMode;
+                updateTimeModeDisplay();
+            });
+            
+            // Handle tags update from server
+            socket.on('tags-update', function(tags) {
+                if (tags && tags.length > 0) {
+                    availableTags = tags;
+                    saveTagsToStorage(); // Save to localStorage for persistence
+                    updateTagsDisplay();
+                    updateFilterTags();
+                    console.log('Tags updated from server:', tags.length);
+                }
+            });
+            
+            socket.on('system-status', function(data) {
+                if (data.midiAvailable && data.portCount > 0) {
+                    midiStatus.textContent = `MIDI Interface: ${data.portCount} port(s) available - Ready for MTC input`;
+                    midiStatus.className = 'status-connected';
+                } else {
+                    midiStatus.textContent = 'MIDI Interface: No MIDI ports found - Running in demo mode';
+                    midiStatus.className = '';
+                }
+            });
+            
+            socket.on('timecode-update', function(data) {
+                // Only update if we're in MIDI mode
+                if (timeMode === 'midi') {
+                    currentGlobalTimecode = data;
+                    currentUser.currentFrameRate = data.frameRate;
+                    
+                    updateGlobalTimecodeDisplay(data);
+                    
+                    // Update personal timecode if not frozen
+                    if (!currentUser.isTyping) {
+                        updatePersonalTimecodeDisplay(data);
+                    }
+                    
+                    // Update source badge
+                    if (data.source === 'midi') {
+                        sourceBadge.textContent = 'LIVE MIDI';
+                        sourceBadge.className = 'source-badge source-midi';
+                    } else {
+                        sourceBadge.textContent = 'DEMO';
+                        sourceBadge.className = 'source-badge source-demo';
+                    }
+                }
+            });
+            
+            socket.on('notes-update', function(notes) {
+                allNotes = notes;
+                updateNotesList();
+            });
+            
+            socket.on('note-added', function(note) {
+                // Note is already added to allNotes via notes-update
+                updateNotesList();
+            });
+            
+            socket.on('users-update', function(users) {
+                usersList.innerHTML = '';
+                users.forEach(user => {
+                    const userItem = document.createElement('li');
+                    userItem.className = 'user-item';
+                    userItem.innerHTML = `
+                        ${user.name}
+                        ${user.isTyping ? '<span class="user-typing"><span class="typing-indicator"></span>writing note</span>' : ''}
+                    `;
+                    usersList.appendChild(userItem);
+                });
+            });
+            
+            socket.on('export-data', function(data) {
+                const blob = new Blob([data.data], { type: data.mimeType });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = data.filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            });
+            
+            // Handle note input events
+            noteInput.addEventListener('focus', function() {
+                if (!currentUser.isTyping) {
+                    currentUser.isTyping = true;
+                    
+                    // Freeze the appropriate timecode based on current mode
+                    if (timeMode === 'realtime') {
+                        // Freeze current real time with milliseconds
+                        const now = new Date();
+                        currentUser.frozenTimecode = {
+                            hours: now.getHours(),
+                            minutes: now.getMinutes(),
+                            seconds: now.getSeconds(),
+                            milliseconds: now.getMilliseconds(),
+                            displayMode: 'realtime',
+                            frameRate: 'ms'
+                        };
+                    } else {
+                        // Freeze current MIDI timecode
+                        currentUser.frozenTimecode = {
+                            ...currentGlobalTimecode,
+                            displayMode: 'midi'
+                        };
+                    }
+                    
+                    // Update personal timecode display with frozen time
+                    updatePersonalTimecodeDisplay(currentUser.frozenTimecode);
+                    personalTimecodeContainer.classList.add('frozen');
+                    
+                    socket.emit('typing-start', currentUser.frozenTimecode);
+                    userStatus.textContent = 'Timecode frozen - writing note...';
+                }
+            });
+            
+            noteInput.addEventListener('input', function() {
+                sendNoteBtn.disabled = noteInput.value.trim().length === 0;
+            });
+            
+            // Send note
+            sendNoteBtn.addEventListener('click', function() {
+                const noteText = noteInput.value.trim();
+                if (noteText && currentUser.frozenTimecode) {
+                    socket.emit('note-submit', {
+                        text: noteText,
+                        timecode: currentUser.frozenTimecode,
+                        frameRate: timeMode === 'realtime' ? 'ms' : currentUser.currentFrameRate,
+                        tags: selectedTags // Include selected tags
+                    });
+                    
+                    // Reset note input and tags
+                    noteInput.value = '';
+                    sendNoteBtn.disabled = true;
+                    currentUser.isTyping = false;
+                    currentUser.frozenTimecode = null;
+                    personalTimecodeContainer.classList.remove('frozen');
+                    userStatus.textContent = 'Note sent! Ready for next note.';
+                    
+                    // Clear selected tags
+                    selectedTags = [];
+                    document.querySelectorAll('.tag-checkbox:checked').forEach(checkbox => {
+                        checkbox.checked = false;
+                    });
+                    
+                    socket.emit('typing-stop');
+                }
+            });
+            
+            // Cancel note
+            cancelNoteBtn.addEventListener('click', function() {
+                noteInput.value = '';
+                sendNoteBtn.disabled = true;
+                currentUser.isTyping = false;
+                currentUser.frozenTimecode = null;
+                personalTimecodeContainer.classList.remove('frozen');
+                userStatus.textContent = 'Note cancelled. Ready for next note.';
+                
+                // Clear selected tags
+                selectedTags = [];
+                document.querySelectorAll('.tag-checkbox:checked').forEach(checkbox => {
+                    checkbox.checked = false;
+                });
+                
+                socket.emit('typing-stop');
+            });
+            
+            // Export buttons
+            exportJsonBtn.addEventListener('click', function() {
+                socket.emit('export-request', 'json');
+            });
+            
+            exportCsvBtn.addEventListener('click', function() {
+                socket.emit('export-request', 'csv');
+            });
+            
+            // Update notes list
+            function updateNotesList() {
+                if (allNotes.length === 0) {
+                    notesList.innerHTML = '<div style="text-align: center; opacity: 0.7; padding: 2rem;">No notes yet. Be the first to add one!</div>';
+                    return;
+                }
+                
+                // Show notes in chronological order (oldest first)
+                const chronologicalNotes = [...allNotes].sort((a, b) => {
+                    // Sort by timestamp first
+                    if (a.timestamp && b.timestamp) {
+                        return new Date(a.timestamp) - new Date(b.timestamp);
+                    }
+                    // Fallback: sort by timecode values
+                    return timecodeToSeconds(a.timecode) - timecodeToSeconds(b.timecode);
+                });
+                
+                notesList.innerHTML = chronologicalNotes.map(note => {
+                    let timecodeDisplay;
+                    if (note.frameRate === 'ms') {
+                        // Format real-time note with milliseconds
+                        const ms = Math.floor((note.timecode.milliseconds || 0) / 10);
+                        timecodeDisplay = 
+                            `${note.timecode.hours.toString().padStart(2, '0')}:` +
+                            `${note.timecode.minutes.toString().padStart(2, '0')}:` +
+                            `${note.timecode.seconds.toString().padStart(2, '0')}:` +
+                            `${ms.toString().padStart(2, '0')}`;
+                    } else {
+                        // Format MIDI note with frames
+                        timecodeDisplay = formatTimecode(note.timecode);
+                    }
+                    
+                    // Create tag elements - use availableTags which should now be populated
+                    const tagElements = note.tags.map(tagId => {
+                        const tag = availableTags.find(t => t.id === tagId);
+                        if (tag) {
+                            return `<span class="note-tag" style="background-color: ${tag.color}; color: #000;">${tag.name}</span>`;
+                        }
+                        // Fallback if tag not found
+                        return `<span class="note-tag" style="background-color: #cccccc; color: #000;">${tagId}</span>`;
+                    }).join('');
+                    
+                    // Show edit button for EVERY note (collaborative editing)
+                    const editButton = `<button class="small edit-tags-btn" data-note-id="${note.id}">Edit Tags</button>`;
+                    
+                    return `
+                        <div class="note-item" data-tags="${note.tags.join(',')}">
+                            <div class="note-header">
+                                <span class="note-user">${note.user}</span>
+                                <span class="note-timecode">${timecodeDisplay} @ ${note.frameRate === 'ms' ? 'milliseconds' : note.frameRate + 'fps'}</span>
+                            </div>
+                            <div class="note-text">${note.text}</div>
+                            ${note.tags.length > 0 ? `<div class="note-tags">${tagElements}</div>` : ''}
+                            <div class="note-actions-row">
+                                ${editButton}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+                
+                // Add event listeners to edit buttons
+                document.querySelectorAll('.edit-tags-btn').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const noteId = this.getAttribute('data-note-id');
+                        const note = allNotes.find(n => n.id === noteId);
+                        
+                        if (note) {
+                            currentlyEditingNoteId = noteId;
+                            updateEditTagsDisplay(note.tags);
+                            editTagsModal.style.display = 'flex';
+                        }
+                    });
+                });
+                
+                // Apply current filter after updating notes
+                filterNotes();
+                
+                // Auto-scroll to the bottom (latest note)
+                setTimeout(() => {
+                    notesList.scrollTop = notesList.scrollHeight;
+                }, 100);
+            }
+            
+            // Helper function to convert timecode to seconds for sorting
+            function timecodeToSeconds(tc) {
+                if (!tc) return 0;
+                const hours = tc.hours || 0;
+                const minutes = tc.minutes || 0;
+                const seconds = tc.seconds || 0;
+                const frames = tc.frames || 0;
+                const frameRate = tc.frameRate || 30;
+                
+                return hours * 3600 + minutes * 60 + seconds + frames / frameRate;
+            }
+            
+            // Initial state
+            updateGlobalTimecodeDisplay(currentGlobalTimecode);
+            updatePersonalTimecodeDisplay(currentGlobalTimecode);
+        });
+    </script>
+</body>
+</html>
