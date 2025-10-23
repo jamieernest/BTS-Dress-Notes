@@ -745,6 +745,9 @@
     <script src="/socket.io/socket.io.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Debug logging
+            console.log('🚀 MIDI Timecode Notes initializing...');
+
             const globalTimecodeElement = document.getElementById('globalTimecode');
             const globalFrameRateElement = document.getElementById('globalFrameRate');
             const personalTimecodeElement = document.getElementById('personalTimecodeDisplay');
@@ -882,6 +885,7 @@
             // Handle time mode toggle - GLOBAL CHANGE
             timeModeToggle.addEventListener('change', function() {
                 const newMode = this.checked ? 'realtime' : 'midi';
+                console.log('🔄 User requested time mode change to:', newMode);
                 // Send change to server (will broadcast to all clients)
                 socket.emit('time-mode-change', newMode);
             });
@@ -1128,10 +1132,11 @@
             // Connect to WebSocket server
             const socket = io();
             
+            // Enhanced WebSocket event handlers with debugging
             socket.on('connect', function() {
                 connectionStatus.textContent = 'Connected to Server';
                 connectionStatus.className = 'status-connected';
-                console.log('Connected to server');
+                console.log('✅ Connected to server with ID:', socket.id);
                 
                 // Store the socket ID as the user ID
                 currentUser.id = socket.id;
@@ -1148,29 +1153,31 @@
             socket.on('disconnect', function() {
                 connectionStatus.textContent = 'Disconnected from Server';
                 connectionStatus.className = 'status-disconnected';
-                console.log('Disconnected from server');
+                console.log('❌ Disconnected from server');
             });
             
             // Handle global time mode updates from server
             socket.on('time-mode-update', function(newMode) {
+                console.log('🔄 Server changed time mode to:', newMode);
                 timeMode = newMode;
                 updateTimeModeDisplay();
             });
             
             // Handle tags update from server
             socket.on('tags-update', function(tags) {
+                console.log('🏷️ Received tags from server:', tags.length);
                 if (tags && tags.length > 0) {
                     availableTags = tags;
-                    saveTagsToStorage(); // Save to localStorage for persistence
+                    saveTagsToStorage();
                     updateTagsDisplay();
                     updateFilterTags();
-                    console.log('Tags updated from server:', tags.length);
                 }
             });
             
             socket.on('system-status', function(data) {
+                console.log('📊 System status:', data);
                 if (data.midiAvailable && data.portCount > 0) {
-                    midiStatus.textContent = `MIDI Interface: ${data.portCount} port(s) available - Ready for MTC input`;
+                    midiStatus.textContent = `MIDI Interface: ${data.portCount} port(s) available - ${data.currentPort}`;
                     midiStatus.className = 'status-connected';
                 } else {
                     midiStatus.textContent = 'MIDI Interface: No MIDI ports found - Running in demo mode';
@@ -1178,7 +1185,10 @@
                 }
             });
             
+            // Enhanced timecode update handler with debugging
             socket.on('timecode-update', function(data) {
+                console.log('🕒 Received timecode update:', data);
+                
                 // Only update if we're in MIDI mode
                 if (timeMode === 'midi') {
                     currentGlobalTimecode = data;
@@ -1199,20 +1209,25 @@
                         sourceBadge.textContent = 'DEMO';
                         sourceBadge.className = 'source-badge source-demo';
                     }
+                } else {
+                    console.log('⏱️ Ignoring timecode update - in realtime mode');
                 }
             });
             
             socket.on('notes-update', function(notes) {
+                console.log('📝 Received notes update:', notes.length, 'notes');
                 allNotes = notes;
                 updateNotesList();
             });
             
             socket.on('note-added', function(note) {
+                console.log('➕ Received new note:', note);
                 // Note is already added to allNotes via notes-update
                 updateNotesList();
             });
             
             socket.on('users-update', function(users) {
+                console.log('👥 Users update:', users.length, 'users');
                 usersList.innerHTML = '';
                 users.forEach(user => {
                     const userItem = document.createElement('li');
@@ -1427,8 +1442,24 @@
             }
             
             // Initial state
+            console.log('🎯 Initializing display with default timecode');
             updateGlobalTimecodeDisplay(currentGlobalTimecode);
             updatePersonalTimecodeDisplay(currentGlobalTimecode);
+            
+            // Test function to manually trigger timecode updates
+            window.testTimecode = function(hours, minutes, seconds, frames) {
+                const testTc = {
+                    hours: hours || 1,
+                    minutes: minutes || 23,
+                    seconds: seconds || 45,
+                    frames: frames || 15,
+                    frameRate: 30,
+                    source: 'test'
+                };
+                updateGlobalTimecodeDisplay(testTc);
+                updatePersonalTimecodeDisplay(testTc);
+                console.log('🧪 Manual test timecode applied:', formatTimecode(testTc));
+            };
         });
     </script>
 </body>

@@ -16,6 +16,34 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
+// Test endpoints for debugging
+app.get('/test-timecode', (req, res) => {
+    const testTimecode = {
+        hours: 1,
+        minutes: 23,
+        seconds: 45,
+        frames: 15,
+        frameRate: 30,
+        source: 'test'
+    };
+    
+    globalState.timecode = testTimecode;
+    io.emit('timecode-update', testTimecode);
+    
+    console.log(`🧪 Sent test timecode: ${formatTimecode(testTimecode)}`);
+    res.send(`Test timecode sent: ${formatTimecode(testTimecode)}`);
+});
+
+app.get('/server-status', (req, res) => {
+    res.json({
+        timecode: globalState.timecode,
+        midiConnected: !!midiInput,
+        portName: openedPortName,
+        mtcMessagesReceived: mtcMessagesReceived,
+        connectedClients: globalState.users.size
+    });
+});
+
 // Load tags from JSON file
 let tags = [];
 try {
@@ -71,40 +99,48 @@ const globalState = {
     tags: tags
 };
 
-// Try to require midi, but provide fallback if not available
-let midi;
-let input;
+// Try to use EasyMIDI
+let midiInput = null;
+let openedPortName = 'None';
+let mtcMessagesReceived = 0;
+
 try {
-    midi = require('midi');
-    console.log('MIDI module loaded successfully');
+    const easymidi = require('easymidi');
+    console.log('EasyMIDI module loaded successfully');
     
-    // Create a new MIDI input
-    input = new midi.Input();
+    const inputs = easymidi.getInputs();
+    console.log('Available MIDI inputs:', inputs);
     
-    // Count available MIDI ports
-    const portCount = input.getPortCount();
-    console.log(`Found ${portCount} MIDI ports:`);
-    
-    // List available ports
-    for (let i = 0; i < portCount; i++) {
-        console.log(`${i}: ${input.getPortName(i)}`);
-    }
-    
-    // Try to open the first available port
-    if (portCount > 0) {
-        input.openPort(0);
-        console.log(`Opened MIDI port: ${input.getPortName(0)}`);
+    if (inputs.length > 1) {
+        // Try to use the second input
+        const inputName = inputs[1];
+        console.log(`Trying to open: "${inputName}"`);
+        
+        midiInput = new easymidi.Input(inputName);
+        openedPortName = inputName;
+        console.log(`✓ Successfully opened MIDI input: "${inputName}"`);
+        globalState.timecode.source = 'midi';
+        
+    } else if (inputs.length > 0) {
+        // Fallback to first input
+        const inputName = inputs[0];
+        console.log(`Only one input available, using: "${inputName}"`);
+        
+        midiInput = new easymidi.Input(inputName);
+        openedPortName = inputName;
+        console.log(`✓ Successfully opened MIDI input: "${inputName}"`);
+        globalState.timecode.source = 'midi';
     } else {
-        console.log('No MIDI ports available. Running in demo mode.');
+        console.log('No MIDI inputs available. Running in demo mode.');
     }
 } catch (error) {
-    console.log('MIDI module not available, running in demo mode:', error.message);
-    input = null;
+    console.log('EasyMIDI not available:', error.message);
 }
 
 // MIDI Timecode parsing
 let quarterFrameData = new Array(8).fill(0);
 let lastQuarterFrame = -1;
+let lastFullTimecode = null;
 
 // Frame rate mapping from MTC
 const frameRates = {
@@ -114,18 +150,13 @@ const frameRates = {
     3: 30
 };
 
-function parseMTCQuarterFrame(data) {
-    const messageType = data >> 4;
-    const value = data & 0x0F;
+// NEW: Function to handle EasyMIDI's MTC format
+function parseEasyMIDIMTC(messageType, value) {
     
     quarterFrameData[messageType] = value;
+    mtcMessagesReceived++;
     
-    // Check if we have a complete timecode frame (8 quarter frames)
-    if (lastQuarterFrame !== -1 && messageType !== (lastQuarterFrame + 1) % 8) {
-        // Out of sequence, reset
-        quarterFrameData = new Array(8).fill(0);
-    }
-    
+    // Don't do sequence checking for now - just accept all quarter frames
     lastQuarterFrame = messageType;
     
     // If we have all 8 quarter frames, parse the complete timecode
@@ -144,7 +175,7 @@ function parseCompleteMTC() {
     const hours = hoursAndRate & 0x1F;
     const rateCode = (hoursAndRate >> 5) & 0x03;
     
-    globalState.timecode = {
+    const newTimecode = {
         hours: hours,
         minutes: minutes,
         seconds: seconds,
@@ -153,9 +184,19 @@ function parseCompleteMTC() {
         source: 'midi'
     };
     
-    // Broadcast to all connected clients
-    io.emit('timecode-update', globalState.timecode);
-    console.log(`MTC: ${formatTimecode(globalState.timecode)} (${globalState.timecode.frameRate} fps)`);
+    // Only update if timecode actually changed
+    if (!lastFullTimecode || 
+        lastFullTimecode.hours !== newTimecode.hours ||
+        lastFullTimecode.minutes !== newTimecode.minutes ||
+        lastFullTimecode.seconds !== newTimecode.seconds ||
+        lastFullTimecode.frames !== newTimecode.frames) {
+        
+        globalState.timecode = newTimecode;
+        lastFullTimecode = {...newTimecode};
+        
+        // Broadcast to all connected clients
+        io.emit('timecode-update', globalState.timecode);
+    }
 }
 
 // Safe timecode formatting function
@@ -166,18 +207,29 @@ function formatTimecode(tc) {
     return `${(tc.hours || 0).toString().padStart(2, '0')}:${(tc.minutes || 0).toString().padStart(2, '0')}:${(tc.seconds || 0).toString().padStart(2, '0')}:${(tc.frames || 0).toString().padStart(2, '0')}`;
 }
 
-// MIDI message handler
-if (input) {
-    input.on('message', (deltaTime, message) => {
-        const [status, data1, data2] = message;
+// EasyMIDI message handler - UPDATED for EasyMIDI format
+if (midiInput) {
+    midiInput.on('message', (msg) => {
         
-        // Check for MTC Quarter Frame messages (0xF1)
-        if (status === 0xF1) {
-            parseMTCQuarterFrame(data1);
+        // Handle EasyMIDI's MTC format directly
+        if (msg._type === 'mtc' && typeof msg.type === 'number' && typeof msg.value === 'number') {
+            parseEasyMIDIMTC(msg.type, msg.value);
         }
-        // Check for Full Timecode messages (0xF0 SysEx)
-        else if (status === 0xF0 && message.length >= 10) {
-            console.log('Full MTC SysEx message received');
+        // Handle raw bytes format (backup)
+        else if (msg.bytes && Array.isArray(msg.bytes)) {
+            const [status, data1] = msg.bytes;
+            
+            // Check for MTC Quarter Frame messages (0xF1)
+            if (status === 0xF1) {
+                const messageType = data1 >> 4;
+                const value = data1 & 0x0F;
+                console.log(`✅ Raw MTC: type=${messageType}, value=${value}`);
+                parseEasyMIDIMTC(messageType, value);
+            }
+        }
+        // Log other message types for debugging
+        else {
+            console.log('📝 Other MIDI message:', msg);
         }
     });
 }
@@ -195,6 +247,20 @@ io.on('connection', (socket) => {
         joinedAt: new Date()
     };
     globalState.users.set(socket.id, user);
+
+    // Send current state to newly connected client
+    console.log('Sending initial state to client:', socket.id);
+    socket.emit('timecode-update', globalState.timecode);
+    socket.emit('notes-update', globalState.notes);
+    socket.emit('users-update', Array.from(globalState.users.values()));
+    socket.emit('tags-update', globalState.tags);
+    socket.emit('time-mode-update', globalState.timeMode);
+    socket.emit('system-status', {
+        midiAvailable: !!midiInput,
+        portCount: midiInput ? require('easymidi').getInputs().length : 0,
+        currentPort: openedPortName,
+        mtcMessagesReceived: mtcMessagesReceived
+    });
 
     // Handle note tag updates - ALLOW ANYONE TO EDIT
     socket.on('note-update-tags', (data) => {
@@ -244,17 +310,6 @@ io.on('connection', (socket) => {
         // Broadcast to all clients
         io.emit('tags-update', globalState.tags);
         console.log(`${user.name} deleted tag: ${tagId}`);
-    });
-    
-    // Send current state to newly connected client
-    socket.emit('timecode-update', globalState.timecode);
-    socket.emit('notes-update', globalState.notes);
-    socket.emit('users-update', Array.from(globalState.users.values()));
-    socket.emit('tags-update', globalState.tags);
-    socket.emit('time-mode-update', globalState.timeMode);
-    socket.emit('system-status', {
-        midiAvailable: !!input,
-        portCount: input ? input.getPortCount() : 0
     });
     
     // Handle user starting to type
@@ -374,7 +429,7 @@ function getRandomColor() {
     return colors[Math.floor(Math.random() * colors.length)];
 }
 
-// Demo mode for testing without MIDI hardware
+// Demo mode for testing without MIDI hardware - ONLY RUN IF NO MIDI PORTS
 let demoInterval;
 function startDemoMode() {
     console.log('Starting demo mode with simulated MTC');
@@ -416,9 +471,12 @@ function startDemoMode() {
     }, 1000 / globalState.timecode.frameRate);
 }
 
-// Start demo mode if no MIDI ports available
-if (!input || input.getPortCount() === 0) {
+// Start demo mode ONLY if no MIDI inputs are available
+if (!midiInput) {
     startDemoMode();
+} else {
+    console.log('MIDI device detected - demo mode disabled');
+    console.log('Waiting for MTC messages on port:', openedPortName);
 }
 
 const PORT = process.env.PORT || 3000;
@@ -427,12 +485,15 @@ server.listen(PORT, () => {
     console.log(`MIDI Timecode Notes Server`);
     console.log(`Running on http://localhost:${PORT}`);
     console.log(`=================================`);
+    console.log(`Debug endpoints:`);
+    console.log(`  Test timecode: http://localhost:${PORT}/test-timecode`);
+    console.log(`  Server status: http://localhost:${PORT}/server-status`);
 });
 
 // Cleanup on exit
 process.on('SIGINT', () => {
     console.log('Shutting down...');
     if (demoInterval) clearInterval(demoInterval);
-    if (input) input.closePort();
+    if (midiInput) midiInput.close();
     process.exit();
 });
