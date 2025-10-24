@@ -16,32 +16,9 @@ app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Test endpoints for debugging
-app.get('/test-timecode', (req, res) => {
-    const testTimecode = {
-        hours: 1,
-        minutes: 23,
-        seconds: 45,
-        frames: 15,
-        frameRate: 30,
-        source: 'test'
-    };
-    
-    globalState.timecode = testTimecode;
-    io.emit('timecode-update', testTimecode);
-    
-    console.log(`🧪 Sent test timecode: ${formatTimecode(testTimecode)}`);
-    res.send(`Test timecode sent: ${formatTimecode(testTimecode)}`);
-});
-
-app.get('/server-status', (req, res) => {
-    res.json({
-        timecode: globalState.timecode,
-        midiConnected: !!midiInput,
-        portName: openedPortName,
-        mtcMessagesReceived: mtcMessagesReceived,
-        connectedClients: globalState.users.size
-    });
+// Add route for recall page
+app.get('/recall.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'recall.html'));
 });
 
 // Load tags from JSON file
@@ -53,31 +30,18 @@ try {
     console.log(`Loaded ${tags.length} tags from tags.json`);
 } catch (error) {
     console.log('Error loading tags.json, using default tags:', error.message);
-    // Default tags if file doesn't exist
     tags = [
-        { id: 'safety', name: 'Safety', color: '#96CEB4' },
-        { id: 'technical', name: 'Technical', color: '#FFEAA7' },
-        { id: 'artistic', name: 'Artistic', color: '#DDA0DD' },
         { id: 'lighting', name: 'Lighting', color: '#FF6B6B' },
         { id: 'sound', name: 'Sound', color: '#4ECDC4' },
         { id: 'stage', name: 'Stage', color: '#45B7D1' },
-        { id: 'dsm', name: 'DSM', color: '#98D8C8' }
+        { id: 'general', name: 'General', color: '#F7DC6F' }
     ];
-    
-    // Save default tags to tags.json for future use
-    try {
-        fs.writeFileSync(path.join(__dirname, 'tags.json'), JSON.stringify({ tags: tags }, null, 2));
-        console.log('Created tags.json with default tags');
-    } catch (writeError) {
-        console.log('Could not create tags.json:', writeError.message);
-    }
 }
 
 // Function to save tags to file
 function saveTagsToFile() {
     try {
         fs.writeFileSync(path.join(__dirname, 'tags.json'), JSON.stringify({ tags: tags }, null, 2));
-        console.log('Tags saved to tags.json');
     } catch (error) {
         console.log('Error saving tags to file:', error.message);
     }
@@ -93,10 +57,11 @@ const globalState = {
         frameRate: 30,
         source: 'demo'
     },
-    notes: [], // Array of note objects with timestamps
+    notes: [],
     users: new Map(),
-    timeMode: 'midi', // 'midi' or 'realtime'
-    tags: tags
+    timeMode: 'midi',
+    tags: tags,
+    currentLxCue: '1' // Start with cue 1
 };
 
 // Try to use EasyMIDI
@@ -112,23 +77,14 @@ try {
     console.log('Available MIDI inputs:', inputs);
     
     if (inputs.length > 1) {
-        // Try to use the second input
         const inputName = inputs[1];
-        console.log(`Trying to open: "${inputName}"`);
-        
         midiInput = new easymidi.Input(inputName);
         openedPortName = inputName;
-        console.log(`✓ Successfully opened MIDI input: "${inputName}"`);
         globalState.timecode.source = 'midi';
-        
     } else if (inputs.length > 0) {
-        // Fallback to first input
         const inputName = inputs[0];
-        console.log(`Only one input available, using: "${inputName}"`);
-        
         midiInput = new easymidi.Input(inputName);
         openedPortName = inputName;
-        console.log(`✓ Successfully opened MIDI input: "${inputName}"`);
         globalState.timecode.source = 'midi';
     } else {
         console.log('No MIDI inputs available. Running in demo mode.');
@@ -142,7 +98,6 @@ let quarterFrameData = new Array(8).fill(0);
 let lastQuarterFrame = -1;
 let lastFullTimecode = null;
 
-// Frame rate mapping from MTC
 const frameRates = {
     0: 24,
     1: 25,
@@ -150,23 +105,18 @@ const frameRates = {
     3: 30
 };
 
-// NEW: Function to handle EasyMIDI's MTC format
 function parseEasyMIDIMTC(messageType, value) {
-    
     quarterFrameData[messageType] = value;
     mtcMessagesReceived++;
     
-    // Don't do sequence checking for now - just accept all quarter frames
     lastQuarterFrame = messageType;
     
-    // If we have all 8 quarter frames, parse the complete timecode
     if (messageType === 7) {
         parseCompleteMTC();
     }
 }
 
 function parseCompleteMTC() {
-    // Reconstruct timecode from quarter frames
     const frames = (quarterFrameData[1] << 4) | quarterFrameData[0];
     const seconds = (quarterFrameData[3] << 4) | quarterFrameData[2];
     const minutes = (quarterFrameData[5] << 4) | quarterFrameData[4];
@@ -184,7 +134,6 @@ function parseCompleteMTC() {
         source: 'midi'
     };
     
-    // Only update if timecode actually changed
     if (!lastFullTimecode || 
         lastFullTimecode.hours !== newTimecode.hours ||
         lastFullTimecode.minutes !== newTimecode.minutes ||
@@ -194,12 +143,10 @@ function parseCompleteMTC() {
         globalState.timecode = newTimecode;
         lastFullTimecode = {...newTimecode};
         
-        // Broadcast to all connected clients
         io.emit('timecode-update', globalState.timecode);
     }
 }
 
-// Safe timecode formatting function
 function formatTimecode(tc) {
     if (!tc || typeof tc !== 'object') {
         return '00:00:00:00';
@@ -207,29 +154,19 @@ function formatTimecode(tc) {
     return `${(tc.hours || 0).toString().padStart(2, '0')}:${(tc.minutes || 0).toString().padStart(2, '0')}:${(tc.seconds || 0).toString().padStart(2, '0')}:${(tc.frames || 0).toString().padStart(2, '0')}`;
 }
 
-// EasyMIDI message handler - UPDATED for EasyMIDI format
+// EasyMIDI message handler
 if (midiInput) {
     midiInput.on('message', (msg) => {
-        
-        // Handle EasyMIDI's MTC format directly
         if (msg._type === 'mtc' && typeof msg.type === 'number' && typeof msg.value === 'number') {
             parseEasyMIDIMTC(msg.type, msg.value);
         }
-        // Handle raw bytes format (backup)
         else if (msg.bytes && Array.isArray(msg.bytes)) {
             const [status, data1] = msg.bytes;
-            
-            // Check for MTC Quarter Frame messages (0xF1)
             if (status === 0xF1) {
                 const messageType = data1 >> 4;
                 const value = data1 & 0x0F;
-                console.log(`✅ Raw MTC: type=${messageType}, value=${value}`);
                 parseEasyMIDIMTC(messageType, value);
             }
-        }
-        // Log other message types for debugging
-        else {
-            console.log('📝 Other MIDI message:', msg);
         }
     });
 }
@@ -238,23 +175,23 @@ if (midiInput) {
 io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
     
-    // Create user object
     const user = {
         id: socket.id,
         name: `User${Math.floor(Math.random() * 1000)}`,
         isTyping: false,
         currentTimecode: null,
+        currentLxCue: null,
         joinedAt: new Date()
     };
     globalState.users.set(socket.id, user);
 
     // Send current state to newly connected client
-    console.log('Sending initial state to client:', socket.id);
     socket.emit('timecode-update', globalState.timecode);
     socket.emit('notes-update', globalState.notes);
     socket.emit('users-update', Array.from(globalState.users.values()));
     socket.emit('tags-update', globalState.tags);
     socket.emit('time-mode-update', globalState.timeMode);
+    socket.emit('lx-cue-update', globalState.currentLxCue);
     socket.emit('system-status', {
         midiAvailable: !!midiInput,
         portCount: midiInput ? require('easymidi').getInputs().length : 0,
@@ -262,17 +199,20 @@ io.on('connection', (socket) => {
         mtcMessagesReceived: mtcMessagesReceived
     });
 
-    // Handle note tag updates - ALLOW ANYONE TO EDIT
+    // Notify about new user joining
+    io.emit('user-joined', {
+        user: user.name,
+        userCount: globalState.users.size
+    });
+
+    // Handle note tag updates
     socket.on('note-update-tags', (data) => {
         const { noteId, tags } = data;
         const note = globalState.notes.find(n => n.id === noteId);
         
         if (note) {
             note.tags = tags;
-            
-            // Broadcast updated notes to all clients
             io.emit('notes-update', globalState.notes);
-            console.log(`${user.name} updated tags for note ${noteId}: ${tags.join(', ')}`);
         }
     });
 
@@ -284,7 +224,6 @@ io.on('connection', (socket) => {
             color: tagData.color || getRandomColor()
         };
         
-        // Check if tag already exists
         const existingIndex = globalState.tags.findIndex(tag => tag.id === newTag.id);
         if (existingIndex >= 0) {
             globalState.tags[existingIndex] = newTag;
@@ -292,54 +231,49 @@ io.on('connection', (socket) => {
             globalState.tags.push(newTag);
         }
         
-        // Save to file
         saveTagsToFile();
-        
-        // Broadcast to all clients
         io.emit('tags-update', globalState.tags);
-        console.log(`${user.name} ${existingIndex >= 0 ? 'updated' : 'created'} tag: ${newTag.name}`);
     });
 
     // Handle tag deletion
     socket.on('delete-tag', (tagId) => {
         globalState.tags = globalState.tags.filter(tag => tag.id !== tagId);
-        
-        // Save to file
         saveTagsToFile();
-        
-        // Broadcast to all clients
         io.emit('tags-update', globalState.tags);
-        console.log(`${user.name} deleted tag: ${tagId}`);
     });
     
     // Handle user starting to type
-    socket.on('typing-start', (timecode) => {
+    socket.on('typing-start', (data) => {
         user.isTyping = true;
-        user.currentTimecode = timecode || {...globalState.timecode};
+        user.currentTimecode = data.timecode || {...globalState.timecode};
+        user.currentLxCue = data.lxCue || globalState.currentLxCue;
         io.emit('users-update', Array.from(globalState.users.values()));
-        console.log(`${user.name} started typing at ${formatTimecode(user.currentTimecode)}`);
     });
     
     // Handle user stopping typing
     socket.on('typing-stop', () => {
         user.isTyping = false;
         user.currentTimecode = null;
+        user.currentLxCue = null;
         io.emit('users-update', Array.from(globalState.users.values()));
     });
     
-    // Handle time mode change (GLOBAL)
+    // Handle time mode change
     socket.on('time-mode-change', (newMode) => {
         if (newMode === 'midi' || newMode === 'realtime') {
             globalState.timeMode = newMode;
-            // Broadcast to ALL clients
             io.emit('time-mode-update', globalState.timeMode);
-            console.log(`Time mode changed to: ${newMode} (by ${user.name})`);
         }
+    });
+
+    // Handle LX Cue change
+    socket.on('lx-cue-change', (newCue) => {
+        globalState.currentLxCue = newCue;
+        io.emit('lx-cue-update', globalState.currentLxCue);
     });
     
     // Handle note submission
     socket.on('note-submit', (data) => {
-        // Ensure we have valid timecode data
         const noteTimecode = data.timecode || {...globalState.timecode};
         
         const note = {
@@ -348,24 +282,79 @@ io.on('connection', (socket) => {
             userId: user.id,
             text: data.text,
             timecode: noteTimecode,
+            lxCue: data.lxCue || globalState.currentLxCue,
             timestamp: new Date().toISOString(),
             frameRate: data.frameRate || globalState.timecode.frameRate,
-            tags: data.tags || [] // Add tags to note
+            tags: data.tags || [],
+            comments: [] // Initialize empty comments array
         };
         
         globalState.notes.push(note);
         
-        // Broadcast new note to all clients
         io.emit('note-added', note);
         io.emit('notes-update', globalState.notes);
+    });
+
+    // Handle comment submission
+    socket.on('comment-submit', (data) => {
+        const { noteId, text } = data;
+        const note = globalState.notes.find(n => n.id === noteId);
         
-        console.log(`${user.name} added note at ${formatTimecode(noteTimecode)} with tags: ${note.tags.join(', ')} - ${data.text.substring(0, 50)}...`);
+        if (note) {
+            const comment = {
+                id: Date.now() + Math.random().toString(36).substr(2, 9),
+                user: user.name,
+                userId: user.id,
+                text: text,
+                timestamp: new Date().toISOString()
+            };
+            
+            if (!note.comments) {
+                note.comments = [];
+            }
+            
+            note.comments.push(comment);
+            io.emit('notes-update', globalState.notes);
+        }
     });
     
-    // Handle user name changes
+    // Handle user name changes with uniqueness check
     socket.on('user-name-change', (newName) => {
-        user.name = newName;
-        io.emit('users-update', Array.from(globalState.users.values()));
+        // Check if name is already taken by another user
+        const isNameTaken = Array.from(globalState.users.values()).some(
+            u => u.id !== user.id && u.name.toLowerCase() === newName.toLowerCase()
+        );
+        
+        if (isNameTaken) {
+            socket.emit('name-change-error', {
+                message: `Name "${newName}" is already taken. Please choose a different name.`
+            });
+        } else {
+            const oldName = user.name;
+            user.name = newName;
+            
+            // Update the user's name in all their notes and comments
+            globalState.notes.forEach(note => {
+                if (note.userId === user.id) {
+                    note.user = newName;
+                }
+                // Update user name in comments
+                if (note.comments) {
+                    note.comments.forEach(comment => {
+                        if (comment.userId === user.id) {
+                            comment.user = newName;
+                        }
+                    });
+                }
+            });
+            
+            io.emit('users-update', Array.from(globalState.users.values()));
+            io.emit('notes-update', globalState.notes);
+            
+            socket.emit('name-change-success', {
+                message: `Name changed from "${oldName}" to "${newName}"`
+            });
+        }
     });
     
     // Handle export requests
@@ -388,17 +377,18 @@ io.on('connection', (socket) => {
             mimeType = 'application/json';
             filename = `timecoded-notes-${timestamp}.json`;
         } else if (format === 'csv') {
-            // Create CSV header
-            let csvContent = 'User,Timecode,Frame Rate,Note,Tags,Timestamp\n';
+            let csvContent = 'User,Timecode,LX Cue,Frame Rate,Note,Tags,Comments,Timestamp\n';
             
-            // Add each note as a row
             globalState.notes.forEach(note => {
+                const commentsStr = note.comments ? note.comments.map(c => `${c.user}: ${c.text}`).join('; ') : '';
                 const row = [
                     `"${note.user}"`,
                     `"${formatTimecode(note.timecode)}"`,
+                    `"${note.lxCue || ''}"`,
                     `"${note.frameRate}"`,
                     `"${note.text.replace(/"/g, '""')}"`,
                     `"${note.tags.join(', ')}"`,
+                    `"${commentsStr}"`,
                     `"${note.timestamp}"`
                 ].join(',');
                 csvContent += row + '\n';
@@ -414,6 +404,13 @@ io.on('connection', (socket) => {
     
     socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
+        const user = globalState.users.get(socket.id);
+        if (user) {
+            io.emit('user-left', {
+                user: user.name,
+                userCount: globalState.users.size - 1
+            });
+        }
         globalState.users.delete(socket.id);
         io.emit('users-update', Array.from(globalState.users.values()));
     });
@@ -429,11 +426,9 @@ function getRandomColor() {
     return colors[Math.floor(Math.random() * colors.length)];
 }
 
-// Demo mode for testing without MIDI hardware - ONLY RUN IF NO MIDI PORTS
+// Demo mode
 let demoInterval;
 function startDemoMode() {
-    console.log('Starting demo mode with simulated MTC');
-    
     if (demoInterval) {
         clearInterval(demoInterval);
     }
@@ -441,10 +436,9 @@ function startDemoMode() {
     demoInterval = setInterval(() => {
         globalState.timecode.frames++;
         
-        // Handle frame rollover based on frame rate
         let maxFrames = globalState.timecode.frameRate;
         if (globalState.timecode.frameRate === 29.97) {
-            maxFrames = 30; // Simplified for demo
+            maxFrames = 30;
         }
         
         if (globalState.timecode.frames >= maxFrames) {
@@ -471,28 +465,18 @@ function startDemoMode() {
     }, 1000 / globalState.timecode.frameRate);
 }
 
-// Start demo mode ONLY if no MIDI inputs are available
 if (!midiInput) {
     startDemoMode();
 } else {
     console.log('MIDI device detected - demo mode disabled');
-    console.log('Waiting for MTC messages on port:', openedPortName);
 }
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`=================================`);
-    console.log(`MIDI Timecode Notes Server`);
-    console.log(`Running on http://localhost:${PORT}`);
-    console.log(`=================================`);
-    console.log(`Debug endpoints:`);
-    console.log(`  Test timecode: http://localhost:${PORT}/test-timecode`);
-    console.log(`  Server status: http://localhost:${PORT}/server-status`);
+    console.log(`MIDI Timecode Notes Server running on http://localhost:${PORT}`);
 });
 
-// Cleanup on exit
 process.on('SIGINT', () => {
-    console.log('Shutting down...');
     if (demoInterval) clearInterval(demoInterval);
     if (midiInput) midiInput.close();
     process.exit();

@@ -22,9 +22,11 @@
         .container {
             display: grid;
             grid-template-columns: 1fr 400px;
+            grid-template-rows: auto 1fr auto;
             gap: 2rem;
             max-width: 1600px;
             margin: 0 auto;
+            min-height: 80vh;
         }
         
         header {
@@ -79,6 +81,14 @@
             letter-spacing: 4px;
             margin: 1rem 0;
             text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+        
+        .lx-cue {
+            font-family: 'Courier New', monospace;
+            font-size: 2rem;
+            font-weight: bold;
+            margin: 0.5rem 0;
+            color: #ff9800;
         }
         
         .timecode-label {
@@ -196,17 +206,68 @@
             background: rgba(255, 255, 255, 0.15);
         }
         
+        .lx-cue-input {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .lx-cue-input label {
+            font-weight: bold;
+            color: #ff9800;
+        }
+        
+        .lx-cue-input input {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 5px;
+            padding: 0.5rem;
+            color: white;
+            font-size: 1rem;
+            width: 80px;
+            text-align: center;
+        }
+        
+        .lx-cue-input input:focus {
+            outline: none;
+            border-color: #ff9800;
+            background: rgba(255, 255, 255, 0.15);
+        }
+        
         .note-actions {
             display: flex;
             gap: 1rem;
             justify-content: flex-end;
         }
         
-        .notes-log {
-            max-height: 400px;
+        /* Notes Log moved to right panel */
+        .notes-log-panel {
+            grid-column: 2;
+            grid-row: 2;
+            display: flex;
+            flex-direction: column;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            height: 100%;
+        }
+        
+        .notes-log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .notes-log-content {
+            flex-grow: 1;
             overflow-y: auto;
-            border-top: 1px solid rgba(255, 255, 255, 0.2);
-            padding-top: 1rem;
+            max-height: 600px;
         }
         
         .note-item {
@@ -235,6 +296,13 @@
             font-family: 'Courier New', monospace;
         }
         
+        .note-lx-cue {
+            font-family: 'Courier New', monospace;
+            color: #ff9800;
+            font-weight: bold;
+            margin-left: 1rem;
+        }
+        
         .note-text {
             line-height: 1.5;
             margin-bottom: 0.5rem;
@@ -254,19 +322,125 @@
             font-size: 0.7rem;
             font-weight: bold;
         }
-        
-        .sidebar {
+
+        /* Comments Section */
+        .comments-section {
+            margin-top: 1rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+            padding-top: 0.8rem;
+        }
+
+        .comments-toggle {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 0.4rem 0.8rem;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            margin-bottom: 0.8rem;
+            transition: all 0.3s ease;
             display: flex;
-            flex-direction: column;
-            gap: 2rem;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .comments-toggle:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .comments-toggle .count {
+            background: rgba(76, 175, 80, 0.3);
+            border-radius: 10px;
+            padding: 0.1rem 0.5rem;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+
+        .comments-container {
+            display: none;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-bottom: 0.8rem;
+        }
+
+        .comments-container.expanded {
+            display: block;
+        }
+
+        .comment-item {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 5px;
+            padding: 0.8rem;
+            margin-bottom: 0.5rem;
+            border-left: 2px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .comment-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.3rem;
+            font-size: 0.8rem;
+            opacity: 0.8;
+        }
+
+        .comment-user {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+
+        .comment-time {
+            font-size: 0.7rem;
+            opacity: 0.7;
+        }
+
+        .comment-text {
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        .comment-input-area {
+            display: none;
+            margin-top: 0.8rem;
+        }
+
+        .comment-input-area.expanded {
+            display: block;
+        }
+
+        .comment-input {
+            width: 100%;
+            height: 60px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 5px;
+            padding: 0.5rem;
+            color: white;
+            font-size: 0.9rem;
+            resize: vertical;
+            margin-bottom: 0.5rem;
+        }
+
+        .comment-input:focus {
+            outline: none;
+            border-color: rgba(255, 255, 255, 0.6);
+            background: rgba(255, 255, 255, 0.15);
+        }
+
+        .comment-actions {
+            display: flex;
+            gap: 0.5rem;
+            justify-content: flex-end;
         }
         
-        .status-panel, .users-panel, .info-panel {
+        /* Status Panel */
+        .status-panel {
             background: rgba(0, 0, 0, 0.7);
             border-radius: 15px;
             padding: 1.5rem;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
             border: 2px solid rgba(255, 255, 255, 0.1);
+            margin-bottom: 1rem;
         }
         
         .status-connected {
@@ -312,6 +486,28 @@
             0% { opacity: 1; }
             50% { opacity: 0.7; }
             100% { opacity: 1; }
+        }
+        
+        /* Instructions Panel (moved to bottom) */
+        .instructions-panel {
+            grid-column: 1 / -1;
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 15px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            margin-top: 1rem;
+        }
+        
+        .instructions-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+        
+        .instruction-item {
+            padding: 0.5rem 0;
         }
         
         button {
@@ -572,10 +768,16 @@
         @media (max-width: 1200px) {
             .container {
                 grid-template-columns: 1fr;
+                grid-template-rows: auto;
             }
             
             .timecode-section {
                 grid-template-columns: 1fr;
+            }
+            
+            .notes-log-panel {
+                grid-column: 1;
+                grid-row: auto;
             }
         }
         
@@ -631,9 +833,25 @@
         <header>
             <h1>MIDI Timecode Notes</h1>
             <p class="subtitle">Personal timecode notes with automatic timestamping</p>
+            <div style="margin-top: 1rem;">
+                <a href="/recall.html" class="primary" style="text-decoration: none; color: white; padding: 0.5rem 1rem; background: rgba(255, 152, 0, 0.3); border-radius: 5px;">View Exported Notes</a>
+            </div>
         </header>
         
         <div class="main-content">
+            <div class="status-panel">
+                <div class="user-info">
+                    <span>You are: </span>
+                    <span class="user-name-display" id="currentUserName">Guest</span>
+                    <button id="changeNameBtn" class="change-name-btn">Change</button>
+                </div>
+                <div id="connectionStatus" class="status-disconnected">Disconnected from Server</div>
+                <div id="midiStatus" style="margin-top: 0.5rem;">MIDI Interface: Scanning...</div>
+                <div id="timeModeStatus" style="margin-top: 0.5rem;">Time Mode: MIDI Timecode</div>
+                <div id="userStatus" style="margin-top: 0.5rem;">Ready to take notes</div>
+                <ul class="users-list" id="usersList"></ul>
+            </div>
+            
             <div class="timecode-section">
                 <div class="global-timecode">
                     <div class="timecode-label">
@@ -641,6 +859,7 @@
                         <span id="sourceBadge" class="source-badge source-demo">DEMO</span>
                     </div>
                     <div class="timecode" id="globalTimecode">00:00:00:00</div>
+                    <div class="lx-cue" id="globalLxCue">LX Cue: 1</div>
                     <div class="frame-rate-display" id="globalFrameRate">Frame Rate: 30 fps</div>
                     
                     <div class="time-mode-toggle">
@@ -656,6 +875,7 @@
                 <div class="personal-timecode" id="personalTimecode">
                     <div class="timecode-label">YOUR NOTE TIMECODE</div>
                     <div class="timecode" id="personalTimecodeDisplay">--:--:--:--</div>
+                    <div class="lx-cue" id="personalLxCueDisplay">LX Cue: --</div>
                     <div class="frame-rate-display">Timecode will freeze when you type</div>
                 </div>
             </div>
@@ -672,6 +892,11 @@
                 <div class="note-input-area">
                     <textarea id="noteInput" placeholder="Start typing your note here... (Your personal timecode will freeze)"></textarea>
                     
+                    <div class="lx-cue-input">
+                        <label for="lxCueInput">LX Cue:</label>
+                        <input type="text" id="lxCueInput" placeholder="Cue Number">
+                    </div>
+                    
                     <div class="tags-section">
                         <div class="tags-label">Add Tags:</div>
                         <div class="tags-container" id="tagsContainer">
@@ -684,56 +909,45 @@
                         <button id="sendNote" class="primary" disabled>Send Note</button>
                     </div>
                 </div>
-                
-                <div class="notes-log">
-                    <h3>All Notes</h3>
-                    
-                    <div class="filter-section">
-                        <div class="tags-label">Filter by Tags:</div>
-                        <div class="filter-tags" id="filterTags">
-                            <div class="filter-tag active" data-tag="all">All Notes</div>
-                            <!-- Filter tags will be populated by JavaScript -->
-                        </div>
-                    </div>
-                    
-                    <div id="notesList">
-                        <div style="text-align: center; opacity: 0.7; padding: 2rem;">
-                            No notes yet. Be the first to add one!
-                        </div>
-                    </div>
+            </div>
+        </div>
+        
+        <!-- Notes Log Panel (moved to right) -->
+        <div class="notes-log-panel">
+            <div class="notes-log-header">
+                <h3>All Notes</h3>
+                <span class="user-count" id="userCount">0 users</span>
+            </div>
+            
+            <div class="filter-section">
+                <div class="tags-label">Filter by Tags:</div>
+                <div class="filter-tags" id="filterTags">
+                    <div class="filter-tag active" data-tag="all">All Notes</div>
+                    <!-- Filter tags will be populated by JavaScript -->
+                </div>
+            </div>
+            
+            <div class="notes-log-content" id="notesList">
+                <div style="text-align: center; opacity: 0.7; padding: 2rem;">
+                    No notes yet. Be the first to add one!
                 </div>
             </div>
         </div>
         
-        <div class="sidebar">
-            <div class="status-panel">
-                <div class="user-info">
-                    <span>You are: </span>
-                    <span class="user-name-display" id="currentUserName">Guest</span>
-                    <button id="changeNameBtn" class="change-name-btn">Change</button>
-                </div>
-                <div id="connectionStatus" class="status-disconnected">Disconnected from Server</div>
-                <div id="midiStatus" style="margin-top: 0.5rem;">MIDI Interface: Scanning...</div>
-                <div id="timeModeStatus" style="margin-top: 0.5rem;">Time Mode: MIDI Timecode</div>
-                <div id="userStatus" style="margin-top: 0.5rem;">Ready to take notes</div>
-            </div>
-            
-            <div class="users-panel">
-                <h3>Online Users</h3>
-                <ul class="users-list" id="usersList">
-                    <li class="user-item">Loading...</li>
-                </ul>
-            </div>
-            
-            <div class="info-panel">
-                <h3>How It Works</h3>
-                <p>• Start typing - your personal timecode freezes</p>
-                <p>• Send note - it gets timestamped with frozen timecode</p>
-                <p>• Add tags to categorize your notes</p>
-                <p>• Anyone can edit tags on any note</p>
-                <p>• Filter notes by tags to find what you need</p>
-                <p>• Export all notes as JSON or CSV with timestamps</p>
-                <p>• Toggle between Real Time and MIDI Timecode (Global)</p>
+        <!-- Instructions Panel (moved to bottom) -->
+        <div class="instructions-panel">
+            <h3>How It Works</h3>
+            <div class="instructions-grid">
+                <div class="instruction-item">• Start typing - your timecode and LX cue freeze</div>
+                <div class="instruction-item">• Send note - it gets timestamped with frozen timecode and LX cue</div>
+                <div class="instruction-item">• Add tags to categorize your notes</div>
+                <div class="instruction-item">• Anyone can edit tags on any note</div>
+                <div class="instruction-item">• Add comments to notes for discussions</div>
+                <div class="instruction-item">• Filter notes by tags to find what you need</div>
+                <div class="instruction-item">• Export all notes as JSON or CSV with timestamps</div>
+                <div class="instruction-item">• Toggle between Real Time and MIDI Timecode (Global)</div>
+                <div class="instruction-item">• Auto-resume after 15 seconds if note is empty and not focused</div>
+                <div class="instruction-item">• Use the "View Exported Notes" link to review past sessions</div>
             </div>
         </div>
         
@@ -745,12 +959,12 @@
     <script src="/socket.io/socket.io.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Debug logging
-            console.log('🚀 MIDI Timecode Notes initializing...');
-
+            // Existing variable declarations
             const globalTimecodeElement = document.getElementById('globalTimecode');
+            const globalLxCueElement = document.getElementById('globalLxCue');
             const globalFrameRateElement = document.getElementById('globalFrameRate');
             const personalTimecodeElement = document.getElementById('personalTimecodeDisplay');
+            const personalLxCueElement = document.getElementById('personalLxCueDisplay');
             const personalTimecodeContainer = document.getElementById('personalTimecode');
             const connectionStatus = document.getElementById('connectionStatus');
             const midiStatus = document.getElementById('midiStatus');
@@ -759,6 +973,7 @@
             const sourceBadge = document.getElementById('sourceBadge');
             const timeModeLabel = document.getElementById('timeModeLabel');
             const noteInput = document.getElementById('noteInput');
+            const lxCueInput = document.getElementById('lxCueInput');
             const sendNoteBtn = document.getElementById('sendNote');
             const cancelNoteBtn = document.getElementById('cancelNote');
             const usersList = document.getElementById('usersList');
@@ -788,11 +1003,16 @@
             const cancelEditTagsBtn = document.getElementById('cancelEditTags');
             const saveEditTagsBtn = document.getElementById('saveEditTags');
             
+            // User count element
+            const userCount = document.getElementById('userCount');
+            
+            // Existing variable declarations
             let currentUser = {
                 name: 'Guest',
                 id: null,
                 isTyping: false,
                 frozenTimecode: null,
+                frozenLxCue: null,
                 currentFrameRate: 30
             };
             
@@ -804,14 +1024,18 @@
                 frameRate: 30
             };
             
+            let currentGlobalLxCue = '1';
+            
             let allNotes = [];
-            let timeMode = 'midi'; // Will be set by server
+            let timeMode = 'midi';
             let realTimeInterval = null;
             let availableTags = [];
             let selectedTags = [];
             let filterTag = 'all';
             let currentlyEditingNoteId = null;
             let editTagsSelected = [];
+            let autoResumeTimer = null;
+            let currentUsers = [];
             
             // Tag persistence functions
             function loadTagsFromStorage() {
@@ -829,18 +1053,9 @@
 
             // Initialize tags when the page loads
             function initializeTags() {
-                // First try to load from localStorage
                 loadTagsFromStorage();
-                
-                // If no tags in localStorage, wait for server to send them
-                if (availableTags.length === 0) {
-                    console.log('Waiting for tags from server...');
-                } else {
-                    console.log('Loaded tags from localStorage:', availableTags.length);
-                }
             }
 
-            // Call this when the page loads
             initializeTags();
             
             // Show name modal on load
@@ -851,12 +1066,21 @@
             confirmNameBtn.addEventListener('click', function() {
                 const name = nameInput.value.trim();
                 if (name) {
+                    // Check if name is already taken
+                    const isNameTaken = currentUsers.some(user => 
+                        user.name.toLowerCase() === name.toLowerCase()
+                    );
+                    
+                    if (isNameTaken) {
+                        alert(`Name "${name}" is already taken. Please choose a different name.`);
+                        nameInput.focus();
+                        return;
+                    }
+                    
                     currentUser.name = name;
                     currentUserName.textContent = name;
                     nameModal.style.display = 'none';
-                    
-                    // Update server with new name
-                    socket.emit('user-name-change', name);
+                    window.socket.emit('user-name-change', name);
                 } else {
                     alert('Please enter a name');
                     nameInput.focus();
@@ -874,20 +1098,31 @@
             changeNameBtn.addEventListener('click', function() {
                 const newName = prompt('Enter your new name:', currentUser.name);
                 if (newName && newName.trim()) {
+                    // Check if name is already taken (excluding current user)
+                    const isNameTaken = currentUsers.some(user => 
+                        user.id !== currentUser.id && user.name.toLowerCase() === newName.toLowerCase()
+                    );
+                    
+                    if (isNameTaken) {
+                        alert(`Name "${newName}" is already taken. Please choose a different name.`);
+                        return;
+                    }
+                    
                     currentUser.name = newName.trim();
                     currentUserName.textContent = currentUser.name;
-                    
-                    // Update server with new name
-                    socket.emit('user-name-change', currentUser.name);
+                    window.socket.emit('user-name-change', currentUser.name);
                 }
             });
             
             // Handle time mode toggle - GLOBAL CHANGE
             timeModeToggle.addEventListener('change', function() {
                 const newMode = this.checked ? 'realtime' : 'midi';
-                console.log('🔄 User requested time mode change to:', newMode);
-                // Send change to server (will broadcast to all clients)
-                socket.emit('time-mode-change', newMode);
+                window.socket.emit('time-mode-change', newMode);
+            });
+            
+            // Handle LX Cue input changes
+            lxCueInput.addEventListener('input', function() {
+                window.socket.emit('lx-cue-change', this.value);
             });
             
             // Edit tags modal handlers
@@ -899,8 +1134,7 @@
             
             saveEditTagsBtn.addEventListener('click', function() {
                 if (currentlyEditingNoteId) {
-                    // Send updated tags to server
-                    socket.emit('note-update-tags', {
+                    window.socket.emit('note-update-tags', {
                         noteId: currentlyEditingNoteId,
                         tags: editTagsSelected
                     });
@@ -917,38 +1151,31 @@
                     timeModeStatus.textContent = 'Time Mode: Real Time (System Clock)';
                     realtimeLabel.classList.add('active');
                     midiLabel.classList.remove('active');
-                    timeModeToggle.checked = true; // Toggle RIGHT for realtime
+                    timeModeToggle.checked = true;
                     sourceBadge.style.display = 'none';
                     globalFrameRateElement.textContent = 'Time Unit: Milliseconds';
                     
-                    // Start real time updates
                     startRealTimeMode();
                 } else {
                     timeModeLabel.textContent = 'MIDI TIMECODE';
                     timeModeStatus.textContent = 'Time Mode: MIDI Timecode';
                     realtimeLabel.classList.remove('active');
                     midiLabel.classList.add('active');
-                    timeModeToggle.checked = false; // Toggle LEFT for MIDI
+                    timeModeToggle.checked = false;
                     sourceBadge.style.display = 'inline-block';
                     globalFrameRateElement.textContent = `Frame Rate: ${currentGlobalTimecode.frameRate} fps`;
                     
-                    // Stop real time updates
                     stopRealTimeMode();
-                    // Restore MIDI timecode display
                     updateGlobalTimecodeDisplay(currentGlobalTimecode);
                 }
             }
             
             function startRealTimeMode() {
-                // Clear any existing interval
                 if (realTimeInterval) {
                     clearInterval(realTimeInterval);
                 }
                 
-                // Update immediately
                 updateRealTimeDisplay();
-                
-                // Update every 10ms for smooth millisecond display
                 realTimeInterval = setInterval(updateRealTimeDisplay, 10);
             }
             
@@ -966,7 +1193,6 @@
                 const seconds = now.getSeconds();
                 const milliseconds = now.getMilliseconds();
                 
-                // Format as HH:MM:SS:MS (MS from 00-99)
                 const realTimeTimecode = {
                     hours: hours,
                     minutes: minutes,
@@ -977,7 +1203,6 @@
                 
                 updateGlobalTimecodeDisplay(realTimeTimecode);
                 
-                // Update personal timecode if not frozen
                 if (!currentUser.isTyping) {
                     updatePersonalTimecodeDisplay(realTimeTimecode);
                 }
@@ -986,14 +1211,13 @@
             function updateGlobalTimecodeDisplay(timecode) {
                 let formattedTimecode;
                 if (timecode.displayMode === 'realtime') {
-                    // Format as HH:MM:SS:MS (milliseconds 00-99)
+                    const ms = Math.floor((timecode.milliseconds || 0) / 10);
                     formattedTimecode = 
                         `${timecode.hours.toString().padStart(2, '0')}:` +
                         `${timecode.minutes.toString().padStart(2, '0')}:` +
                         `${timecode.seconds.toString().padStart(2, '0')}:` +
-                        `${Math.floor(timecode.milliseconds / 10).toString().padStart(2, '0')}`;
+                        `${ms.toString().padStart(2, '0')}`;
                 } else {
-                    // Format as HH:MM:SS:FF (frames)
                     formattedTimecode = formatTimecode(timecode);
                 }
                 
@@ -1003,18 +1227,25 @@
             function updatePersonalTimecodeDisplay(timecode) {
                 let formattedTimecode;
                 if (timecode.displayMode === 'realtime') {
-                    // Format as HH:MM:SS:MS (milliseconds 00-99)
+                    const ms = Math.floor((timecode.milliseconds || 0) / 10);
                     formattedTimecode = 
                         `${timecode.hours.toString().padStart(2, '0')}:` +
                         `${timecode.minutes.toString().padStart(2, '0')}:` +
                         `${timecode.seconds.toString().padStart(2, '0')}:` +
-                        `${Math.floor(timecode.milliseconds / 10).toString().padStart(2, '0')}`;
+                        `${ms.toString().padStart(2, '0')}`;
                 } else {
-                    // Format as HH:MM:SS:FF (frames)
                     formattedTimecode = formatTimecode(timecode);
                 }
                 
                 personalTimecodeElement.textContent = formattedTimecode;
+            }
+            
+            function updateGlobalLxCueDisplay(cue) {
+                globalLxCueElement.textContent = `LX Cue: ${cue}`;
+            }
+            
+            function updatePersonalLxCueDisplay(cue) {
+                personalLxCueElement.textContent = `LX Cue: ${cue}`;
             }
             
             function formatTimecode(tc) {
@@ -1022,6 +1253,23 @@
                     return '00:00:00:00';
                 }
                 return `${(tc.hours || 0).toString().padStart(2, '0')}:${(tc.minutes || 0).toString().padStart(2, '0')}:${(tc.seconds || 0).toString().padStart(2, '0')}:${(tc.frames || 0).toString().padStart(2, '0')}`;
+            }
+            
+            // Auto-resume functionality
+            function startAutoResumeTimer() {
+                clearAutoResumeTimer();
+                autoResumeTimer = setTimeout(function() {
+                    if (noteInput.value.trim() === '' && document.activeElement !== noteInput) {
+                        cancelNote();
+                    }
+                }, 15000); // 15 seconds
+            }
+            
+            function clearAutoResumeTimer() {
+                if (autoResumeTimer) {
+                    clearTimeout(autoResumeTimer);
+                    autoResumeTimer = null;
+                }
             }
             
             // Tag functions
@@ -1039,7 +1287,6 @@
                     tagsContainer.innerHTML += tagElement;
                 });
                 
-                // Add event listeners to tag checkboxes
                 availableTags.forEach(tag => {
                     const checkbox = document.getElementById(`tag-${tag.id}`);
                     if (checkbox) {
@@ -1070,7 +1317,6 @@
                     editTagsContainer.innerHTML += tagElement;
                 });
                 
-                // Add event listeners to edit tag checkboxes
                 availableTags.forEach(tag => {
                     const checkbox = document.getElementById(`edit-tag-${tag.id}`);
                     if (checkbox) {
@@ -1097,17 +1343,14 @@
                     filterTagsContainer.innerHTML += filterTagElement;
                 });
                 
-                // Add event listeners to filter tags
                 document.querySelectorAll('.filter-tag').forEach(tag => {
                     tag.addEventListener('click', function() {
                         const tagId = this.getAttribute('data-tag');
                         filterTag = tagId;
                         
-                        // Update active state
                         document.querySelectorAll('.filter-tag').forEach(t => t.classList.remove('active'));
                         this.classList.add('active');
                         
-                        // Filter notes
                         filterNotes();
                     });
                 });
@@ -1130,104 +1373,32 @@
             }
             
             // Connect to WebSocket server
-            const socket = io();
+            window.socket = io();
             
-            // Enhanced WebSocket event handlers with debugging
-            socket.on('connect', function() {
+            window.socket.on('connect', function() {
                 connectionStatus.textContent = 'Connected to Server';
                 connectionStatus.className = 'status-connected';
-                console.log('✅ Connected to server with ID:', socket.id);
-                
-                // Store the socket ID as the user ID
-                currentUser.id = socket.id;
-                
-                // If tags aren't received within 2 seconds, use localStorage tags
-                setTimeout(() => {
-                    if (availableTags.length === 0) {
-                        console.log('No tags received from server, using localStorage fallback');
-                        loadTagsFromStorage();
-                    }
-                }, 2000);
+                currentUser.id = window.socket.id;
             });
             
-            socket.on('disconnect', function() {
+            window.socket.on('disconnect', function() {
                 connectionStatus.textContent = 'Disconnected from Server';
                 connectionStatus.className = 'status-disconnected';
-                console.log('❌ Disconnected from server');
             });
             
-            // Handle global time mode updates from server
-            socket.on('time-mode-update', function(newMode) {
-                console.log('🔄 Server changed time mode to:', newMode);
-                timeMode = newMode;
-                updateTimeModeDisplay();
+            window.socket.on('user-joined', function(data) {
+                updateUserCount(data.userCount);
             });
             
-            // Handle tags update from server
-            socket.on('tags-update', function(tags) {
-                console.log('🏷️ Received tags from server:', tags.length);
-                if (tags && tags.length > 0) {
-                    availableTags = tags;
-                    saveTagsToStorage();
-                    updateTagsDisplay();
-                    updateFilterTags();
-                }
+            window.socket.on('user-left', function(data) {
+                updateUserCount(data.userCount);
             });
             
-            socket.on('system-status', function(data) {
-                console.log('📊 System status:', data);
-                if (data.midiAvailable && data.portCount > 0) {
-                    midiStatus.textContent = `MIDI Interface: ${data.portCount} port(s) available - ${data.currentPort}`;
-                    midiStatus.className = 'status-connected';
-                } else {
-                    midiStatus.textContent = 'MIDI Interface: No MIDI ports found - Running in demo mode';
-                    midiStatus.className = '';
-                }
-            });
-            
-            // Enhanced timecode update handler with debugging
-            socket.on('timecode-update', function(data) {
-                console.log('🕒 Received timecode update:', data);
+            window.socket.on('users-update', function(users) {
+                currentUsers = users;
+                updateUserCount(users.length);
                 
-                // Only update if we're in MIDI mode
-                if (timeMode === 'midi') {
-                    currentGlobalTimecode = data;
-                    currentUser.currentFrameRate = data.frameRate;
-                    
-                    updateGlobalTimecodeDisplay(data);
-                    
-                    // Update personal timecode if not frozen
-                    if (!currentUser.isTyping) {
-                        updatePersonalTimecodeDisplay(data);
-                    }
-                    
-                    // Update source badge
-                    if (data.source === 'midi') {
-                        sourceBadge.textContent = 'LIVE MIDI';
-                        sourceBadge.className = 'source-badge source-midi';
-                    } else {
-                        sourceBadge.textContent = 'DEMO';
-                        sourceBadge.className = 'source-badge source-demo';
-                    }
-                } else {
-                    console.log('⏱️ Ignoring timecode update - in realtime mode');
-                }
-            });
-            
-            socket.on('notes-update', function(notes) {
-                console.log('📝 Received notes update:', notes.length, 'notes');
-                allNotes = notes;
-                updateNotesList();
-            });
-            
-            socket.on('note-added', function(note) {
-                console.log('➕ Received new note:', note);
-                // Note is already added to allNotes via notes-update
-                updateNotesList();
-            });
-            
-            socket.on('users-update', function(users) {
-                console.log('👥 Users update:', users.length, 'users');
+                // Update users list in status panel
                 usersList.innerHTML = '';
                 users.forEach(user => {
                     const userItem = document.createElement('li');
@@ -1240,7 +1411,88 @@
                 });
             });
             
-            socket.on('export-data', function(data) {
+            window.socket.on('name-change-error', function(data) {
+                alert(data.message);
+            });
+            
+            window.socket.on('name-change-success', function(data) {
+                userStatus.textContent = data.message;
+                setTimeout(() => {
+                    if (!currentUser.isTyping) {
+                        userStatus.textContent = 'Ready to take notes';
+                    }
+                }, 3000);
+            });
+            
+            function updateUserCount(count) {
+                userCount.textContent = `${count} user${count !== 1 ? 's' : ''}`;
+            }
+            
+            window.socket.on('time-mode-update', function(newMode) {
+                timeMode = newMode;
+                updateTimeModeDisplay();
+            });
+            
+            window.socket.on('lx-cue-update', function(cue) {
+                currentGlobalLxCue = cue;
+                updateGlobalLxCueDisplay(cue);
+                lxCueInput.value = cue;
+                
+                if (!currentUser.isTyping) {
+                    updatePersonalLxCueDisplay(cue);
+                }
+            });
+            
+            window.socket.on('tags-update', function(tags) {
+                if (tags && tags.length > 0) {
+                    availableTags = tags;
+                    saveTagsToStorage();
+                    updateTagsDisplay();
+                    updateFilterTags();
+                }
+            });
+            
+            window.socket.on('system-status', function(data) {
+                if (data.midiAvailable && data.portCount > 0) {
+                    midiStatus.textContent = `MIDI Interface: ${data.portCount} port(s) available - ${data.currentPort}`;
+                    midiStatus.className = 'status-connected';
+                } else {
+                    midiStatus.textContent = 'MIDI Interface: No MIDI ports found - Running in demo mode';
+                    midiStatus.className = '';
+                }
+            });
+            
+            window.socket.on('timecode-update', function(data) {
+                if (timeMode === 'midi') {
+                    currentGlobalTimecode = data;
+                    currentUser.currentFrameRate = data.frameRate;
+                    
+                    updateGlobalTimecodeDisplay(data);
+                    
+                    if (!currentUser.isTyping) {
+                        updatePersonalTimecodeDisplay(data);
+                    }
+                    
+                    if (data.source === 'midi') {
+                        sourceBadge.textContent = 'LIVE MIDI';
+                        sourceBadge.className = 'source-badge source-midi';
+                    } else {
+                        sourceBadge.textContent = 'DEMO';
+                        sourceBadge.className = 'source-badge source-demo';
+                    }
+                }
+            });
+            
+            window.socket.on('notes-update', function(notes) {
+                allNotes = notes;
+                updateNotesList();
+            });
+            
+            window.socket.on('note-added', function(note) {
+                updateNotesList();
+            });
+            
+            window.socket.on('export-data', function(data) {
                 const blob = new Blob([data.data], { type: data.mimeType });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
@@ -1257,9 +1509,7 @@
                 if (!currentUser.isTyping) {
                     currentUser.isTyping = true;
                     
-                    // Freeze the appropriate timecode based on current mode
                     if (timeMode === 'realtime') {
-                        // Freeze current real time with milliseconds
                         const now = new Date();
                         currentUser.frozenTimecode = {
                             hours: now.getHours(),
@@ -1270,80 +1520,100 @@
                             frameRate: 'ms'
                         };
                     } else {
-                        // Freeze current MIDI timecode
                         currentUser.frozenTimecode = {
                             ...currentGlobalTimecode,
                             displayMode: 'midi'
                         };
                     }
                     
-                    // Update personal timecode display with frozen time
+                    currentUser.frozenLxCue = currentGlobalLxCue;
+                    
                     updatePersonalTimecodeDisplay(currentUser.frozenTimecode);
+                    updatePersonalLxCueDisplay(currentUser.frozenLxCue);
                     personalTimecodeContainer.classList.add('frozen');
                     
-                    socket.emit('typing-start', currentUser.frozenTimecode);
-                    userStatus.textContent = 'Timecode frozen - writing note...';
+                    window.socket.emit('typing-start', {
+                        timecode: currentUser.frozenTimecode,
+                        lxCue: currentUser.frozenLxCue
+                    });
+                    
+                    userStatus.textContent = 'Timecode and LX Cue frozen - writing note...';
+                    
+                    // Start auto-resume timer when user stops typing
+                    startAutoResumeTimer();
                 }
             });
             
             noteInput.addEventListener('input', function() {
                 sendNoteBtn.disabled = noteInput.value.trim().length === 0;
+                
+                // Reset auto-resume timer on any input
+                startAutoResumeTimer();
+            });
+            
+            noteInput.addEventListener('blur', function() {
+                // Start auto-resume timer when input loses focus
+                startAutoResumeTimer();
             });
             
             // Send note
             sendNoteBtn.addEventListener('click', function() {
                 const noteText = noteInput.value.trim();
                 if (noteText && currentUser.frozenTimecode) {
-                    socket.emit('note-submit', {
+                    window.socket.emit('note-submit', {
                         text: noteText,
                         timecode: currentUser.frozenTimecode,
+                        lxCue: currentUser.frozenLxCue,
                         frameRate: timeMode === 'realtime' ? 'ms' : currentUser.currentFrameRate,
-                        tags: selectedTags // Include selected tags
+                        tags: selectedTags
                     });
                     
-                    // Reset note input and tags
                     noteInput.value = '';
                     sendNoteBtn.disabled = true;
                     currentUser.isTyping = false;
                     currentUser.frozenTimecode = null;
+                    currentUser.frozenLxCue = null;
                     personalTimecodeContainer.classList.remove('frozen');
                     userStatus.textContent = 'Note sent! Ready for next note.';
                     
-                    // Clear selected tags
                     selectedTags = [];
                     document.querySelectorAll('.tag-checkbox:checked').forEach(checkbox => {
                         checkbox.checked = false;
                     });
                     
-                    socket.emit('typing-stop');
+                    window.socket.emit('typing-stop');
+                    clearAutoResumeTimer();
                 }
             });
             
             // Cancel note
-            cancelNoteBtn.addEventListener('click', function() {
+            function cancelNote() {
                 noteInput.value = '';
                 sendNoteBtn.disabled = true;
                 currentUser.isTyping = false;
                 currentUser.frozenTimecode = null;
+                currentUser.frozenLxCue = null;
                 personalTimecodeContainer.classList.remove('frozen');
-                userStatus.textContent = 'Note cancelled. Ready for next note.';
+                userStatus.textContent = 'Auto-resumed. Ready for next note.';
                 
-                // Clear selected tags
                 selectedTags = [];
                 document.querySelectorAll('.tag-checkbox:checked').forEach(checkbox => {
                     checkbox.checked = false;
                 });
                 
-                socket.emit('typing-stop');
-            });
+                window.socket.emit('typing-stop');
+                clearAutoResumeTimer();
+            }
+            
+            cancelNoteBtn.addEventListener('click', cancelNote);
             
             // Export buttons
             exportJsonBtn.addEventListener('click', function() {
-                socket.emit('export-request', 'json');
+                window.socket.emit('export-request', 'json');
             });
             
             exportCsvBtn.addEventListener('click', function() {
-                socket.emit('export-request', 'csv');
+                window.socket.emit('export-request', 'csv');
             });
             
             // Update notes list
@@ -1353,20 +1623,16 @@
                     return;
                 }
                 
-                // Show notes in chronological order (oldest first)
                 const chronologicalNotes = [...allNotes].sort((a, b) => {
-                    // Sort by timestamp first
                     if (a.timestamp && b.timestamp) {
                         return new Date(a.timestamp) - new Date(b.timestamp);
                     }
-                    // Fallback: sort by timecode values
                     return timecodeToSeconds(a.timecode) - timecodeToSeconds(b.timecode);
                 });
                 
                 notesList.innerHTML = chronologicalNotes.map(note => {
                     let timecodeDisplay;
                     if (note.frameRate === 'ms') {
-                        // Format real-time note with milliseconds
                         const ms = Math.floor((note.timecode.milliseconds || 0) / 10);
                         timecodeDisplay = 
                             `${note.timecode.hours.toString().padStart(2, '0')}:` +
@@ -1374,31 +1640,60 @@
                             `${note.timecode.seconds.toString().padStart(2, '0')}:` +
                             `${ms.toString().padStart(2, '0')}`;
                     } else {
-                        // Format MIDI note with frames
                         timecodeDisplay = formatTimecode(note.timecode);
                     }
                     
-                    // Create tag elements - use availableTags which should now be populated
                     const tagElements = note.tags.map(tagId => {
                         const tag = availableTags.find(t => t.id === tagId);
                         if (tag) {
                             return `<span class="note-tag" style="background-color: ${tag.color}; color: #000;">${tag.name}</span>`;
                         }
-                        // Fallback if tag not found
                         return `<span class="note-tag" style="background-color: #cccccc; color: #000;">${tagId}</span>`;
                     }).join('');
                     
-                    // Show edit button for EVERY note (collaborative editing)
                     const editButton = `<button class="small edit-tags-btn" data-note-id="${note.id}">Edit Tags</button>`;
+                    
+                    // Comments section
+                    const commentCount = note.comments ? note.comments.length : 0;
+                    const commentsSection = `
+                        <div class="comments-section">
+                            <button class="comments-toggle" data-note-id="${note.id}">
+                                Comments <span class="count">${commentCount}</span>
+                            </button>
+                            <div class="comments-container" id="comments-${note.id}">
+                                ${note.comments ? note.comments.map(comment => `
+                                    <div class="comment-item">
+                                        <div class="comment-header">
+                                            <span class="comment-user">${comment.user}</span>
+                                            <span class="comment-time">${formatCommentTime(comment.timestamp)}</span>
+                                        </div>
+                                        <div class="comment-text">${comment.text}</div>
+                                    </div>
+                                `).join('') : ''}
+                            </div>
+                            <div class="comment-input-area" id="comment-input-${note.id}">
+                                <textarea class="comment-input" placeholder="Add a comment..." data-note-id="${note.id}"></textarea>
+                                <div class="comment-actions">
+                                    <button class="small secondary cancel-comment" data-note-id="${note.id}">Cancel</button>
+                                    <button class="small primary submit-comment" data-note-id="${note.id}" disabled>Submit</button>
+                                </div>
+                            </div>
+                        </div>
+                    `;
                     
                     return `
                         <div class="note-item" data-tags="${note.tags.join(',')}">
                             <div class="note-header">
                                 <span class="note-user">${note.user}</span>
-                                <span class="note-timecode">${timecodeDisplay} @ ${note.frameRate === 'ms' ? 'milliseconds' : note.frameRate + 'fps'}</span>
+                                <span class="note-timecode">
+                                    ${timecodeDisplay} 
+                                    <span class="note-lx-cue">LX: ${note.lxCue || 'N/A'}</span>
+                                    @ ${note.frameRate === 'ms' ? 'milliseconds' : note.frameRate + 'fps'}
+                                </span>
                             </div>
                             <div class="note-text">${note.text}</div>
                             ${note.tags.length > 0 ? `<div class="note-tags">${tagElements}</div>` : ''}
+                            ${commentsSection}
                             <div class="note-actions-row">
                                 ${editButton}
                             </div>
@@ -1406,7 +1701,7 @@
                     `;
                 }).join('');
                 
-                // Add event listeners to edit buttons
+                // Add event listeners for edit tags buttons
                 document.querySelectorAll('.edit-tags-btn').forEach(button => {
                     button.addEventListener('click', function() {
                         const noteId = this.getAttribute('data-note-id');
@@ -1420,16 +1715,92 @@
                     });
                 });
                 
-                // Apply current filter after updating notes
+                // Add event listeners for comments
+                document.querySelectorAll('.comments-toggle').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const noteId = this.getAttribute('data-note-id');
+                        const commentsContainer = document.getElementById(`comments-${noteId}`);
+                        const commentInputArea = document.getElementById(`comment-input-${noteId}`);
+                        
+                        if (commentsContainer.classList.contains('expanded')) {
+                            commentsContainer.classList.remove('expanded');
+                            commentInputArea.classList.remove('expanded');
+                        } else {
+                            commentsContainer.classList.add('expanded');
+                            commentInputArea.classList.add('expanded');
+                        }
+                    });
+                });
+                
+                // Add event listeners for comment submission
+                document.querySelectorAll('.comment-input').forEach(input => {
+                    input.addEventListener('input', function() {
+                        const noteId = this.getAttribute('data-note-id');
+                        const submitBtn = document.querySelector(`.submit-comment[data-note-id="${noteId}"]`);
+                        submitBtn.disabled = this.value.trim().length === 0;
+                    });
+                    
+                    input.addEventListener('keypress', function(e) {
+                        if (e.key === 'Enter' && e.ctrlKey) {
+                            const noteId = this.getAttribute('data-note-id');
+                            submitComment(noteId);
+                        }
+                    });
+                });
+                
+                document.querySelectorAll('.submit-comment').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const noteId = this.getAttribute('data-note-id');
+                        submitComment(noteId);
+                    });
+                });
+                
+                document.querySelectorAll('.cancel-comment').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const noteId = this.getAttribute('data-note-id');
+                        const commentInput = document.querySelector(`.comment-input[data-note-id="${noteId}"]`);
+                        commentInput.value = '';
+                        const submitBtn = document.querySelector(`.submit-comment[data-note-id="${noteId}"]`);
+                        submitBtn.disabled = true;
+                    });
+                });
+                
                 filterNotes();
                 
-                // Auto-scroll to the bottom (latest note)
                 setTimeout(() => {
                     notesList.scrollTop = notesList.scrollHeight;
                 }, 100);
             }
             
-            // Helper function to convert timecode to seconds for sorting
+            function submitComment(noteId) {
+                const commentInput = document.querySelector(`.comment-input[data-note-id="${noteId}"]`);
+                const text = commentInput.value.trim();
+                
+                if (text && window.socket) {
+                    window.socket.emit('comment-submit', {
+                        noteId: noteId,
+                        text: text
+                    });
+                    
+                    commentInput.value = '';
+                    const submitBtn = document.querySelector(`.submit-comment[data-note-id="${noteId}"]`);
+                    submitBtn.disabled = true;
+                }
+            }
+            
+            function formatCommentTime(timestamp) {
+                const date = new Date(timestamp);
+                const now = new Date();
+                const diffMs = now - date;
+                const diffMins = Math.floor(diffMs / 60000);
+                const diffHours = Math.floor(diffMs / 3600000);
+                
+                if (diffMins < 1) return 'Just now';
+                if (diffMins < 60) return `${diffMins}m ago`;
+                if (diffHours < 24) return `${diffHours}h ago`;
+                return date.toLocaleDateString();
+            }
+            
             function timecodeToSeconds(tc) {
                 if (!tc) return 0;
                 const hours = tc.hours || 0;
@@ -1442,24 +1813,10 @@
             }
             
             // Initial state
-            console.log('🎯 Initializing display with default timecode');
             updateGlobalTimecodeDisplay(currentGlobalTimecode);
             updatePersonalTimecodeDisplay(currentGlobalTimecode);
-            
-            // Test function to manually trigger timecode updates
-            window.testTimecode = function(hours, minutes, seconds, frames) {
-                const testTc = {
-                    hours: hours || 1,
-                    minutes: minutes || 23,
-                    seconds: seconds || 45,
-                    frames: frames || 15,
-                    frameRate: 30,
-                    source: 'test'
-                };
-                updateGlobalTimecodeDisplay(testTc);
-                updatePersonalTimecodeDisplay(testTc);
-                console.log('🧪 Manual test timecode applied:', formatTimecode(testTc));
-            };
+            updateGlobalLxCueDisplay(currentGlobalLxCue);
+            updatePersonalLxCueDisplay(currentGlobalLxCue);
         });
     </script>
 </body>

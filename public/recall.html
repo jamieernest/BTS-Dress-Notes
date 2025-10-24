@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MIDI Timecode Notes - Recall</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        
+        body {
+            background: linear-gradient(135deg, #1a2a6c, #b21f1f, #fdbb2d);
+            color: white;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5rem;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+        }
+        
+        .subtitle {
+            font-size: 1.2rem;
+            opacity: 0.9;
+            max-width: 600px;
+            margin: 0 auto 1rem;
+        }
+        
+        .back-link {
+            display: inline-block;
+            margin-top: 1rem;
+            padding: 0.5rem 1rem;
+            background: rgba(255, 152, 0, 0.3);
+            border: 1px solid rgba(255, 152, 0, 0.5);
+            border-radius: 5px;
+            color: white;
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+        
+        .back-link:hover {
+            background: rgba(255, 152, 0, 0.5);
+            transform: translateY(-2px);
+        }
+        
+        .upload-section {
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 15px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .upload-area {
+            border: 2px dashed rgba(255, 255, 255, 0.3);
+            border-radius: 10px;
+            padding: 2rem;
+            text-align: center;
+            margin-bottom: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .upload-area.drag-over {
+            border-color: rgba(255, 255, 255, 0.6);
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        .upload-area p {
+            margin-bottom: 1rem;
+            opacity: 0.8;
+        }
+        
+        .file-input {
+            display: none;
+        }
+        
+        .file-label {
+            display: inline-block;
+            padding: 0.8rem 1.5rem;
+            background: rgba(76, 175, 80, 0.3);
+            border: 1px solid rgba(76, 175, 80, 0.5);
+            border-radius: 5px;
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .file-label:hover {
+            background: rgba(76, 175, 80, 0.5);
+            transform: translateY(-2px);
+        }
+        
+        .file-info {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            display: none;
+        }
+        
+        .notes-section {
+            background: rgba(0, 0, 0, 0.7);
+            border-radius: 15px;
+            padding: 2rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            border: 2px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .notes-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        
+        .stats {
+            display: flex;
+            gap: 1rem;
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+        
+        .filter-section {
+            margin-bottom: 1rem;
+        }
+        
+        .tags-label {
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+            opacity: 0.8;
+        }
+        
+        .filter-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+        
+        .filter-tag {
+            display: inline-block;
+            padding: 0.3rem 0.8rem;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+        
+        .filter-tag.active {
+            border-color: white;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+        
+        .notes-list {
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .note-item {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            border-left: 4px solid #4CAF50;
+        }
+        
+        .note-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+        
+        .note-user {
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        
+        .note-timecode {
+            font-family: 'Courier New', monospace;
+        }
+        
+        .note-lx-cue {
+            font-family: 'Courier New', monospace;
+            color: #ff9800;
+            font-weight: bold;
+            margin-left: 1rem;
+        }
+        
+        .note-text {
+            line-height: 1.5;
+            margin-bottom: 0.5rem;
+        }
+        
+        .note-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.3rem;
+            margin-top: 0.5rem;
+        }
+        
+        .note-tag {
+            display: inline-block;
+            padding: 0.2rem 0.6rem;
+            border-radius: 10px;
+            font-size: 0.7rem;
+            font-weight: bold;
+        }
+        
+        /* Reactions Styles for Recall */
+        .note-reactions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.8rem;
+            padding-top: 0.5rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .reaction {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.3rem 0.6rem;
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+        
+        .reaction-emoji {
+            font-size: 1.2rem;
+        }
+        
+        .reaction-count {
+            font-weight: bold;
+        }
+        
+        button {
+            background: rgba(255, 255, 255, 0.15);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(5px);
+        }
+        
+        button:hover {
+            background: rgba(255, 255, 255, 0.25);
+            transform: translateY(-2px);
+        }
+        
+        button.primary {
+            background: rgba(76, 175, 80, 0.3);
+            border-color: rgba(76, 175, 80, 0.5);
+        }
+        
+        footer {
+            text-align: center;
+            margin-top: 2rem;
+            opacity: 0.7;
+            font-size: 0.9rem;
+        }
+        
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 2rem;
+            }
+            
+            .notes-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 1rem;
+            }
+            
+            .stats {
+                flex-wrap: wrap;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>MIDI Timecode Notes - Recall</h1>
+            <p class="subtitle">Review and filter exported notes from previous sessions</p>
+            <a href="/" class="back-link">← Back to Live Notes</a>
+        </header>
+        
+        <div class="upload-section">
+            <h2>Upload Exported File</h2>
+            <div class="upload-area" id="uploadArea">
+                <p>Drag and drop a JSON or CSV file here, or click to browse</p>
+                <input type="file" id="fileInput" class="file-input" accept=".json,.csv">
+                <label for="fileInput" class="file-label">Choose File</label>
+            </div>
+            <div class="file-info" id="fileInfo">
+                <strong>File:</strong> <span id="fileName">No file selected</span> | 
+                <strong>Type:</strong> <span id="fileType">-</span> | 
+                <strong>Notes:</strong> <span id="fileNotesCount">0</span>
+            </div>
+        </div>
+        
+        <div class="notes-section">
+            <div class="notes-header">
+                <h2>Imported Notes</h2>
+                <div class="stats">
+                    <span id="totalNotes">Total: 0 notes</span>
+                    <span id="filteredNotes">Showing: 0 notes</span>
+                </div>
+            </div>
+            
+            <div class="filter-section">
+                <div class="tags-label">Filter by Tags:</div>
+                <div class="filter-tags" id="filterTags">
+                    <div class="filter-tag active" data-tag="all">All Notes</div>
+                    <!-- Filter tags will be populated by JavaScript -->
+                </div>
+            </div>
+            
+            <div class="notes-list" id="notesList">
+                <div style="text-align: center; opacity: 0.7; padding: 2rem;">
+                    Upload a JSON or CSV file to view notes
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>MIDI Timecode Notes &copy; 2023 | Note Recall System</p>
+        </footer>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInput = document.getElementById('fileInput');
+            const fileInfo = document.getElementById('fileInfo');
+            const fileName = document.getElementById('fileName');
+            const fileType = document.getElementById('fileType');
+            const fileNotesCount = document.getElementById('fileNotesCount');
+            const filterTagsContainer = document.getElementById('filterTags');
+            const notesList = document.getElementById('notesList');
+            const totalNotes = document.getElementById('totalNotes');
+            const filteredNotes = document.getElementById('filteredNotes');
+            
+            let allNotes = [];
+            let availableTags = [];
+            let filterTag = 'all';
+            
+            // Drag and drop functionality
+            uploadArea.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                uploadArea.classList.add('drag-over');
+            });
+            
+            uploadArea.addEventListener('dragleave', function() {
+                uploadArea.classList.remove('drag-over');
+            });
+            
+            uploadArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                uploadArea.classList.remove('drag-over');
+                
+                if (e.dataTransfer.files.length) {
+                    handleFile(e.dataTransfer.files[0]);
+                }
+            });
+            
+            uploadArea.addEventListener('click', function() {
+                fileInput.click();
+            });
+            
+            fileInput.addEventListener('change', function() {
+                if (fileInput.files.length) {
+                    handleFile(fileInput.files[0]);
+                }
+            });
+            
+            function handleFile(file) {
+                const fileExtension = file.name.split('.').pop().toLowerCase();
+                
+                if (fileExtension !== 'json' && fileExtension !== 'csv') {
+                    alert('Please select a JSON or CSV file');
+                    return;
+                }
+                
+                fileName.textContent = file.name;
+                fileType.textContent = fileExtension.toUpperCase();
+                
+                const reader = new FileReader();
+                
+                reader.onload = function(e) {
+                    try {
+                        if (fileExtension === 'json') {
+                            const data = JSON.parse(e.target.result);
+                            processJsonData(data);
+                        } else {
+                            processCsvData(e.target.result);
+                        }
+                    } catch (error) {
+                        alert('Error parsing file: ' + error.message);
+                    }
+                };
+                
+                reader.readAsText(file);
+            }
+            
+            function processJsonData(data) {
+                if (data.notes && Array.isArray(data.notes)) {
+                    allNotes = data.notes;
+                    fileNotesCount.textContent = allNotes.length;
+                    fileInfo.style.display = 'block';
+                    
+                    // Extract tags from notes
+                    extractTags();
+                    updateNotesList();
+                    updateFilterTags();
+                    updateStats();
+                } else {
+                    alert('Invalid JSON format: Expected "notes" array');
+                }
+            }
+            
+            function processCsvData(csvText) {
+                const lines = csvText.split('\n');
+                if (lines.length < 2) {
+                    alert('CSV file is empty or has invalid format');
+                    return;
+                }
+                
+                // Parse CSV headers
+                const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
+                
+                // Find column indices
+                const userIndex = headers.indexOf('User');
+                const timecodeIndex = headers.indexOf('Timecode');
+                const lxCueIndex = headers.indexOf('LX Cue');
+                const frameRateIndex = headers.indexOf('Frame Rate');
+                const noteIndex = headers.indexOf('Note');
+                const tagsIndex = headers.indexOf('Tags');
+                const reactionsIndex = headers.indexOf('Reactions');
+                const timestampIndex = headers.indexOf('Timestamp');
+                
+                if (userIndex === -1 || noteIndex === -1) {
+                    alert('CSV file missing required columns (User, Note)');
+                    return;
+                }
+                
+                allNotes = [];
+                
+                // Parse each line
+                for (let i = 1; i < lines.length; i++) {
+                    if (!lines[i].trim()) continue;
+                    
+                    const values = parseCsvLine(lines[i]);
+                    
+                    if (values.length > Math.max(userIndex, noteIndex)) {
+                        // Parse reactions if available
+                        let reactions = [];
+                        if (reactionsIndex !== -1 && values[reactionsIndex]) {
+                            const reactionsStr = values[reactionsIndex].replace(/"/g, '');
+                            if (reactionsStr) {
+                                // Parse reactions in format "👍(2); ❤️(1)"
+                                const reactionParts = reactionsStr.split(';');
+                                reactionParts.forEach(part => {
+                                    const match = part.trim().match(/(.+?)\((\d+)\)/);
+                                    if (match) {
+                                        reactions.push({
+                                            emoji: match[1].trim(),
+                                            users: Array(parseInt(match[2])).fill('user') // Placeholder users
+                                        });
+                                    }
+                                });
+                            }
+                        }
+                        
+                        const note = {
+                            id: 'csv-' + i,
+                            user: values[userIndex].replace(/"/g, ''),
+                            text: values[noteIndex].replace(/"/g, ''),
+                            timecode: parseTimecode(values[timecodeIndex]),
+                            lxCue: lxCueIndex !== -1 ? values[lxCueIndex].replace(/"/g, '') : 'N/A',
+                            frameRate: frameRateIndex !== -1 ? values[frameRateIndex].replace(/"/g, '') : '30 fps',
+                            timestamp: timestampIndex !== -1 ? values[timestampIndex].replace(/"/g, '') : new Date().toISOString(),
+                            tags: tagsIndex !== -1 ? values[tagsIndex].replace(/"/g, '').split(',').map(t => t.trim()).filter(t => t) : [],
+                            reactions: reactions
+                        };
+                        
+                        allNotes.push(note);
+                    }
+                }
+                
+                fileNotesCount.textContent = allNotes.length;
+                fileInfo.style.display = 'block';
+                
+                // Extract tags from notes
+                extractTags();
+                updateNotesList();
+                updateFilterTags();
+                updateStats();
+            }
+            
+            function parseCsvLine(line) {
+                const result = [];
+                let current = '';
+                let inQuotes = false;
+                
+                for (let i = 0; i < line.length; i++) {
+                    const char = line[i];
+                    
+                    if (char === '"') {
+                        inQuotes = !inQuotes;
+                    } else if (char === ',' && !inQuotes) {
+                        result.push(current);
+                        current = '';
+                    } else {
+                        current += char;
+                    }
+                }
+                
+                result.push(current);
+                return result;
+            }
+            
+            function parseTimecode(timecodeStr) {
+                if (!timecodeStr) return { hours: 0, minutes: 0, seconds: 0, frames: 0 };
+                
+                const parts = timecodeStr.replace(/"/g, '').split(':');
+                if (parts.length === 4) {
+                    return {
+                        hours: parseInt(parts[0]) || 0,
+                        minutes: parseInt(parts[1]) || 0,
+                        seconds: parseInt(parts[2]) || 0,
+                        frames: parseInt(parts[3]) || 0
+                    };
+                }
+                
+                return { hours: 0, minutes: 0, seconds: 0, frames: 0 };
+            }
+            
+            function extractTags() {
+                availableTags = [];
+                const tagMap = new Map();
+                
+                allNotes.forEach(note => {
+                    if (note.tags && Array.isArray(note.tags)) {
+                        note.tags.forEach(tag => {
+                            if (typeof tag === 'string') {
+                                if (!tagMap.has(tag)) {
+                                    tagMap.set(tag, {
+                                        id: tag,
+                                        name: tag,
+                                        color: getRandomColor()
+                                    });
+                                }
+                            } else if (tag.id && tag.name) {
+                                if (!tagMap.has(tag.id)) {
+                                    tagMap.set(tag.id, {
+                                        id: tag.id,
+                                        name: tag.name,
+                                        color: tag.color || getRandomColor()
+                                    });
+                                }
+                            }
+                        });
+                    }
+                });
+                
+                availableTags = Array.from(tagMap.values());
+            }
+            
+            function updateFilterTags() {
+                filterTagsContainer.innerHTML = '<div class="filter-tag active" data-tag="all">All Notes</div>';
+                
+                availableTags.forEach(tag => {
+                    const filterTagElement = `
+                        <div class="filter-tag" data-tag="${tag.id}" style="background-color: ${tag.color}; color: #000;">
+                            ${tag.name}
+                        </div>
+                    `;
+                    filterTagsContainer.innerHTML += filterTagElement;
+                });
+                
+                document.querySelectorAll('.filter-tag').forEach(tag => {
+                    tag.addEventListener('click', function() {
+                        const tagId = this.getAttribute('data-tag');
+                        filterTag = tagId;
+                        
+                        document.querySelectorAll('.filter-tag').forEach(t => t.classList.remove('active'));
+                        this.classList.add('active');
+                        
+                        updateNotesList();
+                        updateStats();
+                    });
+                });
+            }
+            
+            function updateNotesList() {
+                if (allNotes.length === 0) {
+                    notesList.innerHTML = '<div style="text-align: center; opacity: 0.7; padding: 2rem;">No notes to display</div>';
+                    return;
+                }
+                
+                // Filter notes
+                let filteredNotes = allNotes;
+                if (filterTag !== 'all') {
+                    filteredNotes = allNotes.filter(note => 
+                        note.tags && note.tags.includes(filterTag)
+                    );
+                }
+                
+                // Sort by timestamp
+                const chronologicalNotes = [...filteredNotes].sort((a, b) => {
+                    if (a.timestamp && b.timestamp) {
+                        return new Date(a.timestamp) - new Date(b.timestamp);
+                    }
+                    return 0;
+                });
+                
+                notesList.innerHTML = chronologicalNotes.map(note => {
+                    const timecodeDisplay = formatTimecode(note.timecode);
+                    
+                    const tagElements = (note.tags || []).map(tagId => {
+                        const tag = availableTags.find(t => t.id === tagId);
+                        if (tag) {
+                            return `<span class="note-tag" style="background-color: ${tag.color}; color: #000;">${tag.name}</span>`;
+                        }
+                        return `<span class="note-tag" style="background-color: #cccccc; color: #000;">${tagId}</span>`;
+                    }).join('');
+                    
+                    // Reaction configuration for display
+                    const reactionElements = (note.reactions || []).map(reaction => {
+                        return `
+                            <div class="reaction">
+                                <span class="reaction-emoji">${reaction.emoji}</span>
+                                <span class="reaction-count">${reaction.users.length}</span>
+                            </div>
+                        `;
+                    }).join('');
+                    
+                    return `
+                        <div class="note-item" data-tags="${(note.tags || []).join(',')}">
+                            <div class="note-header">
+                                <span class="note-user">${note.user}</span>
+                                <span class="note-timecode">
+                                    ${timecodeDisplay} 
+                                    <span class="note-lx-cue">LX: ${note.lxCue || 'N/A'}</span>
+                                    @ ${note.frameRate || '30 fps'}
+                                </span>
+                            </div>
+                            <div class="note-text">${note.text}</div>
+                            ${(note.tags || []).length > 0 ? `<div class="note-tags">${tagElements}</div>` : ''}
+                            ${(note.reactions || []).length > 0 ? `<div class="note-reactions">${reactionElements}</div>` : ''}
+                        </div>
+                    `;
+                }).join('');
+            }
+            
+            function updateStats() {
+                totalNotes.textContent = `Total: ${allNotes.length} notes`;
+                
+                let filteredCount = allNotes.length;
+                if (filterTag !== 'all') {
+                    filteredCount = allNotes.filter(note => 
+                        note.tags && note.tags.includes(filterTag)
+                    ).length;
+                }
+                
+                filteredNotes.textContent = `Showing: ${filteredCount} notes`;
+            }
+            
+            function formatTimecode(tc) {
+                if (!tc || typeof tc !== 'object') {
+                    return '00:00:00:00';
+                }
+                return `${(tc.hours || 0).toString().padStart(2, '0')}:${(tc.minutes || 0).toString().padStart(2, '0')}:${(tc.seconds || 0).toString().padStart(2, '0')}:${(tc.frames || 0).toString().padStart(2, '0')}`;
+            }
+            
+            function getRandomColor() {
+                const colors = [
+                    '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', 
+                    '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F',
+                    '#E63946', '#F4A261', '#9B5DE5', '#00B4D8',
+                    '#06D6A0', '#118AB2', '#8AC926', '#FF6F91'
+                ];
+                return colors[Math.floor(Math.random() * colors.length)];
+            }
+        });
+    </script>
+</body>
+</html>
