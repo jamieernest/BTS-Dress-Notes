@@ -15,8 +15,10 @@ _Disclaimer: this was mostly AI generated (deepseek deepthink). It is unethical 
 
 5. Go into folder and install dependencies
 
-```cd BTS-Dress-Notes
-npm i```
+```
+cd BTS-Dress-Notes
+npm i
+```
 
 6. (For MIDI TC) Connect the Computer's MIDI out to the Gateway, and connect <strong>Another Interface's</strong> MIDI in to the MIDI thru port on the gateway
 
