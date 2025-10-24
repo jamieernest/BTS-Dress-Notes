@@ -93,6 +93,60 @@ try {
     console.log('EasyMIDI not available:', error.message);
 }
 
+// OSC Server for LX Cues
+let oscServer = null;
+try {
+    const { Server } = require('node-osc');
+    oscServer = new Server(8001, '0.0.0.0', () => {
+        console.log('OSC Server is listening on port 8001 for LX cues');
+    });
+
+    oscServer.on('message', function (msg) {
+        
+        // Parse OSC message for active cues
+        // Messages we're interested in:
+        // /eos/out/active/cue/text,1/199 B/O 1.0 2%
+        // /eos/out/pending/cue/text,1/201 Start 1.0
+        
+        const address = msg[0];
+        const value = msg[1];
+        
+        if (address === '/eos/out/active/cue/text' && value) {
+            // Extract cue name from value like "1/199 B/O 1.0 2%"
+            const cueMatch = value.match(/[^/]+\/(.+)/);
+            if (cueMatch && cueMatch[1]) {
+                const cueName = cueMatch[1].trim();
+                console.log(`Extracted active LX cue: ${cueName}`);
+                
+                // Update global state
+                globalState.currentLxCue = cueName;
+                
+                // Notify all clients
+                io.emit('lx-cue-update', cueName);
+            }
+        } else if (address === '/eos/out/pending/cue/text' && value) {
+            // Optionally handle pending cues too
+            const cueMatch = value.match(/[^/]+\/(.+)/);
+            if (cueMatch && cueMatch[1]) {
+                const cueName = cueMatch[1].trim();
+                console.log(`Extracted pending LX cue: ${cueName}`);
+                
+                // You could choose to update for pending cues too, or just log them
+                // globalState.currentLxCue = `Pending: ${cueName}`;
+                // io.emit('lx-cue-update', `Pending: ${cueName}`);
+            }
+        }
+    });
+
+    oscServer.on('error', (err) => {
+        console.log('OSC Server error:', err);
+    });
+
+} catch (error) {
+    console.log('OSC Server not available:', error.message);
+    console.log('LX cues will need to be entered manually');
+}
+
 // MIDI Timecode parsing
 let quarterFrameData = new Array(8).fill(0);
 let lastQuarterFrame = -1;
@@ -196,7 +250,8 @@ io.on('connection', (socket) => {
         midiAvailable: !!midiInput,
         portCount: midiInput ? require('easymidi').getInputs().length : 0,
         currentPort: openedPortName,
-        mtcMessagesReceived: mtcMessagesReceived
+        mtcMessagesReceived: mtcMessagesReceived,
+        oscAvailable: !!oscServer
     });
 
     // Notify about new user joining
@@ -266,10 +321,17 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Handle LX Cue change
+    // Handle LX Cue change (manual input - will be overridden by OSC)
     socket.on('lx-cue-change', (newCue) => {
-        globalState.currentLxCue = newCue;
-        io.emit('lx-cue-update', globalState.currentLxCue);
+        // Only update if OSC is not available, or allow manual override
+        if (!oscServer) {
+            globalState.currentLxCue = newCue;
+            io.emit('lx-cue-update', globalState.currentLxCue);
+        } else {
+            // OSC is available, so manual changes are temporary
+            // You could choose to still update or ignore manual changes
+            console.log('Manual LX cue change ignored - OSC source is active');
+        }
     });
     
     // Handle note submission
@@ -474,10 +536,14 @@ if (!midiInput) {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`MIDI Timecode Notes Server running on http://localhost:${PORT}`);
+    if (oscServer) {
+        console.log('OSC Server listening for LX cues on port 8001');
+    }
 });
 
 process.on('SIGINT', () => {
     if (demoInterval) clearInterval(demoInterval);
     if (midiInput) midiInput.close();
+    if (oscServer) oscServer.close();
     process.exit();
 });

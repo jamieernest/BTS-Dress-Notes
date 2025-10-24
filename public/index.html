@@ -229,6 +229,11 @@
             text-align: center;
         }
         
+        .lx-cue-input input:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
         .lx-cue-input input:focus {
             outline: none;
             border-color: #ff9800;
@@ -847,6 +852,7 @@
                 </div>
                 <div id="connectionStatus" class="status-disconnected">Disconnected from Server</div>
                 <div id="midiStatus" style="margin-top: 0.5rem;">MIDI Interface: Scanning...</div>
+                <div id="oscStatus" style="margin-top: 0.5rem;">LX Cues: Manual Input</div>
                 <div id="timeModeStatus" style="margin-top: 0.5rem;">Time Mode: MIDI Timecode</div>
                 <div id="userStatus" style="margin-top: 0.5rem;">Ready to take notes</div>
                 <ul class="users-list" id="usersList"></ul>
@@ -943,6 +949,7 @@
                 <div class="instruction-item">• Add tags to categorize your notes</div>
                 <div class="instruction-item">• Anyone can edit tags on any note</div>
                 <div class="instruction-item">• Add comments to notes for discussions</div>
+                <div class="instruction-item">• LX cues automatically update via OSC from EOS</div>
                 <div class="instruction-item">• Filter notes by tags to find what you need</div>
                 <div class="instruction-item">• Export all notes as JSON or CSV with timestamps</div>
                 <div class="instruction-item">• Toggle between Real Time and MIDI Timecode (Global)</div>
@@ -968,6 +975,7 @@
             const personalTimecodeContainer = document.getElementById('personalTimecode');
             const connectionStatus = document.getElementById('connectionStatus');
             const midiStatus = document.getElementById('midiStatus');
+            const oscStatus = document.getElementById('oscStatus');
             const timeModeStatus = document.getElementById('timeModeStatus');
             const userStatus = document.getElementById('userStatus');
             const sourceBadge = document.getElementById('sourceBadge');
@@ -1459,6 +1467,23 @@
                 } else {
                     midiStatus.textContent = 'MIDI Interface: No MIDI ports found - Running in demo mode';
                     midiStatus.className = '';
+                }
+                
+                // OSC Status
+                if (data.oscAvailable) {
+                    oscStatus.textContent = 'LX Cues: OSC Source Active (Auto-updating)';
+                    oscStatus.className = 'status-connected';
+                    
+                    // Disable manual LX cue input when OSC is active
+                    lxCueInput.disabled = true;
+                    lxCueInput.placeholder = 'Auto-updated via OSC';
+                } else {
+                    oscStatus.textContent = 'LX Cues: Manual Input';
+                    oscStatus.className = '';
+                    
+                    // Enable manual LX cue input
+                    lxCueInput.disabled = false;
+                    lxCueInput.placeholder = 'Cue Number';
                 }
             });
             
