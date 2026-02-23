@@ -319,7 +319,7 @@ io.on('connection', (socket) => {
     const clientIP = socket.handshake.address;
     const userIP = clientIP.replace(/^.*:/, '');
     const isOverlay = socket.handshake.headers.referer && 
-                     socket.handshake.headers.referer.includes('overlay.html');
+                     (socket.handshake.headers.referer.includes('overlay.html') || socket.handshake.headers.referer.includes('overlay-cast.html'));
     
     const user = {
         id: socket.id,
