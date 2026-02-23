@@ -896,14 +896,14 @@ document.addEventListener('DOMContentLoaded', function() {
             notesList.innerHTML = '<div style="text-align: center; opacity: 0.7; padding: 2rem;">No notes yet. Be the first to add one!</div>';
             return;
         }
-        
+
         const chronologicalNotes = [...allNotes].sort((a, b) => {
             if (a.timestamp && b.timestamp) {
                 return new Date(a.timestamp) - new Date(b.timestamp);
             }
             return timecodeToSeconds(a.timecode) - timecodeToSeconds(b.timecode);
         });
-        
+
         notesList.innerHTML = chronologicalNotes.map(note => {
             let timecodeDisplay;
             if (note.frameRate === 'ms') {
@@ -915,33 +915,26 @@ document.addEventListener('DOMContentLoaded', function() {
                     `${ms.toString().padStart(2, '0')}`;
             } else {
                 timecodeDisplay = formatTimecode(note.timecode);
-            }
+            }   
             
             const tagElements = note.tags.map(tagId => {
                 const tag = availableTags.find(t => t.id === tagId);
-                if (tag) {
-                    return `<span class="note-tag" style="background-color: ${tag.color}; color: #000;">${tag.name}</span>`;
-                }
-                return `<span class="note-tag" style="background-color: #cccccc; color: #000;">${tagId}</span>`;
+                return tag ? `<span class="note-tag" style="background-color: ${tag.color}; color: #000;">${tag.name}</span>`
+                        : `<span class="note-tag" style="background-color: #cccccc; color: #000;">${tagId}</span>`;
             }).join('');
-            
-            const editButton = `<button class="small edit-tags-btn" data-note-id="${note.id}">Edit Tags</button>`;
-            const editNoteButton = `<button class="small edit-note-btn" data-note-id="${note.id}">Edit Note</button>`;
-            
-            // Edited indicator
+
+            const editButton = `<button class="small edit-tags-btn" data-action="edit-tags" data-note-id="${note.id}">Edit Tags</button>`;
+            const editNoteButton = `<button class="small edit-note-btn" data-action="edit-note" data-note-id="${note.id}">Edit Note</button>`;
+
             const editedIndicator = note.lastEdited ? 
-                `<div class="note-edited" style="font-size: 0.7rem; opacity: 0.7; margin-top: 0.3rem;">
-                    Last edited by ${note.lastEditedBy || 'unknown'} at ${new Date(note.lastEdited).toLocaleTimeString()}
-                </div>` : '';
-            
-            // Check if this note's comments should be expanded
+                `<div class="note-edited">Last edited by ${note.lastEditedBy || 'unknown'} at ${new Date(note.lastEdited).toLocaleTimeString()}</div>` : '';
+
             const isCommentsExpanded = expandedCommentSections.has(note.id);
             const commentCount = note.comments ? note.comments.length : 0;
-            
-            // Comments section (conditionally expanded)
+
             const commentsSection = `
                 <div class="comments-section">
-                    <button class="comments-toggle ${isCommentsExpanded ? 'expanded' : ''}" data-note-id="${note.id}">
+                    <button class="comments-toggle ${isCommentsExpanded ? 'expanded' : ''}" data-action="toggle-comments" data-note-id="${note.id}">
                         <span>Comments</span>
                         <span class="count">${commentCount}</span>
                         <span class="arrow">▼</span>
@@ -961,24 +954,24 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <textarea class="comment-text-edit" style="display: none">${comment.text}</textarea>
                                 </div>
                                 <div class="comment-actions" style="margin-top: 0.5rem;">
-                                    <button class="small edit-comment-btn" data-note-id="${note.id}" data-comment-id="${comment.id}">Edit</button>
-                                    <button class="small delete-comment-btn" data-note-id="${note.id}" data-comment-id="${comment.id}">Delete</button>
-                                    <button class="small save-comment-btn" data-note-id="${note.id}" data-comment-id="${comment.id}" style="display: none">Save</button>
-                                    <button class="small cancel-comment-btn" data-note-id="${note.id}" data-comment-id="${comment.id}" style="display: none">Cancel</button>
+                                    <button class="small edit-comment-btn" data-action="edit-comment" data-note-id="${note.id}" data-comment-id="${comment.id}">Edit</button>
+                                    <button class="small delete-comment-btn" data-action="delete-comment" data-note-id="${note.id}" data-comment-id="${comment.id}">Delete</button>
+                                    <button class="small save-comment-btn" data-action="save-comment" data-note-id="${note.id}" data-comment-id="${comment.id}" style="display: none">Save</button>
+                                    <button class="small cancel-comment-btn" data-action="cancel-comment" data-note-id="${note.id}" data-comment-id="${comment.id}" style="display: none">Cancel</button>
                                 </div>
                             </div>
                         `).join('') : ''}
                     </div>
                     <div class="comment-input-area ${isCommentsExpanded ? 'expanded' : ''}" id="comment-input-${note.id}">
-                        <textarea class="comment-input" placeholder="Add a comment..." data-note-id="${note.id}"></textarea>
+                        <textarea class="comment-input" data-action="comment-input" data-note-id="${note.id}" placeholder="Add a comment..."></textarea>
                         <div class="comment-actions">
-                            <button class="small secondary cancel-comment" data-note-id="${note.id}">Cancel</button>
-                            <button class="small primary submit-comment" data-note-id="${note.id}" disabled>Submit</button>
+                            <button class="small secondary cancel-comment" data-action="cancel-comment-input" data-note-id="${note.id}">Cancel</button>
+                            <button class="small primary submit-comment" data-action="submit-comment" data-note-id="${note.id}" disabled>Submit</button>
                         </div>
                     </div>
                 </div>
             `;
-            
+
             return `
                 <div class="note-item" data-tags="${note.tags.join(',')}" data-act="${note.act || 'Preshow'}">
                     <div class="note-header">
@@ -1005,230 +998,10 @@ document.addEventListener('DOMContentLoaded', function() {
             `;
         }).join('');
 
-        // Add event listeners for edit tags buttons
-        document.querySelectorAll('.edit-tags-btn').forEach(button => {
-            button.addEventListener('click', function() {
-                const noteId = this.getAttribute('data-note-id');
-                const note = allNotes.find(n => n.id === noteId);
-                
-                if (note) {
-                    currentlyEditingNoteId = noteId;
-                    updateEditTagsDisplay(note.tags);
-                    editTagsModal.style.display = 'flex';
-                }
-            });
-        });
-        
-        // Add event listeners for edit note buttons
-        document.querySelectorAll('.edit-note-btn').forEach(button => {
-            button.addEventListener('click', function() {
-                const noteId = this.getAttribute('data-note-id');
-                const noteItem = this.closest('.note-item');
-                const display = noteItem.querySelector('.note-text-display');
-                const textarea = noteItem.querySelector('.note-text-edit');
-                const editButton = noteItem.querySelector('.edit-note-btn');
-                
-                if (display.style.display !== 'none') {
-                    // Switch to edit mode
-                    display.style.display = 'none';
-                    textarea.style.display = 'block';
-                    textarea.focus();
-                    editButton.textContent = 'Save Note';
-                    editButton.classList.add('primary');
-                } else {
-                    // Save and switch back to display mode
-                    const newText = textarea.value.trim();
-                    if (newText && newText !== display.textContent) {
-                        window.socket.emit('note-edit-text', {
-                            noteId: noteId,
-                            newText: newText
-                        });
-                    }
-                    display.style.display = 'block';
-                    textarea.style.display = 'none';
-                    editButton.textContent = 'Edit Note';
-                    editButton.classList.remove('primary');
-                }
-            });
-        });
-        
-        // Add event listeners for comments toggle
-        document.querySelectorAll('.comments-toggle').forEach(button => {
-            button.addEventListener('click', function() {
-                const noteId = this.getAttribute('data-note-id');
-                const commentsContainer = document.getElementById(`comments-${noteId}`);
-                const commentInputArea = document.getElementById(`comment-input-${noteId}`);
-                
-                if (commentsContainer.classList.contains('expanded')) {
-                    // Collapse
-                    commentsContainer.classList.remove('expanded');
-                    commentInputArea.classList.remove('expanded');
-                    this.classList.remove('expanded');
-                    expandedCommentSections.delete(noteId); // Remove from tracking
-                } else {
-                    // Expand
-                    commentsContainer.classList.add('expanded');
-                    commentInputArea.classList.add('expanded');
-                    this.classList.add('expanded');
-                    expandedCommentSections.add(noteId); // Add to tracking
-                }
-            });
-        });
-        
-        // Add event listeners for comment editing
-        document.querySelectorAll('.edit-comment-btn').forEach(button => {
-            button.addEventListener('click', function() {
-                const noteId = this.getAttribute('data-note-id');
-                const commentId = this.getAttribute('data-comment-id');
-                const commentItem = document.querySelector(`.comment-item[data-comment-id="${commentId}"]`);
-                const display = commentItem.querySelector('.comment-text-display');
-                const textarea = commentItem.querySelector('.comment-text-edit');
-                const editBtn = commentItem.querySelector('.edit-comment-btn');
-                const deleteBtn = commentItem.querySelector('.delete-comment-btn');
-                const saveBtn = commentItem.querySelector('.save-comment-btn');
-                const cancelBtn = commentItem.querySelector('.cancel-comment-btn');
-                
-                // Switch to edit mode
-                display.style.display = 'none';
-                textarea.style.display = 'block';
-                textarea.focus();
-                editBtn.style.display = 'none';
-                deleteBtn.style.display = 'none';
-                saveBtn.style.display = 'inline-block';
-                cancelBtn.style.display = 'inline-block';
-            });
-        });
-        
-        // Add event listeners for comment saving
-        document.querySelectorAll('.save-comment-btn').forEach(button => {
-            button.addEventListener('click', function() {
-                const noteId = this.getAttribute('data-note-id');
-                const commentId = this.getAttribute('data-comment-id');
-                const commentItem = document.querySelector(`.comment-item[data-comment-id="${commentId}"]`);
-                const display = commentItem.querySelector('.comment-text-display');
-                const textarea = commentItem.querySelector('.comment-text-edit');
-                const editBtn = commentItem.querySelector('.edit-comment-btn');
-                const deleteBtn = commentItem.querySelector('.delete-comment-btn');
-                const saveBtn = commentItem.querySelector('.save-comment-btn');
-                const cancelBtn = commentItem.querySelector('.cancel-comment-btn');
-                
-                const newText = textarea.value.trim();
-                if (newText) {
-                    window.socket.emit('comment-edit', {
-                        noteId: noteId,
-                        commentId: commentId,
-                        newText: newText
-                    });
-                }
-                
-                // Switch back to display mode
-                display.style.display = 'block';
-                textarea.style.display = 'none';
-                editBtn.style.display = 'inline-block';
-                deleteBtn.style.display = 'inline-block';
-                saveBtn.style.display = 'none';
-                cancelBtn.style.display = 'none';
-            });
-        });
-        
-        // Add event listeners for comment cancellation
-        document.querySelectorAll('.cancel-comment-btn').forEach(button => {
-            button.addEventListener('click', function() {
-                const commentId = this.getAttribute('data-comment-id');
-                const commentItem = document.querySelector(`.comment-item[data-comment-id="${commentId}"]`);
-                const display = commentItem.querySelector('.comment-text-display');
-                const textarea = commentItem.querySelector('.comment-text-edit');
-                const editBtn = commentItem.querySelector('.edit-comment-btn');
-                const deleteBtn = commentItem.querySelector('.delete-comment-btn');
-                const saveBtn = commentItem.querySelector('.save-comment-btn');
-                const cancelBtn = commentItem.querySelector('.cancel-comment-btn');
-                
-                // Reset textarea to original value and switch back to display mode
-                textarea.value = display.textContent;
-                display.style.display = 'block';
-                textarea.style.display = 'none';
-                editBtn.style.display = 'inline-block';
-                deleteBtn.style.display = 'inline-block';
-                saveBtn.style.display = 'none';
-                cancelBtn.style.display = 'none';
-            });
-        });
-        
-        // Add event listeners for comment deletion
-        document.querySelectorAll('.delete-comment-btn').forEach(button => {
-            button.addEventListener('click', function() {
-                const noteId = this.getAttribute('data-note-id');
-                const commentId = this.getAttribute('data-comment-id');
-                
-                if (confirm('Are you sure you want to delete this comment?')) {
-                    window.socket.emit('comment-delete', {
-                        noteId: noteId,
-                        commentId: commentId
-                    });
-                }
-            });
-        });
-        
-        // Add event listeners for comment submission
-        document.querySelectorAll('.comment-input').forEach(input => {
-            input.addEventListener('input', function() {
-                const noteId = this.getAttribute('data-note-id');
-                const submitBtn = document.querySelector(`.submit-comment[data-note-id="${noteId}"]`);
-                submitBtn.disabled = this.value.trim().length === 0;
-            });
-            
-            input.addEventListener('keypress', function(e) {
-                if (e.key === 'Enter' && e.ctrlKey) {
-                    const noteId = this.getAttribute('data-note-id');
-                    submitComment(noteId);
-                }
-            });
-        });
-        
-        document.querySelectorAll('.submit-comment').forEach(button => {
-            button.addEventListener('click', function() {
-                const noteId = this.getAttribute('data-note-id');
-                submitComment(noteId);
-            });
-        });
-        
-        document.querySelectorAll('.cancel-comment').forEach(button => {
-            button.addEventListener('click', function() {
-                const noteId = this.getAttribute('data-note-id');
-                const commentInput = document.querySelector(`.comment-input[data-note-id="${noteId}"]`);
-                commentInput.value = '';
-                const submitBtn = document.querySelector(`.submit-comment[data-note-id="${noteId}"]`);
-                submitBtn.disabled = true;
-            });
-        });
-
         updateActFilter();
-        
         filterNotes();
-        
-        setTimeout(() => {
-            notesList.scrollTop = notesList.scrollHeight;
-        }, 100);
-    }
-    
-    function submitComment(noteId) {
-        const commentInput = document.querySelector(`.comment-input[data-note-id="${noteId}"]`);
-        const text = commentInput.value.trim();
-        
-        if (text && window.socket) {
-            window.socket.emit('comment-submit', {
-                noteId: noteId,
-                text: text
-            });
-            
-            // Clear the input but keep the section expanded
-            commentInput.value = '';
-            const submitBtn = document.querySelector(`.submit-comment[data-note-id="${noteId}"]`);
-            submitBtn.disabled = true;
-            
-            // Ensure the comments section stays expanded by adding to our tracking set
-            expandedCommentSections.add(noteId);
-        }
+
+        // No more individual event listeners here!
     }
     
     function formatCommentTime(timestamp) {
@@ -1301,6 +1074,197 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     sendChatBtn.addEventListener('click', sendChatMessage);
+
+    // Delegate clicks on the notes list
+    notesList.addEventListener('click', (e) => {
+        const button = e.target.closest('button');
+        if (!button) return;
+
+        const action = button.dataset.action;
+        if (!action) return;
+
+        const noteId = button.dataset.noteId;
+
+        // --- Edit Tags ---
+        if (action === 'edit-tags') {
+            const note = allNotes.find(n => n.id === noteId);
+            if (note) {
+                currentlyEditingNoteId = noteId;
+                updateEditTagsDisplay(note.tags);
+                editTagsModal.style.display = 'flex';
+            }
+        }
+
+        // --- Toggle Comments ---
+        if (action === 'toggle-comments') {
+            const commentsContainer = document.getElementById(`comments-${noteId}`);
+            const commentInputArea = document.getElementById(`comment-input-${noteId}`);
+            if (commentsContainer.classList.contains('expanded')) {
+                commentsContainer.classList.remove('expanded');
+                commentInputArea.classList.remove('expanded');
+                button.classList.remove('expanded');
+                expandedCommentSections.delete(noteId);
+            } else {
+                commentsContainer.classList.add('expanded');
+                commentInputArea.classList.add('expanded');
+                button.classList.add('expanded');
+                expandedCommentSections.add(noteId);
+            }
+        }
+
+        // --- Edit Note (toggle edit mode) ---
+        if (action === 'edit-note') {
+            const noteItem = button.closest('.note-item');
+            const display = noteItem.querySelector('.note-text-display');
+            const textarea = noteItem.querySelector('.note-text-edit');
+            if (display.style.display !== 'none') {
+                // Switch to edit mode
+                display.style.display = 'none';
+                textarea.style.display = 'block';
+                textarea.focus();
+                button.textContent = 'Save Note';
+                button.dataset.action = 'save-note'; // Change action for next click
+            } else {
+                // Already in edit mode – treat as save (should not happen because button now has action 'save-note')
+            }
+        }
+
+        // --- Save Note (after editing) ---
+        if (action === 'save-note') {
+            const noteItem = button.closest('.note-item');
+            const display = noteItem.querySelector('.note-text-display');
+            const textarea = noteItem.querySelector('.note-text-edit');
+            const newText = textarea.value.trim();
+            if (newText && newText !== display.textContent) {
+                window.socket.emit('note-edit-text', {
+                    noteId: noteId,
+                    newText: newText
+                });
+            }
+            // Switch back to view mode
+            display.textContent = newText || display.textContent; // fallback to old if empty
+            display.style.display = 'block';
+            textarea.style.display = 'none';
+            button.textContent = 'Edit Note';
+            button.dataset.action = 'edit-note';
+        }
+
+        // --- Edit Comment ---
+        if (action === 'edit-comment') {
+            const commentId = button.dataset.commentId;
+            const commentItem = button.closest('.comment-item');
+            const display = commentItem.querySelector('.comment-text-display');
+            const textarea = commentItem.querySelector('.comment-text-edit');
+            const editBtn = commentItem.querySelector('[data-action="edit-comment"]');
+            const deleteBtn = commentItem.querySelector('[data-action="delete-comment"]');
+            const saveBtn = commentItem.querySelector('[data-action="save-comment"]');
+            const cancelBtn = commentItem.querySelector('[data-action="cancel-comment"]');
+
+            display.style.display = 'none';
+            textarea.style.display = 'block';
+            textarea.focus();
+            editBtn.style.display = 'none';
+            deleteBtn.style.display = 'none';
+            saveBtn.style.display = 'inline-block';
+            cancelBtn.style.display = 'inline-block';
+        }
+
+        // --- Save Comment ---
+        if (action === 'save-comment') {
+            const commentId = button.dataset.commentId;
+            const commentItem = button.closest('.comment-item');
+            const display = commentItem.querySelector('.comment-text-display');
+            const textarea = commentItem.querySelector('.comment-text-edit');
+            const newText = textarea.value.trim();
+            if (newText) {
+                window.socket.emit('comment-edit', {
+                    noteId: noteId,
+                    commentId: commentId,
+                    newText: newText
+                });
+            }
+            // Switch back to view mode
+            display.style.display = 'block';
+            textarea.style.display = 'none';
+            // Hide save/cancel, show edit/delete
+            const editBtn = commentItem.querySelector('[data-action="edit-comment"]');
+            const deleteBtn = commentItem.querySelector('[data-action="delete-comment"]');
+            const saveBtn = commentItem.querySelector('[data-action="save-comment"]');
+            const cancelBtn = commentItem.querySelector('[data-action="cancel-comment"]');
+            editBtn.style.display = 'inline-block';
+            deleteBtn.style.display = 'inline-block';
+            saveBtn.style.display = 'none';
+            cancelBtn.style.display = 'none';
+        }
+
+        // --- Cancel Comment Edit ---
+        if (action === 'cancel-comment') {
+            const commentId = button.dataset.commentId;
+            const commentItem = button.closest('.comment-item');
+            const display = commentItem.querySelector('.comment-text-display');
+            const textarea = commentItem.querySelector('.comment-text-edit');
+            // Reset textarea to original value
+            textarea.value = display.textContent;
+            display.style.display = 'block';
+            textarea.style.display = 'none';
+            const editBtn = commentItem.querySelector('[data-action="edit-comment"]');
+            const deleteBtn = commentItem.querySelector('[data-action="delete-comment"]');
+            const saveBtn = commentItem.querySelector('[data-action="save-comment"]');
+            const cancelBtn = commentItem.querySelector('[data-action="cancel-comment"]');
+            editBtn.style.display = 'inline-block';
+            deleteBtn.style.display = 'inline-block';
+            saveBtn.style.display = 'none';
+            cancelBtn.style.display = 'none';
+        }
+
+        // --- Delete Comment ---
+        if (action === 'delete-comment') {
+            const commentId = button.dataset.commentId;
+            if (confirm('Are you sure you want to delete this comment?')) {
+                window.socket.emit('comment-delete', {
+                    noteId: noteId,
+                    commentId: commentId
+                });
+            }
+        }
+
+        // --- Submit Comment ---
+        if (action === 'submit-comment') {
+            const commentInput = document.querySelector(`.comment-input[data-note-id="${noteId}"]`);
+            const text = commentInput.value.trim();
+            if (text) {
+                window.socket.emit('comment-submit', {
+                    noteId: noteId,
+                    text: text
+                });
+                commentInput.value = '';
+                // Disable submit button
+                button.disabled = true;
+                // Ensure comments stay expanded
+                expandedCommentSections.add(noteId);
+            }
+        }
+
+        // --- Cancel Comment Input (clears text) ---
+        if (action === 'cancel-comment-input') {
+            const commentInput = document.querySelector(`.comment-input[data-note-id="${noteId}"]`);
+            commentInput.value = '';
+            const submitBtn = document.querySelector(`[data-action="submit-comment"][data-note-id="${noteId}"]`);
+            if (submitBtn) submitBtn.disabled = true;
+        }
+    });
+
+    // Delegate input events on the notes list (for comment input enable/disable)
+    notesList.addEventListener('input', (e) => {
+        const target = e.target;
+        if (target.dataset.action === 'comment-input') {
+            const noteId = target.dataset.noteId;
+            const submitBtn = document.querySelector(`[data-action="submit-comment"][data-note-id="${noteId}"]`);
+            if (submitBtn) {
+                submitBtn.disabled = target.value.trim().length === 0;
+            }
+        }
+    });
 
     function sendChatMessage() {
         const messageText = chatInput.value.trim();
