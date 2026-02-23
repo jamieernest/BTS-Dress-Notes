@@ -3,10 +3,15 @@ const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const fs = require('fs');
+const net = require('net');
+const { Server, Message, encode, decode } = require('node-osc');
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
+
+const eosHost = process.env.EOS_HOST || '10.10.160.143'; 
+const eosPort = process.env.EOS_PORT || 3037; 
 
 app.set('trust proxy', true);
 io.engine.trustProxy = true; 
@@ -109,10 +114,42 @@ try {
     console.log('EasyMIDI not available:', error.message);
 }
 
+const connectMessage = new Message('/eos/subscribe=1');
+const buffer = encode(connectMessage);
+
+let eosClient = new net.Socket();
+eosClient.connect(eosPort, eosHost);
+
+eosClient.on('connect', function() {
+    console.log('Connected to EOS');
+    eosClient.write(buffer);
+});
+
+eosClient.on('data', function(data) {
+	console.log('Received: ' + data.toString().replace(/[^\x20-\x7E]/g, '').trim());
+    let value = data.toString().replace(/[^\x20-\x7E]/g, '').trim()
+    if(value.startsWith('/eos/out/active/cue/text')) {
+        const cueMatch = value.split('/')
+        if (cueMatch && cueMatch[6]) {
+            const cueName = cueMatch[6].trim();
+            console.log(`Extracted active LX cue: ${cueName}`);
+            
+            // Update global state
+            globalState.currentLxCue = cueName;
+            
+            // Notify all clients
+            io.emit('lx-cue-update', cueName);
+        }
+    }
+});
+
+eosClient.on('error', function(err) {
+    console.log('Error connecting to EOS:', err);
+});
+
 // OSC Server for LX Cues and scenes from qlab
 let oscServer = null;
 try {
-    const { Server } = require('node-osc');
     oscServer = new Server(8001, '0.0.0.0', () => {
         console.log('OSC Server is listening on port 8001 for LX cues');
     });
