@@ -651,6 +651,31 @@ io.on('connection', (socket) => {
         }
     });
     
+    // Handle backup import (only for non‑overlay users)
+    socket.on('import-backup', (data) => {
+        if (user.isOverlay) return; // Overlay users can't import
+
+        // Validate that the backup contains a notes array and optionally tags
+        if (data && Array.isArray(data.notes)) {
+            globalState.notes = data.notes;
+            
+            // Restore tags if present in backup
+            if (data.tags && Array.isArray(data.tags)) {
+                globalState.tags = data.tags;
+                saveTagsToFile(); // Save to tags.json
+            }
+
+            // Broadcast updates to all clients
+            io.emit('notes-update', globalState.notes);
+            io.emit('tags-update', globalState.tags);
+
+            // Notify the importer of success
+            socket.emit('import-success', 'Backup imported successfully.');
+        } else {
+            socket.emit('import-error', 'Invalid backup format (missing notes array).');
+        }
+    });
+
     // Handle export requests (only for non-overlay users)
     socket.on('export-request', (format) => {
         if (user.isOverlay) return; // Overlay users can't export

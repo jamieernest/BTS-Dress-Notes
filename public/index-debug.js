@@ -1328,6 +1328,42 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         });
     }
+
+    // Import backup functionality
+    document.getElementById('importBackupBtn').addEventListener('click', () => {
+        document.getElementById('backupFileInput').click();
+    });
+
+    document.getElementById('backupFileInput').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            try {
+                const backup = JSON.parse(event.target.result);
+                // Confirm before overwriting
+                if (confirm('Importing will replace all current notes and tags. Continue?')) {
+                    window.socket.emit('import-backup', backup);
+                }
+            } catch (err) {
+                alert('Invalid JSON file.');
+            }
+        };
+        reader.readAsText(file);
+
+        // Reset the file input so the same file can be selected again
+        e.target.value = '';
+    });
+
+    // Handle server responses
+    window.socket.on('import-success', (msg) => {
+        alert(msg);
+    });
+
+    window.socket.on('import-error', (msg) => {
+        alert('Import error: ' + msg);
+    });
     
     // Initial state
     startNameTimeout();
