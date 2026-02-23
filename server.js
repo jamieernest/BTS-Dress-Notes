@@ -5,6 +5,8 @@ const path = require('path');
 const fs = require('fs');
 const net = require('net');
 const { Server, Message, encode, decode } = require('node-osc');
+const { connect } = require('http2');
+const { clear } = require('console');
 
 const app = express();
 const server = http.createServer(app);
@@ -117,35 +119,44 @@ try {
 const connectMessage = new Message('/eos/subscribe=1');
 const buffer = encode(connectMessage);
 
-let eosClient = new net.Socket();
-eosClient.connect(eosPort, eosHost);
+function subscribeToEOS() {
+    let eosClient = new net.Socket();
+    eosClient.connect(eosPort, eosHost);
 
-eosClient.on('connect', function() {
-    console.log('Connected to EOS');
-    eosClient.write(buffer);
-});
+    eosClient.on('connect', function() {
+        console.log('Connected to EOS');
+        eosClient.write(buffer);
+    });
 
-eosClient.on('data', function(data) {
-	console.log('Received: ' + data.toString().replace(/[^\x20-\x7E]/g, '').trim());
-    let value = data.toString().replace(/[^\x20-\x7E]/g, '').trim()
-    if(value.startsWith('/eos/out/active/cue/text')) {
-        const cueMatch = value.split('/')
-        if (cueMatch && cueMatch[6]) {
-            const cueName = cueMatch[6].trim();
-            console.log(`Extracted active LX cue: ${cueName}`);
-            
-            // Update global state
-            globalState.currentLxCue = cueName;
-            
-            // Notify all clients
-            io.emit('lx-cue-update', cueName);
+    eosClient.on('data', function(data) {
+        console.log('Received: ' + data.toString().replace(/[^\x20-\x7E]/g, '').trim());
+        let value = data.toString().replace(/[^\x20-\x7E]/g, '').trim()
+        if(value.startsWith('/eos/out/active/cue/text')) {
+            const cueMatch = value.split('/')
+            if (cueMatch && cueMatch[6]) {
+                const cueName = cueMatch[6].trim();
+                console.log(`Extracted active LX cue: ${cueName}`);
+                
+                // Update global state
+                globalState.currentLxCue = cueName;
+                
+                // Notify all clients
+                io.emit('lx-cue-update', cueName);
+            }
         }
-    }
-});
+    });
 
-eosClient.on('error', function(err) {
-    console.log('Error connecting to EOS:', err);
-});
+    eosClient.on('error', function(err) {
+        console.log('Error connecting to EOS:', err);
+        let retryInterval = setInterval(() => {
+            subscribeToEOS();
+        }, 10000); // Retry every 10 seconds
+        eosClient.on('connect', function() { 
+            clearInterval(retryInterval); // Clear retry interval on successful connection
+        });
+
+    });
+}
 
 // OSC Server for LX Cues and scenes from qlab
 let oscServer = null;
@@ -812,6 +823,8 @@ server.listen(PORT, () => {
     if (oscServer) {
         console.log('OSC Server listening for LX cues on port 8001');
     }
+    
+    subscribeToEOS();
 });
 
 process.on('SIGINT', () => {
