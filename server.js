@@ -8,6 +8,9 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
+app.set('trust proxy', true);
+io.engine.trustProxy = true; 
+
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -316,7 +319,12 @@ process.on('SIGINT', () => {
 io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
     
-    const clientIP = socket.handshake.address;
+    let clientIP = socket.handshake.address;
+    const forwardedFor = socket.handshake.headers['x-forwarded-for'];
+    if (forwardedFor) {
+        // X-Forwarded-For may contain multiple IPs; the leftmost is the original client
+        clientIP = forwardedFor.split(',')[0].trim();
+    }
     const userIP = clientIP.replace(/^.*:/, '');
     const isOverlay = socket.handshake.headers.referer && 
                      (socket.handshake.headers.referer.includes('overlay.html') || socket.handshake.headers.referer.includes('overlay-cast.html'));
