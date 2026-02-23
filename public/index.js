@@ -1266,6 +1266,21 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // Delegate keydown on the notes list (for comment Enter-to-submit)
+    notesList.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            const target = e.target;
+            if (target.dataset.action === 'comment-input') {
+                e.preventDefault(); // Prevent newline
+                const noteId = target.dataset.noteId;
+                const submitBtn = document.querySelector(`[data-action="submit-comment"][data-note-id="${noteId}"]`);
+                if (submitBtn && !submitBtn.disabled) {
+                    submitBtn.click();
+                }
+            }
+        }
+    });
+
     function sendChatMessage() {
         const messageText = chatInput.value.trim();
         if (messageText) {
