@@ -4,9 +4,7 @@ const socketIo = require('socket.io');
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
-const { Server, Message, encode, decode } = require('node-osc');
-const { connect } = require('http2');
-const { clear } = require('console');
+const { Server, Message, encode } = require('node-osc');
 
 const app = express();
 const server = http.createServer(app);
@@ -147,14 +145,7 @@ function subscribeToEOS() {
     });
 
     eosClient.on('error', function(err) {
-        console.log('Error connecting to EOS:', err);
-        let retryInterval = setInterval(() => {
-            subscribeToEOS();
-        }, 10000); // Retry every 10 seconds
-        eosClient.on('connect', function() { 
-            clearInterval(retryInterval); // Clear retry interval on successful connection
-        });
-
+        console.log('Error connecting to EOS via TCP:', err);
     });
 }
 
@@ -162,7 +153,7 @@ function subscribeToEOS() {
 let oscServer = null;
 try {
     oscServer = new Server(8001, '0.0.0.0', () => {
-        console.log('OSC Server is listening on port 8001 for LX cues');
+        console.log('OSC Server is listening on port 8001 for LX cues and Scene info');
     });
 
     oscServer.on('message', function (msg) {
