@@ -1002,6 +1002,10 @@ document.addEventListener('DOMContentLoaded', function() {
         filterNotes();
         
         // Auto-scroll to bottom to show the latest notes/comments
+
+        // dont scroll if user is typing comment
+        if(document.activeElement && document.activeElement.classList.contains("comment-input")) return;
+        
         setTimeout(() => {
             notesList.scrollTop = notesList.scrollHeight;
         }, 100);
