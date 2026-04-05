@@ -1,4 +1,3 @@
-
 document.addEventListener('DOMContentLoaded', function() {
     // Existing variable declarations
     const globalTimecodeElement = document.getElementById('globalTimecode');
@@ -56,6 +55,83 @@ document.addEventListener('DOMContentLoaded', function() {
     const chatMessages = document.getElementById('chatMessages');
     const chatCount = document.getElementById('chatCount');
     const chatUserName = document.getElementById('chatUserName');
+
+    // Scrolling
+    const scrollToBottomBtn = document.getElementById('scrollToBottomBtn');
+    let lastScrollTop = 0;
+
+    // preserve comment input values across re-renders ----
+    let savedCommentInputs = {};        // { noteId: text }
+    let focusedCommentNoteId = null;    // noteId of the comment input that had focus
+
+    function captureCommentInputs() {
+        // Save current text of all comment inputs
+        savedCommentInputs = {};
+        const allCommentInputs = document.querySelectorAll('.comment-input');
+        allCommentInputs.forEach(input => {
+            const noteId = input.dataset.noteId;
+            if (noteId) {
+                savedCommentInputs[noteId] = input.value;
+            }
+        });
+        // Save which comment input (if any) is focused
+        const active = document.activeElement;
+        if (active && active.classList && active.classList.contains('comment-input')) {
+            focusedCommentNoteId = active.dataset.noteId;
+        } else {
+            focusedCommentNoteId = null;
+        }
+    }
+
+    function restoreCommentInputs() {
+        // Restore text values
+        for (const [noteId, text] of Object.entries(savedCommentInputs)) {
+            const input = document.querySelector(`.comment-input[data-note-id="${noteId}"]`);
+            if (input) {
+                input.value = text;
+                // Enable/disable corresponding submit button
+                const submitBtn = document.querySelector(`[data-action="submit-comment"][data-note-id="${noteId}"]`);
+                if (submitBtn) {
+                    submitBtn.disabled = text.trim().length === 0;
+                }
+            }
+        }
+        // Restore focus
+        if (focusedCommentNoteId) {
+            const inputToFocus = document.querySelector(`.comment-input[data-note-id="${focusedCommentNoteId}"]`);
+            if (inputToFocus) {
+                inputToFocus.focus();
+                // Put cursor at the end of the text
+                inputToFocus.setSelectionRange(inputToFocus.value.length, inputToFocus.value.length);
+            }
+        }
+    }
+
+    function isNearBottom() {
+        const scrollHeight = notesList.scrollHeight;
+        const scrollTop = notesList.scrollTop;
+        const clientHeight = notesList.clientHeight;
+        return scrollHeight - (scrollTop + clientHeight) < 50;
+    }
+
+    function toggleScrollButton() {
+        if (isNearBottom()) {
+            scrollToBottomBtn.style.display = 'none';
+        } else {
+            scrollToBottomBtn.style.display = 'flex';
+        }
+    }
+
+    function scrollToBottom() {
+        notesList.scrollTo({
+            top: notesList.scrollHeight,
+            behavior: 'smooth'
+        });
+    }
+
+    scrollToBottomBtn.addEventListener('click', scrollToBottom);
+
+    notesList.addEventListener('scroll', toggleScrollButton);
 
     function startTyping() {
         if (currentUser.isTyping) return; // Already typing
@@ -887,8 +963,15 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Update notes list
     function updateNotesList() {
+        const wasNearBottom = isNearBottom();
+
+        // capture current comment inputs and focus before re-rendering ---
+        captureCommentInputs();
+
         if (allNotes.length === 0) {
             notesList.innerHTML = '<div style="text-align: center; opacity: 0.7; padding: 2rem;">No notes yet. Be the first to add one!</div>';
+            restoreCommentInputs();
+            toggleScrollButton();
             return;
         }
 
@@ -996,10 +1079,15 @@ document.addEventListener('DOMContentLoaded', function() {
         updateActFilter();
         filterNotes();
         
-        // Auto-scroll to bottom to show the latest notes/comments
-        setTimeout(() => {
-            notesList.scrollTop = notesList.scrollHeight;
-        }, 100);
+        // restore comment input values and focus ---
+        restoreCommentInputs();
+        
+        // Only scroll if the user was already near the bottom
+        if (wasNearBottom) {
+            scrollToBottom();   // this will also call toggleScrollButton via scroll event
+        } else {
+            toggleScrollButton();
+        }
     }
     
     function formatCommentTime(timestamp) {
