@@ -275,6 +275,8 @@ textarea:focus {
     margin-bottom: 1rem;
     border-left: 4px solid #4CAF50;
     position: relative;
+    content-visibility: auto;
+    contain-intrinsic-size: 150px;
 }
 
 .note-header {

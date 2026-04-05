@@ -131,7 +131,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     scrollToBottomBtn.addEventListener('click', scrollToBottom);
 
-    notesList.addEventListener('scroll', toggleScrollButton);
+    notesList.addEventListener('scroll', () => {
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(() => {
+            toggleScrollButton();
+        }, 50);
+    });
 
     function startTyping() {
         if (currentUser.isTyping) return; // Already typing
