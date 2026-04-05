@@ -1,6 +1,9 @@
 # Backups
 backups/
 
+# Debug
+*-debug*
+
 # Logs
 logs
 *.log
