@@ -436,12 +436,12 @@ io.on('connection', (socket) => {
 
     // Handle note tag updates
     socket.on('note-update-tags', (data) => {
+        if (user.isOverlay) return;
         const { noteId, tags } = data;
         const note = globalState.notes.find(n => n.id === noteId);
-        
         if (note) {
             note.tags = tags;
-            io.emit('notes-update', globalState.notes);
+            io.emit('note-update-tags', { noteId, tags });
         }
     });
 
@@ -545,16 +545,13 @@ io.on('connection', (socket) => {
         globalState.notes.push(note);
         
         io.emit('note-added', note);
-        io.emit('notes-update', globalState.notes);
     });
 
     // Handle comment submission (only for non-overlay users)
     socket.on('comment-submit', (data) => {
-        if (user.isOverlay) return; // Overlay users can't comment
-        
+        if (user.isOverlay) return;
         const { noteId, text } = data;
         const note = globalState.notes.find(n => n.id === noteId);
-        
         if (note) {
             const comment = {
                 id: Date.now() + Math.random().toString(36).substr(2, 9),
@@ -563,13 +560,9 @@ io.on('connection', (socket) => {
                 text: text,
                 timestamp: new Date().toISOString()
             };
-            
-            if (!note.comments) {
-                note.comments = [];
-            }
-            
+            if (!note.comments) note.comments = [];
             note.comments.push(comment);
-            io.emit('notes-update', globalState.notes);
+            io.emit('comment-submit', { noteId, comment });
         }
     });
 
@@ -603,98 +596,86 @@ io.on('connection', (socket) => {
 
     // Handle note text editing (only for non-overlay users)
     socket.on('note-edit-text', (data) => {
-        if (user.isOverlay) return; // Overlay users can't edit notes
-        
+        if (user.isOverlay) return;
         const { noteId, newText } = data;
         const note = globalState.notes.find(n => n.id === noteId);
-        
         if (note) {
             note.text = newText;
-            // Update the timestamp to show when it was last edited
             note.lastEdited = new Date().toISOString();
             note.lastEditedBy = user.name;
-            
-            io.emit('notes-update', globalState.notes);
+            io.emit('note-edit-text', { 
+                noteId, 
+                newText, 
+                lastEditedBy: user.name, 
+                lastEdited: note.lastEdited 
+            });
         }
     });
-
     // Handle comment editing (only for non-overlay users)
     socket.on('comment-edit', (data) => {
-        if (user.isOverlay) return; // Overlay users can't edit comments
-        
+        if (user.isOverlay) return;
         const { noteId, commentId, newText } = data;
         const note = globalState.notes.find(n => n.id === noteId);
-        
         if (note && note.comments) {
             const comment = note.comments.find(c => c.id === commentId);
             if (comment) {
                 comment.text = newText;
-                // Update the timestamp to show when it was last edited
                 comment.lastEdited = new Date().toISOString();
                 comment.lastEditedBy = user.name;
-                
-                io.emit('notes-update', globalState.notes);
+                io.emit('comment-edit', { 
+                    noteId, 
+                    commentId, 
+                    newText, 
+                    lastEditedBy: user.name, 
+                    lastEdited: comment.lastEdited 
+                });
             }
         }
     });
-
     // Handle comment deletion (only for non-overlay users)
     socket.on('comment-delete', (data) => {
-        if (user.isOverlay) return; // Overlay users can't delete comments
-        
+        if (user.isOverlay) return;
         const { noteId, commentId } = data;
         const note = globalState.notes.find(n => n.id === noteId);
-        
         if (note && note.comments) {
             note.comments = note.comments.filter(c => c.id !== commentId);
-            io.emit('notes-update', globalState.notes);
+            io.emit('comment-delete', { noteId, commentId });
         }
     });
     
     // Handle user name changes with uniqueness check (only for non-overlay users)
     socket.on('user-name-change', (newName) => {
         if (user.isOverlay) return;
-        
-        // Check if name is already taken by another user
         const isNameTaken = Array.from(globalState.users.values()).some(
             u => u.id !== user.id && u.name.toLowerCase() === newName.toLowerCase() && !u.isOverlay
         );
-        
         if (isNameTaken) {
-            socket.emit('name-change-error', {
-                message: `Name "${newName}" is already taken. Please choose a different name.`
-            });
+            socket.emit('name-change-error', { message: `Name "${newName}" is already taken.` });
         } else {
             const oldName = user.name;
             user.name = newName;
-            user.isAnonymous = false; // No longer anonymous
-            
-            // Remove from anonymous tracking
+            user.isAnonymous = false;
             globalState.anonymousUsers.delete(socket.id);
             
-            // Update the user's name in all their notes and comments
+            // Update user's name in all notes and comments
             globalState.notes.forEach(note => {
-                if (note.userId === user.id) {
-                    note.user = newName;
-                }
-                // Update user name in comments
+                if (note.userId === user.id) note.user = newName;
                 if (note.comments) {
                     note.comments.forEach(comment => {
-                        if (comment.userId === user.id) {
-                            comment.user = newName;
-                        }
+                        if (comment.userId === user.id) comment.user = newName;
                     });
                 }
             });
             
-            // Send filtered users list (excluding overlay users)
+            io.emit('user-name-changed', {
+                userId: user.id,
+                oldName: oldName,
+                newName: newName
+            });
+            
             const filteredUsers = Array.from(globalState.users.values()).filter(u => !u.isOverlay);
             io.emit('users-update', filteredUsers);
-            io.emit('notes-update', globalState.notes);
-            
-            socket.emit('name-change-success', {
-                message: `Name changed from "${oldName}" to "${newName}"`
-            });
+            socket.emit('name-change-success', { message: `Name changed from "${oldName}" to "${newName}"` });
         }
     });
     
