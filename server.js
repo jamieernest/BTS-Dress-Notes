@@ -744,30 +744,7 @@ io.on('connection', (socket) => {
             data = JSON.stringify(exportData, null, 2);
             mimeType = 'application/json';
             filename = `timecoded-notes-${timestamp}.json`;
-        } else if (format === 'csv') {
-            let csvContent = 'User,Timecode,LX Cue,Frame Rate,Act,Note,Tags,Comments,Timestamp\n';
-            
-            globalState.notes.forEach(note => {
-                const commentsStr = note.comments ? note.comments.map(c => `${c.user}: ${c.text}`).join('; ') : '';
-                const row = [
-                    `"${note.user}"`,
-                    `"${formatTimecode(note.timecode)}"`,
-                    `"${note.lxCue || ''}"`,
-                    `"${note.frameRate}"`,
-                    `"${note.act || 'Preshow'}"`, // Add act to CSV
-                    `"${note.text.replace(/"/g, '""')}"`,
-                    `"${note.tags.join(', ')}"`,
-                    `"${commentsStr}"`,
-                    `"${note.timestamp}"`
-                ].join(',');
-                csvContent += row + '\n';
-            });
-            
-            data = csvContent;
-            mimeType = 'text/csv';
-            filename = `timecoded-notes-${timestamp}.csv`;
         }
-        
         socket.emit('export-data', { data, mimeType, filename });
     });
     

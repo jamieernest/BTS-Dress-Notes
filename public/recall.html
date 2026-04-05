@@ -17,8 +17,8 @@
         <div class="upload-section">
             <h2>Upload Exported File</h2>
             <div class="upload-area" id="uploadArea">
-                <p>Drag and drop a JSON or CSV file here, or click to browse</p>
-                <input type="file" id="fileInput" class="file-input" accept=".json,.csv">
+                <p>Drag and drop a JSON file here, or click to browse</p>
+                <input type="file" id="fileInput" class="file-input" accept=".json">
                 <label for="fileInput" class="file-label">Choose File</label>
             </div>
             <div class="file-info" id="fileInfo">
@@ -53,7 +53,7 @@
             
             <div class="notes-list" id="notesList">
                 <div style="text-align: center; opacity: 0.7; padding: 2rem;">
-                    Upload a JSON or CSV file to view notes
+                    Upload a JSON file to view notes
                 </div>
             </div>
         </div>
@@ -128,8 +128,8 @@
             function handleFile(file) {
                 const fileExtension = file.name.split('.').pop().toLowerCase();
                 
-                if (fileExtension !== 'json' && fileExtension !== 'csv') {
-                    alert('Please select a JSON or CSV file');
+                if (fileExtension !== 'json') {
+                    alert('Please select a JSON file');
                     return;
                 }
                 
@@ -143,8 +143,6 @@
                         if (fileExtension === 'json') {
                             const data = JSON.parse(e.target.result);
                             processJsonData(data);
-                        } else {
-                            processCsvData(e.target.result);
                         }
                     } catch (error) {
                         alert('Error parsing file: ' + error.message);
@@ -169,108 +167,6 @@
                 } else {
                     alert('Invalid JSON format: Expected "notes" array');
                 }
-            }
-            
-            function processCsvData(csvText) {
-                const lines = csvText.split('\n');
-                if (lines.length < 2) {
-                    alert('CSV file is empty or has invalid format');
-                    return;
-                }
-                
-                // Parse CSV headers
-                const headers = lines[0].split(',').map(h => h.replace(/"/g, '').trim());
-                
-                // Find column indices
-                const userIndex = headers.indexOf('User');
-                const timecodeIndex = headers.indexOf('Timecode');
-                const lxCueIndex = headers.indexOf('LX Cue');
-                const frameRateIndex = headers.indexOf('Frame Rate');
-                const noteIndex = headers.indexOf('Note');
-                const tagsIndex = headers.indexOf('Tags');
-                const reactionsIndex = headers.indexOf('Reactions');
-                const timestampIndex = headers.indexOf('Timestamp');
-                
-                if (userIndex === -1 || noteIndex === -1) {
-                    alert('CSV file missing required columns (User, Note)');
-                    return;
-                }
-                
-                allNotes = [];
-                
-                // Parse each line
-                for (let i = 1; i < lines.length; i++) {
-                    if (!lines[i].trim()) continue;
-                    
-                    const values = parseCsvLine(lines[i]);
-                    
-                    if (values.length > Math.max(userIndex, noteIndex)) {
-                        // Parse reactions if available
-                        let reactions = [];
-                        if (reactionsIndex !== -1 && values[reactionsIndex]) {
-                            const reactionsStr = values[reactionsIndex].replace(/"/g, '');
-                            if (reactionsStr) {
-                                // Parse reactions in format "👍(2); ❤️(1)"
-                                const reactionParts = reactionsStr.split(';');
-                                reactionParts.forEach(part => {
-                                    const match = part.trim().match(/(.+?)\((\d+)\)/);
-                                    if (match) {
-                                        reactions.push({
-                                            emoji: match[1].trim(),
-                                            users: Array(parseInt(match[2])).fill('user') // Placeholder users
-                                        });
-                                    }
-                                });
-                            }
-                        }
-                        
-                        const note = {
-                            id: 'csv-' + i,
-                            user: values[userIndex].replace(/"/g, ''),
-                            text: values[noteIndex].replace(/"/g, ''),
-                            timecode: parseTimecode(values[timecodeIndex]),
-                            lxCue: lxCueIndex !== -1 ? values[lxCueIndex].replace(/"/g, '') : 'N/A',
-                            frameRate: frameRateIndex !== -1 ? values[frameRateIndex].replace(/"/g, '') : '30 fps',
-                            timestamp: timestampIndex !== -1 ? values[timestampIndex].replace(/"/g, '') : new Date().toISOString(),
-                            tags: tagsIndex !== -1 ? values[tagsIndex].replace(/"/g, '').split(',').map(t => t.trim()).filter(t => t) : [],
-                            reactions: reactions
-                        };
-                        
-                        allNotes.push(note);
-                    }
-                }
-                
-                fileNotesCount.textContent = allNotes.length;
-                fileInfo.style.display = 'block';
-                
-                // Extract tags from notes
-                extractTags();
-                updateNotesList();
-                updateFilterTags();
-                updateFilterActs();
-                updateStats();
-            }
-            
-            function parseCsvLine(line) {
-                const result = [];
-                let current = '';
-                let inQuotes = false;
-                
-                for (let i = 0; i < line.length; i++) {
-                    const char = line[i];
-                    
-                    if (char === '"') {
-                        inQuotes = !inQuotes;
-                    } else if (char === ',' && !inQuotes) {
-                        result.push(current);
-                        current = '';
-                    } else {
-                        current += char;
-                    }
-                }
-                
-                result.push(current);
-                return result;
             }
             
             function parseTimecode(timecodeStr) {

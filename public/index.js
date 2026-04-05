@@ -21,7 +21,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const usersList = document.getElementById('usersList');
     const notesList = document.getElementById('notesList');
     const exportJsonBtn = document.getElementById('exportJson');
-    const exportCsvBtn = document.getElementById('exportCsv');
     const currentUserName = document.getElementById('currentUserName');
     const changeNameBtn = document.getElementById('changeNameBtn');
     
@@ -884,10 +883,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Export buttons
     exportJsonBtn.addEventListener('click', function() {
         window.socket.emit('export-request', 'json');
-    });
-    
-    exportCsvBtn.addEventListener('click', function() {
-        window.socket.emit('export-request', 'csv');
     });
     
     // Update notes list
