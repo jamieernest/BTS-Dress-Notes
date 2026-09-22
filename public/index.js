@@ -21,13 +21,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const notesList = document.getElementById('notesList');
     const exportJsonBtn = document.getElementById('exportJson');
     const currentUserName = document.getElementById('currentUserName');
-    const changeNameBtn = document.getElementById('changeNameBtn');
     const timeModeToggle = document.getElementById('timeModeToggle');
     const realtimeLabel = document.getElementById('realtimeLabel');
     const midiLabel = document.getElementById('midiLabel');
-    const nameModal = document.getElementById('nameModal');
-    const nameInput = document.getElementById('nameInput');
-    const confirmNameBtn = document.getElementById('confirmName');
     const tagsContainer = document.getElementById('tagsContainer');
     const filterTagsContainer = document.getElementById('filterTags');
     const currentActDisplay = document.getElementById('currentActDisplay');
@@ -65,11 +61,8 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentlyEditingNoteId = null;
     let editTagsSelected = [];
     let autoResumeTimer = null;
-    let currentUsers = [];
     let chatMessagesList = [];
     let expandedCommentSections = new Set();
-    let nameTimeout = null;
-    let nameSet = false;
     let currentAct = 'Preshow';
     let noteElements = new Map();
 
@@ -401,56 +394,6 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // --- Name modal timeout functions ---
-    function startNameTimeout() {
-        if (nameTimeout) clearTimeout(nameTimeout);
-        const warningTimeout = setTimeout(() => {
-            if (!nameSet && nameModal.style.display !== 'none') showNameWarning();
-        }, 600000); // 10 minutes
-        nameTimeout = setTimeout(() => {
-            clearTimeout(warningTimeout);
-            if (!nameSet) autoCloseTab();
-        }, 900000); // 15 minutes
-    }
-
-    function autoCloseTab() {
-        const overlay = document.createElement('div');
-        overlay.style.cssText = `
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.95); color: white; display: flex;
-            flex-direction: column; justify-content: center; align-items: center;
-            z-index: 10000; font-family: 'Segoe UI', sans-serif; text-align: center;
-            padding: 2rem;
-        `;
-        overlay.innerHTML = `
-            <h1 style="font-size: 2.5rem; margin-bottom: 1rem; color: #ff9800;">Session Expired</h1>
-            <p style="font-size: 1.2rem; margin-bottom: 2rem;">You didn't set a display name within 15 minutes. This tab will close automatically.</p>
-            <div style="display: flex; gap: 1rem;">
-                <button id="setNameNow" style="padding: 1rem 2rem; background: #4CAF50; color: white; border: none; border-radius: 5px;">Set Name Now</button>
-                <button id="closeNow" style="padding: 1rem 2rem; background: #f44336; color: white; border: none; border-radius: 5px;">Close Now</button>
-            </div>
-        `;
-        document.body.appendChild(overlay);
-        document.getElementById('setNameNow').addEventListener('click', () => {
-            document.body.removeChild(overlay);
-            nameModal.style.display = 'flex';
-            nameInput.focus();
-            startNameTimeout();
-        });
-        document.getElementById('closeNow').addEventListener('click', () => window.close());
-        setTimeout(() => { if (document.body.contains(overlay)) window.close(); }, 30000);
-    }
-
-    function showNameWarning() {
-        nameModal.classList.add('warning');
-        if (!document.getElementById('nameWarning')) {
-            const warning = document.createElement('div');
-            warning.id = 'nameWarning';
-            warning.innerHTML = '⚠️ Please set your name soon. This tab will close in 5 minutes if no name is set.';
-            document.querySelector('.modal-content').appendChild(warning);
-        }
-    }
-
     // --- Chat functions ---
     function updateChatMessages() {
         chatCount.textContent = `${chatMessagesList.length} shitpost${chatMessagesList.length !== 1 ? 's' : ''}`;
@@ -669,7 +612,6 @@ document.addEventListener('DOMContentLoaded', function() {
     window.socket.on('connect', () => {
         connectionStatus.textContent = 'Connected to Server';
         connectionStatus.className = 'status-connected';
-        currentUser.id = window.socket.id;
     });
 
     window.socket.on('disconnect', () => {
@@ -677,11 +619,28 @@ document.addEventListener('DOMContentLoaded', function() {
         connectionStatus.className = 'status-disconnected';
     });
 
+    // The server refuses the socket handshake when the session is missing or
+    // expired (e.g. a server restart wiped the in-memory session store).
+    // That's distinct from an ordinary network blip - socket.io's normal
+    // auto-reconnect can never succeed here, so send the user back through
+    // the login flow instead of retrying forever.
+    window.socket.on('connect_error', (err) => {
+        if (err && err.message === 'unauthorized') {
+            window.location.href = '/login';
+        }
+    });
+
+    window.socket.on('current-user', (data) => {
+        currentUser.name = data.name;
+        currentUser.sub = data.sub;
+        currentUserName.textContent = data.name;
+        updateChatUserName();
+    });
+
     window.socket.on('user-joined', (data) => updateUserCount(data.userCount));
     window.socket.on('user-left', (data) => updateUserCount(data.userCount));
 
     window.socket.on('users-update', (users) => {
-        currentUsers = users;
         updateUserCount(users.length);
         usersList.innerHTML = '';
         users.forEach(user => {
@@ -690,12 +649,6 @@ document.addEventListener('DOMContentLoaded', function() {
             userItem.innerHTML = `${escapeHtml(user.name)}${user.isTyping ? '<span class="user-typing"><span class="typing-indicator"></span>writing note</span>' : ''}`;
             usersList.appendChild(userItem);
         });
-    });
-
-    window.socket.on('name-change-error', (data) => alert(data.message));
-    window.socket.on('name-change-success', (data) => {
-        userStatus.textContent = data.message;
-        setTimeout(() => { if (!currentUser.isTyping) userStatus.textContent = 'Ready to take notes'; }, 3000);
     });
 
     window.socket.on('act-update', (act) => {
@@ -769,35 +722,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     let isFirstLoad = true;
-
-    window.socket.on('user-name-changed', ({ userId, newName }) => {
-        // Update name in all notes
-        allNotes.forEach(note => {
-            let needsUpdate = false;
-            if (note.userId === userId) {
-                note.user = newName;
-                needsUpdate = true;
-            }
-            if (note.comments) {
-                note.comments.forEach(comment => {
-                    if (comment.userId === userId) {
-                        comment.user = newName;
-                        needsUpdate = true;
-                    }
-                });
-            }
-            if (needsUpdate) {
-                updateNoteElement(note);
-            }
-        });
-        // Update users list (already handled by users-update event)
-        // If current user changed their own name, update local references
-        if (currentUser.id === userId) {
-            currentUser.name = newName;
-            currentUserName.textContent = newName;
-            updateChatUserName();
-        }
-    });
 
     window.socket.on('notes-update', (notes) => {
         // Only rebuild if the notes array has changed (e.g., name change, import)
@@ -895,49 +819,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // --- Event listeners ---
-    confirmNameBtn.addEventListener('click', () => {
-        const name = nameInput.value.trim();
-        if (name) {
-            const taken = currentUsers.some(u => u.name.toLowerCase() === name.toLowerCase());
-            if (taken) {
-                alert(`Name "${name}" is already taken. Please choose a different name.`);
-                nameInput.focus();
-                return;
-            }
-            currentUser.name = name;
-            updateChatUserName();
-            currentUserName.textContent = name;
-            nameModal.style.display = 'none';
-            nameSet = true;
-            nameModal.classList.remove('warning');
-            const warn = document.getElementById('nameWarning');
-            if (warn) warn.remove();
-            if (nameTimeout) clearTimeout(nameTimeout);
-            window.socket.emit('user-name-change', name);
-        } else {
-            alert('Please enter a name');
-            nameInput.focus();
-        }
-    });
-
-    nameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') confirmNameBtn.click(); });
-
-    changeNameBtn.addEventListener('click', () => {
-        const newName = prompt('Enter your new name:', currentUser.name);
-        if (newName && newName.trim()) {
-            const taken = currentUsers.some(u => u.id !== currentUser.id && u.name.toLowerCase() === newName.toLowerCase());
-            if (taken) {
-                alert(`Name "${newName}" is already taken. Please choose a different name.`);
-                return;
-            }
-            currentUser.name = newName.trim();
-            updateChatUserName();
-            currentUserName.textContent = currentUser.name;
-            nameSet = true;
-            window.socket.emit('user-name-change', currentUser.name);
-        }
-    });
-
     timeModeToggle.addEventListener('change', () => {
         if (!timeModeToggle.disabled) {
             const newMode = timeModeToggle.checked ? 'realtime' : 'midi';
@@ -1158,11 +1039,8 @@ document.addEventListener('DOMContentLoaded', function() {
     notesList.addEventListener('scroll', () => toggleScrollButton());
 
     // --- Initialization ---
-    startNameTimeout();
     updateGlobalTimecodeDisplay(currentGlobalTimecode);
     updatePersonalTimecodeDisplay(currentGlobalTimecode);
     updateGlobalLxCueDisplay(currentGlobalLxCue);
     updatePersonalLxCueDisplay(currentGlobalLxCue);
-    nameModal.style.display = 'flex';
-    nameInput.focus();
 });

@@ -7,18 +7,6 @@
     <link rel="stylesheet" href="index-style.css">
 </head>
 <body>
-    <!-- Name Setting Modal -->
-    <div id="nameModal" class="modal">
-        <div class="modal-content">
-            <h2>Welcome to BTS Dress Notes!</h2>
-            <p>Please set your display name to get started</p>
-            <input type="text" id="nameInput" class="name-input" placeholder="Enter your name" maxlength="20">
-            <div class="modal-buttons">
-                <button id="confirmName" class="primary">Join Session</button>
-            </div>
-        </div>
-    </div>
-
     <!-- Edit Tags Modal -->
     <div id="editTagsModal" class="edit-tags-modal">
         <div class="edit-tags-content">
@@ -47,7 +35,7 @@
                 <div class="user-info">
                     <span>You are: </span>
                     <span class="user-name-display" id="currentUserName">Guest</span>
-                    <button id="changeNameBtn" class="change-name-btn">Change</button>
+                    <a href="/logout" id="logoutLink" class="logout-link">Log out</a>
                 </div>
                 <div id="connectionStatus" class="status-disconnected">Disconnected from Server</div>
                 <div id="midiStatus" style="margin-top: 0.5rem;">MIDI Interface: Scanning...</div>
