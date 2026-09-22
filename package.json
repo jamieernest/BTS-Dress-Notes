@@ -4,8 +4,8 @@
   "description": "Collaborative note sharing with MIDI Timecode integration",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "nodemon server.js"
+    "start": "node --env-file-if-exists=.env server.js",
+    "dev": "nodemon --exec \"node --env-file-if-exists=.env\" server.js"
   },
   "dependencies": {
     "easymidi": "^3.1.0",
@@ -17,5 +17,9 @@
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
+  },
+  "allowScripts": {
+    "@julusian/midi@3.6.1": true,
+    "fsevents@2.3.3": true
   }
 }
