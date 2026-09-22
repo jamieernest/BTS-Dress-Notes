@@ -287,7 +287,7 @@ if (midiInput) {
     });
 }
 
-function backup() {
+function backup(sync = false) {
     let data;
     const exportData = {
         notes: globalState.notes,
@@ -304,13 +304,20 @@ function backup() {
     const filename = `backup-${timestamp}.json`;
     try {
         fs.mkdirSync(path.join(__dirname, 'backups'), { recursive: true });
-        fs.writeFile(path.join(__dirname, 'backups', filename), data, (error) => {
-            if (error) {
-                console.log('Error saving backup file:', error.message);
-            } else {
-                console.log(`Backup saved to backups/${filename}`);
-            }
-        });
+        if (sync) {
+            // Crash/shutdown handlers call process.exit() immediately after
+            // backup(), so the write must complete before returning.
+            fs.writeFileSync(path.join(__dirname, 'backups', filename), data);
+            console.log(`Backup saved to backups/${filename}`);
+        } else {
+            fs.writeFile(path.join(__dirname, 'backups', filename), data, (error) => {
+                if (error) {
+                    console.log('Error saving backup file:', error.message);
+                } else {
+                    console.log(`Backup saved to backups/${filename}`);
+                }
+            });
+        }
     } catch (error) {
         console.log('Error saving backup file:', error.message);
     }
@@ -344,19 +351,19 @@ setInterval(() => {
 // Backups on errors and graceful shutdown
 process.on('uncaughtException', (err) => {
     console.error('Uncaught Exception:', err);
-    backup();
+    backup(true);
     process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
     console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-    backup();
+    backup(true);
     process.exit(1);
 });
 
 process.on('SIGINT', () => {
     console.log('Received SIGINT. Backing up and shutting down...');
-    backup();
+    backup(true);
     process.exit(0);
 });
 
