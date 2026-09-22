@@ -11,7 +11,7 @@ _Disclaimer: this was mostly AI generated (Deepseek V3-4 and Claude Sonnet 5). I
 
 3. Connect the computer, Eos Console and MIDI gateway (if needed) to the same local network
 
-4. On the Eos Console go to System => System Settings => Show Control => OSC and set the `OSC TX Port` to `8001` and `OSC TX IP Address` to the computer's IP Address
+4. On the Eos Console go to System => System Settings => Show Control => OSC and set the `OSC TX Port` to `8001` (or the value of `OSC_PORT` if set) and `OSC TX IP Address` to the computer's IP Address
 
 5. Go into folder and install dependencies
 
