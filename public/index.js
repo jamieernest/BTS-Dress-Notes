@@ -618,23 +618,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function insertNoteInOrder(noteElement, note) {
-        const container = notesList;
-        const children = Array.from(container.children).filter(child => child.classList && child.classList.contains('note-item'));
-        let inserted = false;
-        for (let i = 0; i < children.length; i++) {
-            const childId = children[i].getAttribute('data-note-id');
-            const childNote = allNotes.find(n => n.id === childId);
-            if (childNote) {
-                const childTime = childNote.timestamp ? new Date(childNote.timestamp) : timecodeToSeconds(childNote.timecode);
-                const newTime = note.timestamp ? new Date(note.timestamp) : timecodeToSeconds(note.timecode);
-                if (newTime < childTime) {
-                    container.insertBefore(noteElement, children[i]);
-                    inserted = true;
-                    break;
-                }
-            }
-        }
-        if (!inserted) container.appendChild(noteElement);
+        notesList.appendChild(noteElement);
         const shouldShow = (filterTag === 'all' || note.tags.includes(filterTag)) &&
                            (filterAct === 'all' || (note.act || 'Preshow') === filterAct);
         noteElement.style.display = shouldShow ? 'block' : 'none';
@@ -1155,7 +1139,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     scrollToBottomBtn.addEventListener('click', scrollToBottom);
-    notesList.addEventListener('scroll', () => toggleScrollButton());
+    let scrollTimeout;
+    notesList.addEventListener('scroll', () => {
+        clearTimeout(scrollTimeout);
+        scrollTimeout = setTimeout(() => toggleScrollButton(), 50);
+    });
 
     // --- Initialization ---
     startNameTimeout();

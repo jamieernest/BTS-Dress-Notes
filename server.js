@@ -127,8 +127,10 @@ function subscribeToEOS() {
     });
 
     eosClient.on('data', function(data) {
-        console.log('Received: ' + data.toString().replace(/[^\x20-\x7E]/g, '').trim());
-        let value = data.toString().replace(/[^\x20-\x7E]/g, '').trim()
+        let value = data.toString().replace(/[^\x20-\x7E]/g, '').trim();
+        if (process.env.DEBUG_EOS) {
+            console.log('Received: ' + value);
+        }
         if(value.startsWith('/eos/out/active/cue/text')) {
             const cueMatch = value.split('/')
             if (cueMatch && cueMatch[6]) {
@@ -302,8 +304,13 @@ function backup() {
     const filename = `backup-${timestamp}.json`;
     try {
         fs.mkdirSync(path.join(__dirname, 'backups'), { recursive: true });
-        fs.writeFileSync(path.join(__dirname, 'backups', filename), data);
-        console.log(`Backup saved to backups/${filename}`);
+        fs.writeFile(path.join(__dirname, 'backups', filename), data, (error) => {
+            if (error) {
+                console.log('Error saving backup file:', error.message);
+            } else {
+                console.log(`Backup saved to backups/${filename}`);
+            }
+        });
     } catch (error) {
         console.log('Error saving backup file:', error.message);
     }
