@@ -4,17 +4,171 @@ const socketIo = require('socket.io');
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
+const session = require('express-session');
 const { Server, Message, encode } = require('node-osc');
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-const eosHost = process.env.EOS_HOST || '10.10.160.143'; 
-const eosPort = process.env.EOS_PORT || 3037; 
+const eosHost = process.env.EOS_HOST || '10.10.160.143';
+const eosPort = process.env.EOS_PORT || 3037;
+
+// Keycloak SSO configuration - one shared client used across every venue,
+// unlike EOS_HOST/EOS_PORT above which are per-venue.
+const SESSION_SECRET = process.env.SESSION_SECRET;
+const KEYCLOAK_ISSUER = process.env.KEYCLOAK_ISSUER;
+const KEYCLOAK_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID;
+const KEYCLOAK_CLIENT_SECRET = process.env.KEYCLOAK_CLIENT_SECRET;
+
+if (!SESSION_SECRET) {
+    console.error('SESSION_SECRET environment variable is required to start the server.');
+    process.exit(1);
+}
 
 app.set('trust proxy', true);
-io.engine.trustProxy = true; 
+io.engine.trustProxy = true;
+
+// Session cookie is signed by this app; secure:false is intentional - the
+// venue LAN serves this app over plain HTTP, and the goal is to minimize
+// dependence on anything outside the venue LAN (see captain's decision).
+const sessionMiddleware = session({
+    secret: SESSION_SECRET,
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+        secure: false,
+        httpOnly: true,
+        sameSite: 'lax',
+        maxAge: 12 * 60 * 60 * 1000 // 12 hours - long enough to cover a show
+    }
+});
+app.use(sessionMiddleware);
+
+// openid-client v6 is ESM-only; loaded once via dynamic import at startup.
+let oidc = null;
+let oidcConfig = null;
+
+async function initKeycloak() {
+    if (!KEYCLOAK_ISSUER || !KEYCLOAK_CLIENT_ID || !KEYCLOAK_CLIENT_SECRET) {
+        console.error('Keycloak SSO is not configured: set KEYCLOAK_ISSUER, KEYCLOAK_CLIENT_ID and KEYCLOAK_CLIENT_SECRET. Login will be unavailable until this is set and the server is restarted.');
+        return;
+    }
+    try {
+        oidc = await import('openid-client');
+        const issuerUrl = new URL(KEYCLOAK_ISSUER);
+        // openid-client refuses non-HTTPS issuers by default. Keycloak on a
+        // venue LAN may only be reachable over plain HTTP, matching the same
+        // "minimize dependence outside the LAN" tradeoff as the app's own
+        // cookie - so allow it when (and only when) the issuer URL is HTTP.
+        const discoveryOptions = issuerUrl.protocol === 'http:'
+            ? { execute: [oidc.allowInsecureRequests] }
+            : undefined;
+        oidcConfig = await oidc.discovery(
+            issuerUrl,
+            KEYCLOAK_CLIENT_ID,
+            KEYCLOAK_CLIENT_SECRET,
+            undefined,
+            discoveryOptions
+        );
+        console.log('Keycloak SSO ready (issuer: %s)', KEYCLOAK_ISSUER);
+    } catch (error) {
+        oidcConfig = null;
+        console.error('Failed to reach Keycloak issuer for SSO discovery:', error.message);
+        console.error('Login will be unavailable until the issuer is reachable and the server is restarted.');
+    }
+}
+
+function currentUrlFor(req) {
+    return new URL(req.originalUrl, `${req.protocol}://${req.get('host')}`);
+}
+
+// Authorization Code + PKCE redirect to Keycloak.
+app.get('/login', async (req, res) => {
+    if (!oidcConfig) {
+        return res.status(503).send('Keycloak SSO is not configured or unreachable. Set KEYCLOAK_ISSUER, KEYCLOAK_CLIENT_ID, KEYCLOAK_CLIENT_SECRET and SESSION_SECRET, then restart the server.');
+    }
+    const codeVerifier = oidc.randomPKCECodeVerifier();
+    const codeChallenge = await oidc.calculatePKCECodeChallenge(codeVerifier);
+    const state = oidc.randomState();
+    req.session.oidc = { codeVerifier, state };
+    const redirectUri = `${req.protocol}://${req.get('host')}/callback`;
+    const authUrl = oidc.buildAuthorizationUrl(oidcConfig, {
+        redirect_uri: redirectUri,
+        scope: 'openid profile email',
+        code_challenge: codeChallenge,
+        code_challenge_method: 'S256',
+        state
+    });
+    res.redirect(authUrl.href);
+});
+
+// Exchanges the authorization code, populates req.session.user from the
+// Keycloak claims (sub is the stable per-account identifier we key notes on).
+app.get('/callback', async (req, res) => {
+    if (!oidcConfig) {
+        return res.status(503).send('Keycloak SSO is not configured or unreachable.');
+    }
+    const pending = req.session.oidc;
+    if (!pending || !pending.codeVerifier || !pending.state) {
+        return res.redirect('/login');
+    }
+    try {
+        const tokens = await oidc.authorizationCodeGrant(oidcConfig, currentUrlFor(req), {
+            pkceCodeVerifier: pending.codeVerifier,
+            expectedState: pending.state
+        });
+        const claims = tokens.claims();
+        if (!claims || !claims.sub) {
+            throw new Error('Keycloak did not return identity claims');
+        }
+        req.session.user = {
+            sub: claims.sub,
+            name: claims.name || claims.preferred_username || claims.email || claims.sub,
+            email: claims.email || null,
+            idToken: tokens.id_token || null
+        };
+        delete req.session.oidc;
+        const returnTo = req.session.returnTo || '/';
+        delete req.session.returnTo;
+        res.redirect(returnTo);
+    } catch (error) {
+        console.error('Keycloak callback failed:', error.message);
+        res.status(401).send('Login failed. Please try again.');
+    }
+});
+
+// Destroys the local session and redirects to Keycloak's end-session endpoint.
+app.get('/logout', (req, res) => {
+    const idToken = req.session.user && req.session.user.idToken;
+    req.session.destroy(() => {
+        if (oidcConfig) {
+            try {
+                const endSessionUrl = oidc.buildEndSessionUrl(oidcConfig, {
+                    post_logout_redirect_uri: `${req.protocol}://${req.get('host')}/login`,
+                    ...(idToken ? { id_token_hint: idToken } : {})
+                });
+                return res.redirect(endSessionUrl.href);
+            } catch (error) {
+                // Issuer has no end_session_endpoint configured - fall through to /login.
+            }
+        }
+        res.redirect('/login');
+    });
+});
+
+// Auth guard - no page is exempt, including static assets, overlay/cast
+// pages and the recall/backup-viewer page. /login, /callback and /logout
+// above are registered before this and stay reachable without a session.
+function requireAuth(req, res, next) {
+    if (req.session && req.session.user && req.session.user.sub) {
+        return next();
+    }
+    req.session.returnTo = req.originalUrl;
+    res.redirect('/login');
+}
+
+app.use(requireAuth);
 
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
@@ -31,6 +185,10 @@ app.get('/recall.html', (req, res) => {
 
 app.get('/overlay.html', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'overlay.html'));
+});
+
+app.get('/overlay-cast.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'overlay-cast.html'));
 });
 
 app.get('/favicon.ico', (req, res) => {
@@ -81,8 +239,7 @@ const globalState = {
     timeMode: 'midi',
     tags: tags,
     currentLxCue: '1',
-    currentAct: 'Preshow',
-    anonymousUsers: new Map()
+    currentAct: 'Preshow'
 };
 
 // Try to use EasyMIDI
@@ -368,52 +525,37 @@ process.on('SIGINT', () => {
 });
 
 
+// Session is available during the WS handshake as socket.request.session.
+io.engine.use(sessionMiddleware);
+
+// Refuse sockets with no valid Keycloak-backed session.
+io.use((socket, next) => {
+    const sessionUser = socket.request.session && socket.request.session.user;
+    if (sessionUser && sessionUser.sub) {
+        return next();
+    }
+    next(new Error('unauthorized'));
+});
+
 // WebSocket connections
 io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
-    
-    let clientIP = socket.handshake.address;
-    const forwardedFor = socket.handshake.headers['x-forwarded-for'];
-    if (forwardedFor) {
-        // X-Forwarded-For may contain multiple IPs; the leftmost is the original client
-        clientIP = forwardedFor.split(',')[0].trim();
-    }
-    const userIP = clientIP.replace(/^.*:/, '');
-    const isOverlay = socket.handshake.headers.referer && 
+
+    const sessionUser = socket.request.session.user;
+    const isOverlay = socket.handshake.headers.referer &&
                      (socket.handshake.headers.referer.includes('overlay.html') || socket.handshake.headers.referer.includes('overlay-cast.html'));
-    
+
     const user = {
-        id: socket.id,
-        name: isOverlay ? `Overlay-${userIP}` : userIP,
+        id: sessionUser.sub,
+        name: sessionUser.name,
         isTyping: false,
         currentTimecode: null,
         currentLxCue: null,
         joinedAt: new Date(),
-        isOverlay: isOverlay,
-        isAnonymous: !isOverlay // Regular users start as anonymous until they set a name
+        isOverlay: isOverlay
     };
-    
+
     globalState.users.set(socket.id, user);
-    
-    // Track anonymous users for cleanup
-    if (!isOverlay) {
-        globalState.anonymousUsers.set(socket.id, {
-            joinedAt: new Date(),
-            ip: userIP
-        });
-        
-        // Set timeout to remove anonymous users after 15 minutes
-        setTimeout(() => {
-            if (globalState.users.has(socket.id)) {
-                const user = globalState.users.get(socket.id);
-                if (user.isAnonymous && !user.isOverlay) {
-                    console.log(`Automatically disconnecting anonymous user ${socket.id} after 15 minutes`);
-                    socket.disconnect(true);
-                }
-            }
-            globalState.anonymousUsers.delete(socket.id);
-        }, 900000); // 15 minutes
-    }
 
     // Send current state to newly connected client
     socket.emit('act-update', globalState.currentAct);
@@ -432,8 +574,8 @@ io.on('connection', (socket) => {
 
     // Only send user-related updates if this is NOT an overlay
     if (!isOverlay) {
-        socket.emit('user-initial-name', userIP);
-        
+        socket.emit('current-user', { name: user.name, sub: user.id });
+
         // Send filtered users list (excluding overlay users)
         const filteredUsers = Array.from(globalState.users.values()).filter(u => !u.isOverlay);
         socket.emit('users-update', filteredUsers);
@@ -657,42 +799,6 @@ io.on('connection', (socket) => {
         }
     });
     
-    // Handle user name changes with uniqueness check (only for non-overlay users)
-    socket.on('user-name-change', (newName) => {
-        if (user.isOverlay) return;
-        const isNameTaken = Array.from(globalState.users.values()).some(
-            u => u.id !== user.id && u.name.toLowerCase() === newName.toLowerCase() && !u.isOverlay
-        );
-        if (isNameTaken) {
-            socket.emit('name-change-error', { message: `Name "${newName}" is already taken.` });
-        } else {
-            const oldName = user.name;
-            user.name = newName;
-            user.isAnonymous = false;
-            globalState.anonymousUsers.delete(socket.id);
-            
-            // Update user's name in all notes and comments
-            globalState.notes.forEach(note => {
-                if (note.userId === user.id) note.user = newName;
-                if (note.comments) {
-                    note.comments.forEach(comment => {
-                        if (comment.userId === user.id) comment.user = newName;
-                    });
-                }
-            });
-            
-            io.emit('user-name-changed', {
-                userId: user.id,
-                oldName: oldName,
-                newName: newName
-            });
-            
-            const filteredUsers = Array.from(globalState.users.values()).filter(u => !u.isOverlay);
-            io.emit('users-update', filteredUsers);
-            socket.emit('name-change-success', { message: `Name changed from "${oldName}" to "${newName}"` });
-        }
-    });
-    
     // Handle backup import (only for non‑overlay users)
     socket.on('import-backup', (data) => {
         if (user.isOverlay) return; // Overlay users can't import
@@ -781,13 +887,16 @@ if (midiInput) {
 }
 
 const PORT = process.env.PORT || 80;
-server.listen(PORT, () => {
-    console.log(`MIDI Timecode Notes Server running on http://localhost:${PORT}`);
-    if (oscServer) {
-        console.log('OSC Server listening for LX cues on port 8001');
-    }
-    
-    subscribeToEOS();
+
+initKeycloak().finally(() => {
+    server.listen(PORT, () => {
+        console.log(`MIDI Timecode Notes Server running on http://localhost:${PORT}`);
+        if (oscServer) {
+            console.log('OSC Server listening for LX cues on port 8001');
+        }
+
+        subscribeToEOS();
+    });
 });
 
 process.on('SIGINT', () => {

@@ -22,7 +22,9 @@ npm i
 
 6. (For MIDI TC) Connect the Computer's MIDI out to the Gateway, and connect <strong>Another Interface's</strong> MIDI in to the MIDI thru port on the gateway
 
-7. Run by running `npm start`
+7. Every page requires login via Keycloak SSO. Set `SESSION_SECRET` (required - the server won't start without it) and, to enable login, `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID` and `KEYCLOAK_CLIENT_SECRET` (one shared client covers every venue). See `AGENTS.md` for how these are used.
+
+8. Run by running `npm start`
 
 
 Have fun and enjoy :)
