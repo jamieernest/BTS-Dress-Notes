@@ -618,6 +618,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function insertNoteInOrder(noteElement, note) {
+        // Relies on notes always being pushed/appended in chronological order
+        // (see 'note-added' handler) rather than re-sorting on every insert.
         notesList.appendChild(noteElement);
         const shouldShow = (filterTag === 'all' || note.tags.includes(filterTag)) &&
                            (filterAct === 'all' || (note.act || 'Preshow') === filterAct);
