@@ -1,7 +1,7 @@
 # BTS-Dress-Notes
 Dress Notes App with MTC/Real time and live LX cues from any ETC Eos Console
 
-_Disclaimer: this was mostly AI generated (deepseek deepthink). It is unethical to use this for commercial purposes and I have decided to use an MIT license as I believe it is not fair to claim this as my own. _
+_Disclaimer: this was mostly AI generated (Deepseek V3-4 and Claude Sonnet 5). It is unethical to use this for commercial purposes and I have decided to use an MIT license as I believe it is not fair to claim this as my own. _
 
 # How to set up:
 
