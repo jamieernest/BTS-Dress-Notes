@@ -27,6 +27,7 @@ const gatewayIp = process.env.GATEWAY_IP || null; // optional source filter
 const gatewayIface = process.env.GATEWAY_IFACE || undefined; // local IP of the NIC to join on
 const ACN_PORT = 5568;
 const NETWORK_STOP_MS = 250; // the gateway sends no stop message; quarter-frames just cease
+const NETWORK_RETRY_MS = 5000; // the venue interface may not be up yet when the service starts
 
 // Keycloak SSO configuration - one shared client used across every venue,
 // unlike EOS_HOST/EOS_PORT above which are per-venue.
@@ -401,6 +402,7 @@ const networkStatus = {
 };
 let networkSocket = null;
 let networkStopTimer = null;
+let networkRetryTimer = null;
 const ignoredGatewaySources = new Set();
 const gatewaySequenceFilters = new Map(); // per source address
 
@@ -474,12 +476,17 @@ function startNetworkTimecode() {
     const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true }); // sACN shares port 5568
     socket.on('message', handleGatewayPacket);
     socket.on('error', (error) => {
-        console.log(`Network timecode: socket error on ${gatewayGroup}:${ACN_PORT}: ${error.message}`);
+        if (networkSocket !== socket) return;
+        console.log(`Network timecode: socket error on ${gatewayGroup}:${ACN_PORT}: ${error.message} - retrying in ${NETWORK_RETRY_MS / 1000} s`);
         networkStatus.listening = false;
         networkStatus.error = error.message;
         emitNetworkStatus();
-        socket.close();
         networkSocket = null;
+        socket.close();
+        networkRetryTimer = setTimeout(() => {
+            networkRetryTimer = null;
+            startNetworkTimecode();
+        }, NETWORK_RETRY_MS);
     });
     socket.bind(ACN_PORT, () => {
         try {
@@ -489,6 +496,7 @@ function startNetworkTimecode() {
             return;
         }
         networkStatus.listening = true;
+        networkStatus.error = null;
         console.log(`Network timecode: joined multicast group ${gatewayGroup}:${ACN_PORT}` +
             (gatewayIface ? ` on interface ${gatewayIface}` : '') +
             `, accepting MIDI from ${gatewayIp || 'any gateway'}`);
@@ -987,6 +995,7 @@ initKeycloak().finally(() => {
 process.on('SIGINT', () => {
     if (midiInput) midiInput.close();
     if (oscServer) oscServer.close();
+    if (networkRetryTimer) clearTimeout(networkRetryTimer);
     if (networkSocket) networkSocket.close();
     process.exit();
 });
