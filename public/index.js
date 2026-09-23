@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const personalTimecodeContainer = document.getElementById('personalTimecode');
     const connectionStatus = document.getElementById('connectionStatus');
     const midiStatus = document.getElementById('midiStatus');
+    const networkStatus = document.getElementById('networkStatus');
     const oscStatus = document.getElementById('oscStatus');
     const timeModeStatus = document.getElementById('timeModeStatus');
     const userStatus = document.getElementById('userStatus');
@@ -21,9 +22,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const notesList = document.getElementById('notesList');
     const exportJsonBtn = document.getElementById('exportJson');
     const currentUserName = document.getElementById('currentUserName');
-    const timeModeToggle = document.getElementById('timeModeToggle');
-    const realtimeLabel = document.getElementById('realtimeLabel');
-    const midiLabel = document.getElementById('midiLabel');
+    const timeModeButtons = document.querySelectorAll('.time-mode-button');
+    const midiModeButton = document.querySelector('.time-mode-button[data-mode="midi"]');
     const tagsContainer = document.getElementById('tagsContainer');
     const filterTagsContainer = document.getElementById('filterTags');
     const currentActDisplay = document.getElementById('currentActDisplay');
@@ -50,6 +50,12 @@ document.addEventListener('DOMContentLoaded', function() {
         currentFrameRate: 30
     };
     let currentGlobalTimecode = { hours: 0, minutes: 0, seconds: 0, frames: 0, frameRate: 30 };
+    // Latest timecode from each source; the display shows the one matching timeMode.
+    const latestTimecodes = {
+        midi: { hours: 0, minutes: 0, seconds: 0, frames: 0, frameRate: 30, source: 'midi' },
+        network: { hours: 0, minutes: 0, seconds: 0, frames: 0, frameRate: 30, source: 'network' }
+    };
+    const liveSources = { midi: false, network: false };
     let currentGlobalLxCue = '1';
     let allNotes = [];
     let timeMode = 'realtime';
@@ -290,26 +296,36 @@ document.addEventListener('DOMContentLoaded', function() {
         personalLxCueElement.textContent = `LX Cue: ${cue}`;
     }
 
+    const timeModeNames = {
+        midi: { label: 'MIDI TIMECODE', status: 'Time Mode: MIDI Timecode' },
+        network: { label: 'NETWORK TIMECODE', status: 'Time Mode: Network Timecode (MIDI gateway)' },
+        realtime: { label: 'REAL TIME', status: 'Time Mode: Real Time (System Clock)' }
+    };
+
+    function updateSourceBadge() {
+        const name = timeMode === 'network' ? 'NETWORK' : 'MIDI';
+        sourceBadge.textContent = liveSources[timeMode] ? `LIVE ${name}` : name;
+        sourceBadge.className = `source-badge source-${timeMode}`;
+    }
+
     function updateTimeModeDisplay() {
+        const names = timeModeNames[timeMode] || timeModeNames.midi;
+        timeModeLabel.textContent = names.label;
+        timeModeStatus.textContent = names.status;
+        timeModeButtons.forEach(button => button.classList.toggle('active', button.dataset.mode === timeMode));
         if (timeMode === 'realtime') {
-            timeModeLabel.textContent = 'REAL TIME';
-            timeModeStatus.textContent = 'Time Mode: Real Time (System Clock)';
-            realtimeLabel.classList.add('active');
-            midiLabel.classList.remove('active');
-            timeModeToggle.checked = true;
             sourceBadge.style.display = 'none';
             globalFrameRateElement.textContent = 'Time Unit: Milliseconds';
             startRealTimeMode();
         } else {
-            timeModeLabel.textContent = 'MIDI TIMECODE';
-            timeModeStatus.textContent = 'Time Mode: MIDI Timecode';
-            realtimeLabel.classList.remove('active');
-            midiLabel.classList.add('active');
-            timeModeToggle.checked = false;
+            currentGlobalTimecode = latestTimecodes[timeMode];
+            currentUser.currentFrameRate = currentGlobalTimecode.frameRate;
+            updateSourceBadge();
             sourceBadge.style.display = 'inline-block';
             globalFrameRateElement.textContent = `Frame Rate: ${currentGlobalTimecode.frameRate} fps`;
             stopRealTimeMode();
             updateGlobalTimecodeDisplay(currentGlobalTimecode);
+            if (!currentUser.isTyping) updatePersonalTimecodeDisplay(currentGlobalTimecode);
         }
     }
 
@@ -353,7 +369,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 frameRate: 'ms'
             };
         } else {
-            currentUser.frozenTimecode = { ...currentGlobalTimecode, displayMode: 'midi' };
+            currentUser.frozenTimecode = { ...currentGlobalTimecode, displayMode: timeMode };
         }
         currentUser.frozenLxCue = currentGlobalLxCue;
         updatePersonalTimecodeDisplay(currentUser.frozenTimecode);
@@ -668,19 +684,17 @@ document.addEventListener('DOMContentLoaded', function() {
         if (data.midiAvailable && data.portCount > 0) {
             midiStatus.textContent = `MIDI Interface: ${data.portCount} port(s) available - ${data.currentPort}`;
             midiStatus.className = 'status-connected';
-            timeModeToggle.disabled = false;
-            midiLabel.style.opacity = '1';
-            realtimeLabel.style.opacity = '1';
+            midiModeButton.disabled = false;
         } else {
             midiStatus.textContent = 'MIDI Interface: No MIDI devices found';
             midiStatus.className = 'status-disconnected';
-            timeModeToggle.disabled = true;
-            timeModeToggle.checked = true;
-            midiLabel.style.opacity = '0.5';
-            realtimeLabel.style.opacity = '1';
-            timeMode = 'realtime';
-            updateTimeModeDisplay();
-            window.socket.emit('time-mode-change', 'realtime');
+            midiModeButton.disabled = true;
+            // Network timecode and real time stay selectable without a MIDI device.
+            if (timeMode === 'midi') {
+                timeMode = 'realtime';
+                updateTimeModeDisplay();
+                window.socket.emit('time-mode-change', 'realtime');
+            }
         }
         if (data.oscAvailable) {
             oscStatus.textContent = 'LX Cues: OSC Source Active (Auto-updating)';
@@ -695,15 +709,42 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    window.socket.on('network-timecode-status', (status) => {
+        const where = `${status.group}:${status.port}`;
+        if (status.error) {
+            networkStatus.textContent = `Network Timecode: Error on ${where} - ${status.error}`;
+            networkStatus.className = 'status-disconnected';
+        } else if (!status.listening) {
+            networkStatus.textContent = `Network Timecode: Starting (${where})...`;
+            networkStatus.className = '';
+        } else if (status.running) {
+            networkStatus.textContent = `Network Timecode: Receiving from ${status.source} on ${where}`;
+            networkStatus.className = 'status-connected';
+        } else if (status.source) {
+            networkStatus.textContent = `Network Timecode: Stopped (last from ${status.source} on ${where})`;
+            networkStatus.className = '';
+        } else {
+            networkStatus.textContent = `Network Timecode: Listening on ${where}` +
+                (status.gatewayIp ? ` for ${status.gatewayIp}` : '') + ' - no timecode yet';
+            networkStatus.className = '';
+        }
+        liveSources.network = !!status.running;
+        if (timeMode === 'network') updateSourceBadge();
+    });
+
     window.socket.on('timecode-update', (data) => {
-        if (timeMode === 'midi' && data.source === 'midi') {
+        if (!latestTimecodes[data.source]) return;
+        latestTimecodes[data.source] = data;
+        if (timeMode === data.source) {
             currentGlobalTimecode = data;
             currentUser.currentFrameRate = data.frameRate;
+            globalFrameRateElement.textContent = `Frame Rate: ${data.frameRate} fps`;
             updateGlobalTimecodeDisplay(data);
             if (!currentUser.isTyping) updatePersonalTimecodeDisplay(data);
-            sourceBadge.textContent = 'LIVE MIDI';
-            sourceBadge.className = 'source-badge source-midi';
-            sourceBadge.style.display = 'inline-block';
+            if (data.source === 'midi' && !liveSources.midi) {
+                liveSources.midi = true;
+                updateSourceBadge();
+            }
         }
     });
 
@@ -805,12 +846,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // --- Event listeners ---
-    timeModeToggle.addEventListener('change', () => {
-        if (!timeModeToggle.disabled) {
-            const newMode = timeModeToggle.checked ? 'realtime' : 'midi';
-            window.socket.emit('time-mode-change', newMode);
+    timeModeButtons.forEach(button => button.addEventListener('click', () => {
+        if (!button.disabled && button.dataset.mode !== timeMode) {
+            window.socket.emit('time-mode-change', button.dataset.mode);
         }
-    });
+    }));
 
     lxCueInput.addEventListener('input', () => window.socket.emit('lx-cue-change', lxCueInput.value));
 

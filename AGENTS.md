@@ -16,6 +16,10 @@ Every page (`/`, `/overlay.html`, `/overlay-cast.html`, `/recall.html`, and all 
 
 LX cue text arrives two ways, both routed through `handleOscMessage()` in `server.js`: the TCP connection to the desk (`EOS_PORT`, 3037) and the UDP OSC server (`OSC_PORT`). Port 3037 is OSC 1.1 SLIP-framed, and one TCP `data` chunk routinely holds several packets, so never parse raw chunks as strings; decode with `eos-osc.js`. Cue text is `<list>/<label> <time> [<percent>]`, and labels can contain `/` (e.g. `1/1899 B/O 3.0 100%`); during a fade Eos resends it with a falling time and rising percentage. `npm test` runs regression tests built from captured desk traffic. Set `DEBUG_EOS=1` to log every decoded TCP message.
 
+## Timecode sources
+
+`globalState.timeMode` is `midi`, `network` or `realtime`. MIDI and network timecode each have their own `createMtcDecoder()` (`mtc.js`) and state (`globalState.timecode` / `globalState.networkTimecode`); every `timecode-update` carries `source`, and clients display only the source matching the mode. Network timecode is the ETC Response MIDI gateway's ACN/SDT multicast (UDP 5568, shared with sACN), parsed by `acn-midi.js`; see the README for settings. The venue switch does IGMP snooping, so nothing arrives without a group join, and on Wi-Fi every packet arrived twice (hence the SDT sequence filter). `npm test` covers it with packets captured from the gateway.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

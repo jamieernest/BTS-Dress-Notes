@@ -39,6 +39,7 @@
                 </div>
                 <div id="connectionStatus" class="status-disconnected">Disconnected from Server</div>
                 <div id="midiStatus" style="margin-top: 0.5rem;">MIDI Interface: Scanning...</div>
+                <div id="networkStatus" style="margin-top: 0.5rem;">Network Timecode: Starting...</div>
                 <div id="oscStatus" style="margin-top: 0.5rem;">LX Cues: Manual Input</div>
                 <div id="timeModeStatus" style="margin-top: 0.5rem;">Time Mode: MIDI Timecode</div>
                 <div id="userStatus" style="margin-top: 0.5rem;">Ready to take notes</div>
@@ -55,13 +56,10 @@
                     <div class="lx-cue" id="globalLxCue">LX Cue: 1</div>
                     <div class="frame-rate-display" id="globalFrameRate">Frame Rate: 30 fps</div>
                     
-                    <div class="time-mode-toggle">
-                        <span class="toggle-label active" id="midiLabel">MIDI Time</span>
-                        <label class="toggle-switch">
-                            <input type="checkbox" id="timeModeToggle">
-                            <span class="toggle-slider"></span>
-                        </label>
-                        <span class="toggle-label" id="realtimeLabel">Real Time</span>
+                    <div class="time-mode-buttons" id="timeModeButtons">
+                        <button type="button" class="time-mode-button active" data-mode="midi">MIDI Timecode</button>
+                        <button type="button" class="time-mode-button" data-mode="network">Network Timecode</button>
+                        <button type="button" class="time-mode-button" data-mode="realtime">Real Time</button>
                     </div>
                 </div>
                 
@@ -175,7 +173,7 @@
                 <div class="instruction-item">• LX cues automatically update via OSC from EOS</div>
                 <div class="instruction-item">• Filter notes by tags to find what you need</div>
                 <div class="instruction-item">• Export all notes as JSON with timestamps</div>
-                <div class="instruction-item">• Toggle between Real Time and MIDI Timecode (Global)</div>
+                <div class="instruction-item">• Switch between MIDI Timecode, Network Timecode and Real Time (Global)</div>
                 <div class="instruction-item">• Auto-resume after 15 seconds if note is empty and not focused</div>
                 <div class="instruction-item">• Use the "View Exported Notes" link to review past sessions</div>
             </div>
