@@ -4,9 +4,12 @@ const socketIo = require('socket.io');
 const path = require('path');
 const fs = require('fs');
 const net = require('net');
+const dgram = require('dgram');
 const session = require('express-session');
 const { Server, Message, encode } = require('node-osc');
 const { createSlipDecoder, decodeOscPacket, extractCueLabel } = require('./eos-osc');
+const { extractMidi, wrapperSequence, createSequenceFilter, senderCid } = require('./acn-midi');
+const { createMtcDecoder } = require('./mtc');
 
 const app = express();
 const server = http.createServer(app);
@@ -15,6 +18,15 @@ const io = socketIo(server);
 const eosHost = process.env.EOS_HOST || '10.10.160.143';
 const eosPort = process.env.EOS_PORT || 3037;
 const oscPort = process.env.OSC_PORT || 8001;
+
+// Network timecode from the ETC Response MIDI gateway (ACN/SDT multicast).
+// The group address is chosen by the gateway; 239.194.242.66 has held across
+// gateway and Eos restarts, but it stays configurable.
+const gatewayGroup = process.env.GATEWAY_MCAST || '239.194.242.66';
+const gatewayIp = process.env.GATEWAY_IP || null; // optional source filter
+const gatewayIface = process.env.GATEWAY_IFACE || undefined; // local IP of the NIC to join on
+const ACN_PORT = 5568;
+const NETWORK_STOP_MS = 250; // the gateway sends no stop message; quarter-frames just cease
 
 // Keycloak SSO configuration - one shared client used across every venue,
 // unlike EOS_HOST/EOS_PORT above which are per-venue.
@@ -235,6 +247,14 @@ const globalState = {
         frameRate: 30,
         source: 'midi'
     },
+    networkTimecode: {
+        hours: 0,
+        minutes: 0,
+        seconds: 0,
+        frames: 0,
+        frameRate: 30,
+        source: 'network'
+    },
     notes: [],
     chatMessages: [],
     users: new Map(),
@@ -359,57 +379,127 @@ try {
 }
 
 // MIDI Timecode parsing
-let quarterFrameData = new Array(8).fill(0);
-let lastQuarterFrame = -1;
-let lastFullTimecode = null;
-
-const frameRates = {
-    0: 24,
-    1: 25,
-    2: 29.97,
-    3: 30
-};
+const midiDecoder = createMtcDecoder('midi', (timecode) => {
+    globalState.timecode = timecode;
+    io.emit('timecode-update', globalState.timecode);
+});
 
 function parseEasyMIDIMTC(messageType, value) {
-    quarterFrameData[messageType] = value;
     mtcMessagesReceived++;
-    
-    lastQuarterFrame = messageType;
-    
-    if (messageType === 7) {
-        parseCompleteMTC();
+    midiDecoder.quarterFrame(messageType, value);
+}
+
+// Network timecode: the gateway re-sends each MIDI message as an ACN packet.
+const networkStatus = {
+    group: gatewayGroup,
+    port: ACN_PORT,
+    gatewayIp: gatewayIp,
+    listening: false,
+    running: false,
+    source: null,
+    error: null
+};
+let networkSocket = null;
+let networkStopTimer = null;
+const ignoredGatewaySources = new Set();
+const gatewaySequenceFilters = new Map(); // per source address
+
+const networkDecoder = createMtcDecoder('network', (timecode) => {
+    globalState.networkTimecode = timecode;
+    io.emit('timecode-update', globalState.networkTimecode);
+});
+
+function emitNetworkStatus() {
+    io.emit('network-timecode-status', networkStatus);
+}
+
+function networkStreamStopped() {
+    networkStatus.running = false;
+    networkDecoder.reset();
+    console.log(`Network timecode: stopped (no quarter-frame for ${NETWORK_STOP_MS} ms)`);
+    emitNetworkStatus();
+}
+
+function networkQuarterFrameReceived() {
+    if (networkStopTimer) {
+        networkStopTimer.refresh();
+    } else {
+        networkStopTimer = setTimeout(() => {
+            networkStopTimer = null;
+            networkStreamStopped();
+        }, NETWORK_STOP_MS);
+    }
+    if (!networkStatus.running) {
+        networkStatus.running = true;
+        console.log(`Network timecode: running (from ${networkStatus.source})`);
+        emitNetworkStatus();
     }
 }
 
-function parseCompleteMTC() {
-    const frames = (quarterFrameData[1] << 4) | quarterFrameData[0];
-    const seconds = (quarterFrameData[3] << 4) | quarterFrameData[2];
-    const minutes = (quarterFrameData[5] << 4) | quarterFrameData[4];
-    const hoursAndRate = (quarterFrameData[7] << 4) | quarterFrameData[6];
-    
-    const hours = hoursAndRate & 0x1F;
-    const rateCode = (hoursAndRate >> 5) & 0x03;
-    
-    const newTimecode = {
-        hours: hours,
-        minutes: minutes,
-        seconds: seconds,
-        frames: frames,
-        frameRate: frameRates[rateCode] || 30,
-        source: 'midi'
-    };
-    
-    if (!lastFullTimecode || 
-        lastFullTimecode.hours !== newTimecode.hours ||
-        lastFullTimecode.minutes !== newTimecode.minutes ||
-        lastFullTimecode.seconds !== newTimecode.seconds ||
-        lastFullTimecode.frames !== newTimecode.frames) {
-        
-        globalState.timecode = newTimecode;
-        lastFullTimecode = {...newTimecode};
-        
-        io.emit('timecode-update', globalState.timecode);
+function handleGatewayPacket(buf, rinfo) {
+    const messages = extractMidi(buf);
+    if (messages.length === 0) return; // keepalives, ACKs, sACN and other ACN traffic
+
+    if (gatewayIp && rinfo.address !== gatewayIp) {
+        if (!ignoredGatewaySources.has(rinfo.address)) {
+            ignoredGatewaySources.add(rinfo.address);
+            console.log(`Network timecode: ignoring MIDI from ${rinfo.address} (CID ${senderCid(buf)}) on ${gatewayGroup} - GATEWAY_IP is ${gatewayIp}`);
+        }
+        return;
     }
+    if (!gatewaySequenceFilters.has(rinfo.address)) {
+        gatewaySequenceFilters.set(rinfo.address, createSequenceFilter());
+    }
+    if (!gatewaySequenceFilters.get(rinfo.address)(wrapperSequence(buf))) return; // duplicate copy
+
+    if (networkStatus.source !== rinfo.address) {
+        console.log(networkStatus.source
+            ? `Network timecode: now receiving from ${rinfo.address} (was ${networkStatus.source}) - set GATEWAY_IP to choose one gateway`
+            : `Network timecode: first MIDI packet from gateway ${rinfo.address}:${rinfo.port} (CID ${senderCid(buf)}) on group ${gatewayGroup}:${ACN_PORT}`);
+        networkStatus.source = rinfo.address;
+        emitNetworkStatus();
+    }
+
+    for (const midi of messages) {
+        if (midi[0] === 0xF1 && midi.length >= 2) {
+            networkDecoder.quarterFrame((midi[1] >> 4) & 0x07, midi[1] & 0x0F);
+            networkQuarterFrameReceived();
+        } else {
+            networkDecoder.fullFrame(midi); // MSC and other SysEx are ignored
+        }
+    }
+}
+
+function startNetworkTimecode() {
+    const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true }); // sACN shares port 5568
+    socket.on('message', handleGatewayPacket);
+    socket.on('error', (error) => {
+        console.log(`Network timecode: socket error on ${gatewayGroup}:${ACN_PORT}: ${error.message}`);
+        networkStatus.listening = false;
+        networkStatus.error = error.message;
+        emitNetworkStatus();
+        socket.close();
+        networkSocket = null;
+    });
+    socket.bind(ACN_PORT, () => {
+        try {
+            socket.addMembership(gatewayGroup, gatewayIface);
+        } catch (error) {
+            socket.emit('error', new Error(`could not join multicast group: ${error.message}`));
+            return;
+        }
+        networkStatus.listening = true;
+        console.log(`Network timecode: joined multicast group ${gatewayGroup}:${ACN_PORT}` +
+            (gatewayIface ? ` on interface ${gatewayIface}` : '') +
+            `, accepting MIDI from ${gatewayIp || 'any gateway'}`);
+        emitNetworkStatus();
+    });
+    networkSocket = socket;
+}
+
+// Timecode of the source the current time mode displays.
+function currentModeTimecode() {
+    return globalState.timeMode === 'network' ? globalState.networkTimecode : globalState.timecode;
 }
 
 function formatTimecode(tc) {
@@ -552,6 +642,7 @@ io.on('connection', (socket) => {
     // Send current state to newly connected client
     socket.emit('act-update', globalState.currentAct);
     socket.emit('timecode-update', globalState.timecode);
+    socket.emit('timecode-update', globalState.networkTimecode);
     socket.emit('notes-update', globalState.notes);
     socket.emit('tags-update', globalState.tags);
     socket.emit('time-mode-update', globalState.timeMode);
@@ -563,6 +654,7 @@ io.on('connection', (socket) => {
         mtcMessagesReceived: mtcMessagesReceived,
         oscAvailable: !!oscServer
     });
+    socket.emit('network-timecode-status', networkStatus);
 
     // Only send user-related updates if this is NOT an overlay
     if (!isOverlay) {
@@ -624,7 +716,7 @@ io.on('connection', (socket) => {
         if (user.isOverlay) return; // Overlay users can't type
         
         user.isTyping = true;
-        user.currentTimecode = data.timecode || {...globalState.timecode};
+        user.currentTimecode = data.timecode || {...currentModeTimecode()};
         user.currentLxCue = data.lxCue || globalState.currentLxCue;
         
         // Send filtered users list (excluding overlay users)
@@ -649,7 +741,7 @@ io.on('connection', (socket) => {
     socket.on('time-mode-change', (newMode) => {
         if (user.isOverlay) return; // Overlay users can't change time mode
         
-        if (newMode === 'midi' || newMode === 'realtime') {
+        if (newMode === 'midi' || newMode === 'network' || newMode === 'realtime') {
             globalState.timeMode = newMode;
             io.emit('time-mode-update', globalState.timeMode);
         }
@@ -674,7 +766,7 @@ io.on('connection', (socket) => {
     socket.on('note-submit', (data) => {
         if (user.isOverlay) return;
         
-        const noteTimecode = data.timecode || {...globalState.timecode};
+        const noteTimecode = data.timecode || {...currentModeTimecode()};
         
         const note = {
             id: Date.now() + Math.random().toString(36).substr(2, 9),
@@ -684,7 +776,7 @@ io.on('connection', (socket) => {
             timecode: noteTimecode,
             lxCue: data.lxCue || globalState.currentLxCue,
             timestamp: new Date().toISOString(),
-            frameRate: data.frameRate || globalState.timecode.frameRate,
+            frameRate: data.frameRate || currentModeTimecode().frameRate,
             tags: data.tags || [],
             act: globalState.currentAct, // Use current act from OSC
             comments: []
@@ -888,11 +980,13 @@ initKeycloak().finally(() => {
         }
 
         subscribeToEOS();
+        startNetworkTimecode();
     });
 });
 
 process.on('SIGINT', () => {
     if (midiInput) midiInput.close();
     if (oscServer) oscServer.close();
+    if (networkSocket) networkSocket.close();
     process.exit();
 });

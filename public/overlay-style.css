@@ -131,7 +131,7 @@ body {
     color: #f44336;
 }
 
-/* ---------- TIME MODE INDICATOR (MIDI/RealTime) ---------- */
+/* ---------- TIME MODE INDICATOR (MIDI/Network/RealTime) ---------- */
 .time-mode-indicator {
     position: absolute;
     top: 10px;
@@ -151,6 +151,10 @@ body {
 
 .realtime-mode {
     color: #2196F3;
+}
+
+.network-mode {
+    color: #FF9800;
 }
 
 /* ---------- SIZE CLASSES (Small / Normal / Large) ---------- */
