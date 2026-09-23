@@ -13,6 +13,7 @@ const io = socketIo(server);
 
 const eosHost = process.env.EOS_HOST || '10.10.160.143';
 const eosPort = process.env.EOS_PORT || 3037;
+const oscPort = process.env.OSC_PORT || 8001;
 
 // Keycloak SSO configuration - one shared client used across every venue,
 // unlike EOS_HOST/EOS_PORT above which are per-venue.
@@ -311,8 +312,8 @@ function subscribeToEOS() {
 // OSC Server for LX Cues and scenes from qlab
 let oscServer = null;
 try {
-    oscServer = new Server(8001, '0.0.0.0', () => {
-        console.log('OSC Server is listening on port 8001 for LX cues and Scene info');
+    oscServer = new Server(oscPort, '0.0.0.0', () => {
+        console.log(`OSC Server is listening on port ${oscPort} for LX cues and Scene info`);
     });
 
     oscServer.on('message', function (msg) {
@@ -892,7 +893,7 @@ initKeycloak().finally(() => {
     server.listen(PORT, () => {
         console.log(`MIDI Timecode Notes Server running on http://localhost:${PORT}`);
         if (oscServer) {
-            console.log('OSC Server listening for LX cues on port 8001');
+            console.log(`OSC Server listening for LX cues on port ${oscPort}`);
         }
 
         subscribeToEOS();
