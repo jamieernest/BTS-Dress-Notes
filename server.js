@@ -6,6 +6,7 @@ const fs = require('fs');
 const net = require('net');
 const session = require('express-session');
 const { Server, Message, encode } = require('node-osc');
+const { createSlipDecoder, decodeOscPacket, extractCueLabel } = require('./eos-osc');
 
 const app = express();
 const server = http.createServer(app);
@@ -272,6 +273,43 @@ try {
     console.log('EasyMIDI not available:', error.message);
 }
 
+// Shared by the Eos TCP connection and the UDP OSC server.
+// Messages we're interested in:
+// /eos/out/active/cue/text,1/199 B/O 1.0 2%
+// /eos/out/pending/cue/text,1/201 Start 1.0
+function handleOscMessage(address, value) {
+    if (address === '/eos/out/active/cue/text' && value) {
+        // Extract cue name from value like "1/199 B/O 1.0 2%"
+        const cueName = extractCueLabel(value);
+        if (cueName) {
+            console.log(`Extracted active LX cue: ${cueName}`);
+            
+            // Update global state
+            globalState.currentLxCue = cueName;
+            
+            // Notify all clients
+            io.emit('lx-cue-update', cueName);
+        }
+    } else if (address === '/eos/out/pending/cue/text' && value) {
+        // Optionally handle pending cues too
+        const cueName = extractCueLabel(value);
+        if (cueName) {
+            console.log(`Extracted pending LX cue: ${cueName}`);
+            
+            // You could choose to update for pending cues too, or just log them
+            // globalState.currentLxCue = `Pending: ${cueName}`;
+            // io.emit('lx-cue-update', `Pending: ${cueName}`);
+        }
+    } else if (address.startsWith('/bts/')) {
+        const act = value;
+        if (act && act !== globalState.currentAct) {
+            globalState.currentAct = act;
+            console.log(`Updated current act to: ${act}`);
+            io.emit('act-update', act);
+        }
+    }
+}
+
 const connectMessage = new Message('/eos/subscribe=1');
 const buffer = encode(connectMessage);
 
@@ -284,25 +322,16 @@ function subscribeToEOS() {
         eosClient.write(buffer);
     });
 
-    eosClient.on('data', function(data) {
-        let value = data.toString().replace(/[^\x20-\x7E]/g, '').trim();
-        if (process.env.DEBUG_EOS) {
-            console.log('Received: ' + value);
-        }
-        if(value.startsWith('/eos/out/active/cue/text')) {
-            const cueMatch = value.split('/')
-            if (cueMatch && cueMatch[6]) {
-                const cueName = cueMatch[6].trim();
-                console.log(`Extracted active LX cue: ${cueName}`);
-                
-                // Update global state
-                globalState.currentLxCue = cueName;
-                
-                // Notify all clients
-                io.emit('lx-cue-update', cueName);
+    const pushSlip = createSlipDecoder(function(packet) {
+        for (const [address, value] of decodeOscPacket(packet)) {
+            if (process.env.DEBUG_EOS) {
+                console.log(`Received: ${address} ${value === undefined ? '' : JSON.stringify(value)}`);
             }
+            handleOscMessage(address, value);
         }
     });
+
+    eosClient.on('data', pushSlip);
 
     eosClient.on('error', function(err) {
         console.log('Error connecting to EOS via TCP:', err);
@@ -317,45 +346,7 @@ try {
     });
 
     oscServer.on('message', function (msg) {
-        
-        // Parse OSC message for active cues
-        // Messages we're interested in:
-        // /eos/out/active/cue/text,1/199 B/O 1.0 2%
-        // /eos/out/pending/cue/text,1/201 Start 1.0
-        const address = msg[0];
-        const value = msg[1];
-        if (address === '/eos/out/active/cue/text' && value) {
-            // Extract cue name from value like "1/199 B/O 1.0 2%"
-            const cueMatch = value.match(/[^/]+\/(.+)/);
-            if (cueMatch && cueMatch[1]) {
-                const cueName = cueMatch[1].trim();
-                console.log(`Extracted active LX cue: ${cueName}`);
-                
-                // Update global state
-                globalState.currentLxCue = cueName;
-                
-                // Notify all clients
-                io.emit('lx-cue-update', cueName);
-            }
-        } else if (address === '/eos/out/pending/cue/text' && value) {
-            // Optionally handle pending cues too
-            const cueMatch = value.match(/[^/]+\/(.+)/);
-            if (cueMatch && cueMatch[1]) {
-                const cueName = cueMatch[1].trim();
-                console.log(`Extracted pending LX cue: ${cueName}`);
-                
-                // You could choose to update for pending cues too, or just log them
-                // globalState.currentLxCue = `Pending: ${cueName}`;
-                // io.emit('lx-cue-update', `Pending: ${cueName}`);
-            }
-        } else if (address.startsWith('/bts/')) {
-            const act = value;
-            if (act && act !== globalState.currentAct) {
-                globalState.currentAct = act;
-                console.log(`Updated current act to: ${act}`);
-                io.emit('act-update', act);
-            }
-        }
+        handleOscMessage(msg[0], msg[1]);
     });
 
     oscServer.on('error', (err) => {

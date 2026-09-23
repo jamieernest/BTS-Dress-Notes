@@ -5,6 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node --env-file-if-exists=.env server.js",
+    "test": "node --test test/eos-osc.test.js",
     "dev": "nodemon --exec \"node --env-file-if-exists=.env\" server.js"
   },
   "dependencies": {
