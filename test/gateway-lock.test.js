@@ -16,12 +16,18 @@ const INTERFACES = [
 function setup({ interfaces = INTERFACES, lostMs = 10000 } = {}) {
     const calls = [];
     const logs = [];
+    const memberships = new Set();
     const socket = {
         addMembership(group, address) {
             if (address.startsWith('100.64.')) throw new Error('addMembership EADDRNOTAVAIL');
+            if (memberships.has(address)) {
+                throw Object.assign(new Error('addMembership EADDRINUSE'), { code: 'EADDRINUSE' });
+            }
+            memberships.add(address);
             calls.push(['add', group, address]);
         },
         dropMembership(group, address) {
+            memberships.delete(address);
             calls.push(['drop', group, address]);
         }
     };
@@ -56,7 +62,7 @@ function setup({ interfaces = INTERFACES, lostMs = 10000 } = {}) {
         }
         clock.time = end;
     }
-    return { lock, calls, logs, env, advance };
+    return { lock, calls, logs, env, advance, memberships };
 }
 
 test('joins on every interface and skips one that fails, logging it once', () => {
@@ -145,6 +151,39 @@ test('joins an interface that comes up while waiting for a gateway', () => {
     advance(10000);
     assert.deepStrictEqual(calls.map(c => c[2]), ['192.168.75.175', '10.10.160.50']);
     assert.strictEqual(env.changes, 1);
+});
+
+test('rejoins an adapter that is unplugged and plugged back in', () => {
+    const { lock, calls, env, advance, memberships } = setup({ interfaces: INTERFACES.slice(0, 2) });
+    lock.start();
+    lock.accept('10.10.160.188', GATEWAY_CID, true);
+
+    // Unplugged: the OS takes the membership with it, and the gateway goes silent.
+    env.interfaces = [INTERFACES[0]];
+    memberships.delete('10.10.160.50');
+    calls.length = 0;
+    advance(10000);
+    assert.strictEqual(lock.state().locked, false);
+    assert.deepStrictEqual(lock.state().joined.map(i => i.name), ['en0']);
+
+    // Plugged back in with the same address.
+    env.interfaces = INTERFACES.slice(0, 2);
+    advance(10000);
+    assert.deepStrictEqual(calls.filter(c => c[0] === 'add').map(c => c[2]), ['192.168.75.175', '10.10.160.50']);
+    assert.deepStrictEqual(lock.state().joined.map(i => i.name), ['en0', 'en7']);
+    assert.strictEqual(lock.accept('10.10.160.188', GATEWAY_CID, true), true);
+    assert.strictEqual(lock.state().interfaceName, 'en7');
+});
+
+test('rejoins an adapter replugged between scans', () => {
+    const { lock, calls, advance, memberships } = setup({ interfaces: INTERFACES.slice(0, 2) });
+    lock.start();
+    lock.accept('10.10.160.188', GATEWAY_CID, true);
+    memberships.delete('10.10.160.50'); // unplugged and back before the next scan
+    calls.length = 0;
+    advance(10000);
+    assert.strictEqual(lock.state().locked, false);
+    assert.deepStrictEqual(calls, [['add', GROUP, '192.168.75.175'], ['add', GROUP, '10.10.160.50']]);
 });
 
 test('stop cancels the pending timer', () => {
