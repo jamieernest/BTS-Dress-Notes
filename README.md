@@ -30,7 +30,7 @@ npm i
 
 # Timecode modes
 
-The three buttons under the main clock switch every user's display between:
+The three buttons on the Config & Status page (`/config.html`, linked from the main page) switch every user's display between:
 
 - **MIDI Timecode** - MTC from the computer's MIDI input (step 6). Disabled when no MIDI device is found at startup, in which case the app starts in Real Time.
 - **Network Timecode** - the MTC that an ETC Response MIDI gateway re-sends onto the network for Eos. Always selectable.
@@ -40,7 +40,7 @@ MIDI and network timecode are separate sources; each mode shows its own source's
 
 ## Network timecode
 
-The gateway sends each MIDI message it receives (including QLab's MTC) as ACN (ANSI E1.17) multicast on UDP port 5568. The app joins that multicast group and listens; it doesn't take part in the Eos session. The status panel shows which group it is listening on and which gateway it is receiving from, and the server log prints the group at startup and the gateway's IP and CID on the first packet. When no quarter-frame arrives for 250 ms the stream is treated as stopped.
+The gateway sends each MIDI message it receives (including QLab's MTC) as ACN (ANSI E1.17) multicast on UDP port 5568. The app joins that multicast group and listens; it doesn't take part in the Eos session. The Config & Status page shows which group it is listening on and which gateway it is receiving from, and the server log prints the group at startup and the gateway's IP and CID on the first packet. When no quarter-frame arrives for 250 ms the stream is treated as stopped.
 
 Settings (environment variables):
 

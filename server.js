@@ -198,6 +198,10 @@ app.get('/recall.html', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'recall.html'));
 });
 
+app.get('/config.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'config.html'));
+});
+
 app.get('/overlay.html', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'overlay.html'));
 });

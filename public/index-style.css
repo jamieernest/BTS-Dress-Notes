@@ -90,30 +90,6 @@ h1 {
     margin-bottom: 0.5rem;
 }
 
-.time-mode-buttons {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 0.5rem;
-    margin-top: 1rem;
-}
-
-.time-mode-button {
-    font-weight: bold;
-}
-
-.time-mode-button.active {
-    background: rgba(76, 175, 80, 0.3);
-    border-color: #4CAF50;
-    color: #4CAF50;
-}
-
-.time-mode-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none;
-}
-
 .notes-section {
     background: rgba(30, 30, 30, 0.9);
     border-radius: 15px;

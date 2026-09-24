@@ -6,12 +6,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const personalTimecodeElement = document.getElementById('personalTimecodeDisplay');
     const personalLxCueElement = document.getElementById('personalLxCueDisplay');
     const personalTimecodeContainer = document.getElementById('personalTimecode');
-    const connectionStatus = document.getElementById('connectionStatus');
-    const midiStatus = document.getElementById('midiStatus');
-    const networkStatus = document.getElementById('networkStatus');
-    const oscStatus = document.getElementById('oscStatus');
-    const timeModeStatus = document.getElementById('timeModeStatus');
-    const userStatus = document.getElementById('userStatus');
     const sourceBadge = document.getElementById('sourceBadge');
     const timeModeLabel = document.getElementById('timeModeLabel');
     const noteInput = document.getElementById('noteInput');
@@ -22,8 +16,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const notesList = document.getElementById('notesList');
     const exportJsonBtn = document.getElementById('exportJson');
     const currentUserName = document.getElementById('currentUserName');
-    const timeModeButtons = document.querySelectorAll('.time-mode-button');
-    const midiModeButton = document.querySelector('.time-mode-button[data-mode="midi"]');
     const tagsContainer = document.getElementById('tagsContainer');
     const filterTagsContainer = document.getElementById('filterTags');
     const currentActDisplay = document.getElementById('currentActDisplay');
@@ -296,10 +288,10 @@ document.addEventListener('DOMContentLoaded', function() {
         personalLxCueElement.textContent = `LX Cue: ${cue}`;
     }
 
-    const timeModeNames = {
-        midi: { label: 'MIDI TIMECODE', status: 'Time Mode: MIDI Timecode' },
-        network: { label: 'NETWORK TIMECODE', status: 'Time Mode: Network Timecode (MIDI gateway)' },
-        realtime: { label: 'REAL TIME', status: 'Time Mode: Real Time (System Clock)' }
+    const timeModeLabels = {
+        midi: 'MIDI TIMECODE',
+        network: 'NETWORK TIMECODE',
+        realtime: 'REAL TIME'
     };
 
     function updateSourceBadge() {
@@ -309,10 +301,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateTimeModeDisplay() {
-        const names = timeModeNames[timeMode] || timeModeNames.midi;
-        timeModeLabel.textContent = names.label;
-        timeModeStatus.textContent = names.status;
-        timeModeButtons.forEach(button => button.classList.toggle('active', button.dataset.mode === timeMode));
+        timeModeLabel.textContent = timeModeLabels[timeMode] || timeModeLabels.midi;
         if (timeMode === 'realtime') {
             sourceBadge.style.display = 'none';
             globalFrameRateElement.textContent = 'Time Unit: Milliseconds';
@@ -379,7 +368,6 @@ document.addEventListener('DOMContentLoaded', function() {
             timecode: currentUser.frozenTimecode,
             lxCue: currentUser.frozenLxCue
         });
-        userStatus.textContent = 'Timecode and LX Cue frozen - writing note...';
     }
 
     function cancelNote() {
@@ -389,7 +377,6 @@ document.addEventListener('DOMContentLoaded', function() {
         currentUser.frozenTimecode = null;
         currentUser.frozenLxCue = null;
         personalTimecodeContainer.classList.remove('frozen');
-        userStatus.textContent = 'Auto-resumed. Ready for next note.';
         selectedTags = [];
         document.querySelectorAll('.tag-checkbox:checked').forEach(cb => cb.checked = false);
         window.socket.emit('typing-stop');
@@ -611,16 +598,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- Socket.io setup ---
     window.socket = io();
 
-    window.socket.on('connect', () => {
-        connectionStatus.textContent = 'Connected to Server';
-        connectionStatus.className = 'status-connected';
-    });
-
-    window.socket.on('disconnect', () => {
-        connectionStatus.textContent = 'Disconnected from Server';
-        connectionStatus.className = 'status-disconnected';
-    });
-
     // The server refuses the socket handshake when the session is missing or
     // expired (e.g. a server restart wiped the in-memory session store).
     // That's distinct from an ordinary network blip - socket.io's normal
@@ -656,8 +633,6 @@ document.addEventListener('DOMContentLoaded', function() {
     window.socket.on('act-update', (act) => {
         currentAct = act;
         currentActDisplay.textContent = act;
-        userStatus.textContent = `Act changed to: ${act}`;
-        setTimeout(() => { if (!currentUser.isTyping) userStatus.textContent = 'Ready to take notes'; }, 3000);
     });
 
     window.socket.on('time-mode-update', (newMode) => {
@@ -681,53 +656,22 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     window.socket.on('system-status', (data) => {
-        if (data.midiAvailable && data.portCount > 0) {
-            midiStatus.textContent = `MIDI Interface: ${data.portCount} port(s) available - ${data.currentPort}`;
-            midiStatus.className = 'status-connected';
-            midiModeButton.disabled = false;
-        } else {
-            midiStatus.textContent = 'MIDI Interface: No MIDI devices found';
-            midiStatus.className = 'status-disconnected';
-            midiModeButton.disabled = true;
-            // Network timecode and real time stay selectable without a MIDI device.
-            if (timeMode === 'midi') {
-                timeMode = 'realtime';
-                updateTimeModeDisplay();
-                window.socket.emit('time-mode-change', 'realtime');
-            }
+        // Network timecode and real time stay selectable without a MIDI device.
+        if (!(data.midiAvailable && data.portCount > 0) && timeMode === 'midi') {
+            timeMode = 'realtime';
+            updateTimeModeDisplay();
+            window.socket.emit('time-mode-change', 'realtime');
         }
         if (data.oscAvailable) {
-            oscStatus.textContent = 'LX Cues: OSC Source Active (Auto-updating)';
-            oscStatus.className = 'status-connected';
             lxCueInput.disabled = true;
             lxCueInput.placeholder = 'Auto-updated via OSC';
         } else {
-            oscStatus.textContent = 'LX Cues: Manual Input';
-            oscStatus.className = '';
             lxCueInput.disabled = false;
             lxCueInput.placeholder = 'Cue Number';
         }
     });
 
     window.socket.on('network-timecode-status', (status) => {
-        const where = `${status.group}:${status.port}`;
-        if (status.error) {
-            networkStatus.textContent = `Network Timecode: Error on ${where} - ${status.error}`;
-            networkStatus.className = 'status-disconnected';
-        } else if (!status.listening) {
-            networkStatus.textContent = `Network Timecode: Starting (${where})...`;
-            networkStatus.className = '';
-        } else if (status.running) {
-            networkStatus.textContent = `Network Timecode: Receiving from ${status.source} on ${where}`;
-            networkStatus.className = 'status-connected';
-        } else if (status.source) {
-            networkStatus.textContent = `Network Timecode: Stopped (last from ${status.source} on ${where})`;
-            networkStatus.className = '';
-        } else {
-            networkStatus.textContent = `Network Timecode: Listening on ${where}` +
-                (status.gatewayIp ? ` for ${status.gatewayIp}` : '') + ' - no timecode yet';
-            networkStatus.className = '';
-        }
         liveSources.network = !!status.running;
         if (timeMode === 'network') updateSourceBadge();
     });
@@ -846,12 +790,6 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // --- Event listeners ---
-    timeModeButtons.forEach(button => button.addEventListener('click', () => {
-        if (!button.disabled && button.dataset.mode !== timeMode) {
-            window.socket.emit('time-mode-change', button.dataset.mode);
-        }
-    }));
-
     lxCueInput.addEventListener('input', () => window.socket.emit('lx-cue-change', lxCueInput.value));
 
     cancelEditTagsBtn.addEventListener('click', () => {
@@ -899,7 +837,6 @@ document.addEventListener('DOMContentLoaded', function() {
             currentUser.frozenTimecode = null;
             currentUser.frozenLxCue = null;
             personalTimecodeContainer.classList.remove('frozen');
-            userStatus.textContent = 'Note sent! Ready for next note.';
             selectedTags = [];
             document.querySelectorAll('.tag-checkbox:checked').forEach(cb => cb.checked = false);
             window.socket.emit('typing-stop');

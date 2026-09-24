@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BTS Dress Notes - Config</title>
+    <link rel="stylesheet" href="config-style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>BTS Dress Notes - Config</h1>
+            <p class="subtitle">Global settings and system status</p>
+            <a href="/" class="back-link">← Back to Live Notes</a>
+        </header>
+
+        <div class="user-info">
+            <span>You are: </span>
+            <span class="user-name-display" id="currentUserName">Guest</span>
+            <a href="/logout" class="logout-link">Log out</a>
+        </div>
+
+        <section class="panel">
+            <h2>Time Mode</h2>
+            <p class="panel-note">Applies to every connected page, including the overlays.</p>
+            <div class="time-mode-buttons" id="timeModeButtons">
+                <button type="button" class="time-mode-button" data-mode="midi">MIDI Timecode</button>
+                <button type="button" class="time-mode-button" data-mode="network">Network Timecode</button>
+                <button type="button" class="time-mode-button" data-mode="realtime">Real Time</button>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Status</h2>
+            <div class="status-list">
+                <div id="connectionStatus" class="status-disconnected">Disconnected from Server</div>
+                <div id="midiStatus">MIDI Interface: Scanning...</div>
+                <div id="networkStatus">Network Timecode: Starting...</div>
+                <div id="oscStatus">LX Cues: Manual Input</div>
+                <div id="timeModeStatus">Time Mode: -</div>
+            </div>
+        </section>
+
+        <section class="panel">
+            <h2>Debug</h2>
+            <dl class="debug-grid">
+                <dt>MIDI timecode</dt><dd id="midiTimecode">--:--:--:--</dd>
+                <dt>MIDI frame rate</dt><dd id="midiFrameRate">-</dd>
+                <dt>MIDI port</dt><dd id="midiPort">-</dd>
+                <dt>MIDI ports available</dt><dd id="midiPortCount">-</dd>
+                <dt>MTC messages received (at page load)</dt><dd id="mtcMessages">-</dd>
+                <dt>Network timecode</dt><dd id="networkTimecode">--:--:--:--</dd>
+                <dt>Network frame rate</dt><dd id="networkFrameRate">-</dd>
+                <dt>Gateway multicast</dt><dd id="networkGroup">-</dd>
+                <dt>Gateway IP filter</dt><dd id="networkGatewayIp">-</dd>
+                <dt>Gateway source</dt><dd id="networkSource">-</dd>
+                <dt>Listening / receiving</dt><dd id="networkState">-</dd>
+                <dt>Network error</dt><dd id="networkError">-</dd>
+                <dt>Current LX cue</dt><dd id="currentLxCue">-</dd>
+                <dt>Current act</dt><dd id="currentAct">-</dd>
+                <dt>Online users</dt><dd id="onlineUsers">-</dd>
+            </dl>
+        </section>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="config.js"></script>
+</body>
+</html>
