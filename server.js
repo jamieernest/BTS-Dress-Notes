@@ -544,7 +544,7 @@ function backup(sync = false) {
         notes: globalState.notes,
         exportedAt: new Date().toISOString(),
         totalNotes: globalState.notes.length,
-        users: Array.from(globalState.users.values()).filter(u => !u.isOverlay).map(u => ({
+        users: listedUsers().map(u => ({
             name: u.name,
             joinedAt: u.joinedAt
         })),
@@ -638,6 +638,10 @@ io.on('connection', (socket) => {
     const sessionUser = socket.request.session.user;
     const isOverlay = socket.handshake.headers.referer &&
                      (socket.handshake.headers.referer.includes('overlay.html') || socket.handshake.headers.referer.includes('overlay-cast.html'));
+    // The config page is left out of the online users list but, unlike
+    // overlays, may still change settings such as the time mode.
+    const isConfig = !!socket.handshake.headers.referer &&
+                     socket.handshake.headers.referer.includes('config.html');
 
     const user = {
         id: sessionUser.sub,
@@ -646,7 +650,8 @@ io.on('connection', (socket) => {
         currentTimecode: null,
         currentLxCue: null,
         joinedAt: new Date(),
-        isOverlay: isOverlay
+        isOverlay: isOverlay,
+        isConfig: isConfig
     };
 
     globalState.users.set(socket.id, user);
@@ -672,15 +677,17 @@ io.on('connection', (socket) => {
     if (!isOverlay) {
         socket.emit('current-user', { name: user.name, sub: user.id });
 
-        // Send filtered users list (excluding overlay users)
-        const filteredUsers = Array.from(globalState.users.values()).filter(u => !u.isOverlay);
+        // Send filtered users list (excluding overlay and config pages)
+        const filteredUsers = listedUsers();
         socket.emit('users-update', filteredUsers);
         
-        // Notify about new user joining (only for non-overlay users)
-        io.emit('user-joined', {
-            user: user.name,
-            userCount: filteredUsers.length
-        });
+        // Notify about new user joining (only for listed users)
+        if (!isConfig) {
+            io.emit('user-joined', {
+                user: user.name,
+                userCount: filteredUsers.length
+            });
+        }
     } else {
         // Overlay users get minimal user info
         socket.emit('users-update', []);
@@ -731,8 +738,8 @@ io.on('connection', (socket) => {
         user.currentTimecode = data.timecode || {...currentModeTimecode()};
         user.currentLxCue = data.lxCue || globalState.currentLxCue;
         
-        // Send filtered users list (excluding overlay users)
-        const filteredUsers = Array.from(globalState.users.values()).filter(u => !u.isOverlay);
+        // Send filtered users list (excluding overlay and config pages)
+        const filteredUsers = listedUsers();
         io.emit('users-update', filteredUsers);
     });
     
@@ -744,8 +751,8 @@ io.on('connection', (socket) => {
         user.currentTimecode = null;
         user.currentLxCue = null;
         
-        // Send filtered users list (excluding overlay users)
-        const filteredUsers = Array.from(globalState.users.values()).filter(u => !u.isOverlay);
+        // Send filtered users list (excluding overlay and config pages)
+        const filteredUsers = listedUsers();
         io.emit('users-update', filteredUsers);
     });
     
@@ -932,7 +939,7 @@ io.on('connection', (socket) => {
                 notes: globalState.notes,
                 exportedAt: new Date().toISOString(),
                 totalNotes: globalState.notes.length,
-                users: Array.from(globalState.users.values()).filter(u => !u.isOverlay).map(u => ({
+                users: listedUsers().map(u => ({
                     name: u.name,
                     joinedAt: u.joinedAt
                 })),
@@ -951,9 +958,9 @@ io.on('connection', (socket) => {
         if (user) {
             globalState.users.delete(socket.id);
             
-            // Only notify if this was NOT an overlay user
-            if (!user.isOverlay) {
-                const filteredUsers = Array.from(globalState.users.values()).filter(u => !u.isOverlay);
+            // Only notify if this user was in the online users list
+            if (!user.isOverlay && !user.isConfig) {
+                const filteredUsers = listedUsers();
                 io.emit('user-left', {
                     user: user.name,
                     userCount: filteredUsers.length
@@ -963,6 +970,11 @@ io.on('connection', (socket) => {
         }
     });
 });
+
+// Users shown in the online users list: overlay and config pages are left out.
+function listedUsers() {
+    return Array.from(globalState.users.values()).filter(u => !u.isOverlay && !u.isConfig);
+}
 
 // Helper functions for tags
 function generateId() {
