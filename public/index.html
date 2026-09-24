@@ -27,6 +27,7 @@
             <p class="subtitle">Dress Notes with LX Cue and Timecode information 😮</p>
             <div style="margin-top: 1rem;">
                 <a href="/recall.html" class="primary" style="text-decoration: none; color: white; padding: 0.5rem 1rem; background: rgba(255, 152, 0, 0.3); border-radius: 5px;">View Exported Notes</a>
+                <a href="/config.html" class="primary" style="text-decoration: none; color: white; padding: 0.5rem 1rem; background: rgba(255, 255, 255, 0.15); border-radius: 5px; margin-left: 0.5rem;">Config &amp; Status</a>
             </div>
         </header>
         
@@ -37,12 +38,6 @@
                     <span class="user-name-display" id="currentUserName">Guest</span>
                     <a href="/logout" id="logoutLink" class="logout-link">Log out</a>
                 </div>
-                <div id="connectionStatus" class="status-disconnected">Disconnected from Server</div>
-                <div id="midiStatus" style="margin-top: 0.5rem;">MIDI Interface: Scanning...</div>
-                <div id="networkStatus" style="margin-top: 0.5rem;">Network Timecode: Starting...</div>
-                <div id="oscStatus" style="margin-top: 0.5rem;">LX Cues: Manual Input</div>
-                <div id="timeModeStatus" style="margin-top: 0.5rem;">Time Mode: MIDI Timecode</div>
-                <div id="userStatus" style="margin-top: 0.5rem;">Ready to take notes</div>
                 <ul class="users-list" id="usersList"></ul>
             </div>
             
@@ -55,12 +50,6 @@
                     <div class="timecode" id="globalTimecode">00:00:00:00</div>
                     <div class="lx-cue" id="globalLxCue">LX Cue: 1</div>
                     <div class="frame-rate-display" id="globalFrameRate">Frame Rate: 30 fps</div>
-                    
-                    <div class="time-mode-buttons" id="timeModeButtons">
-                        <button type="button" class="time-mode-button active" data-mode="midi">MIDI Timecode</button>
-                        <button type="button" class="time-mode-button" data-mode="network">Network Timecode</button>
-                        <button type="button" class="time-mode-button" data-mode="realtime">Real Time</button>
-                    </div>
                 </div>
                 
                 <div class="personal-timecode" id="personalTimecode">
@@ -173,7 +162,7 @@
                 <div class="instruction-item">• LX cues automatically update via OSC from EOS</div>
                 <div class="instruction-item">• Filter notes by tags to find what you need</div>
                 <div class="instruction-item">• Export all notes as JSON with timestamps</div>
-                <div class="instruction-item">• Switch between MIDI Timecode, Network Timecode and Real Time (Global)</div>
+                <div class="instruction-item">• Switch between MIDI Timecode, Network Timecode and Real Time (Global) on the Config &amp; Status page</div>
                 <div class="instruction-item">• Auto-resume after 15 seconds if note is empty and not focused</div>
                 <div class="instruction-item">• Use the "View Exported Notes" link to review past sessions</div>
             </div>

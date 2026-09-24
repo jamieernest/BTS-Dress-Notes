@@ -30,17 +30,19 @@ npm i
 
 # Timecode modes
 
-The three buttons under the main clock switch every user's display between:
+The three buttons on the Config & Status page (`/config.html`, linked from the main page) switch every user's display between:
 
-- **MIDI Timecode** - MTC from the computer's MIDI input (step 6). Disabled when no MIDI device is found at startup, in which case the app starts in Real Time.
+- **MIDI Timecode** - MTC from the computer's MIDI input (step 6). Disabled when no MIDI input is open, in which case the app uses Real Time.
 - **Network Timecode** - the MTC that an ETC Response MIDI gateway re-sends onto the network for Eos. Always selectable.
 - **Real Time** - the computer's clock.
 
 MIDI and network timecode are separate sources; each mode shows its own source's timecode.
 
+The Config & Status page also chooses the MIDI input and the network interface for network timecode. Changes apply immediately and are saved to `local-settings.json` (git-ignored) so they survive a restart. Until an input is chosen there, the app opens the second MIDI input if there is more than one, otherwise the first.
+
 ## Network timecode
 
-The gateway sends each MIDI message it receives (including QLab's MTC) as ACN (ANSI E1.17) multicast on UDP port 5568. The app joins that multicast group and listens; it doesn't take part in the Eos session. The status panel shows which group it is listening on and which gateway it is receiving from, and the server log prints the group at startup and the gateway's IP and CID on the first packet. When no quarter-frame arrives for 250 ms the stream is treated as stopped.
+The gateway sends each MIDI message it receives (including QLab's MTC) as ACN (ANSI E1.17) multicast on UDP port 5568. The app joins that multicast group and listens; it doesn't take part in the Eos session. The Config & Status page shows which group it is listening on and which gateway it is receiving from, and the server log prints the group at startup and the gateway's IP and CID on the first packet. When no quarter-frame arrives for 250 ms the stream is treated as stopped.
 
 Settings (environment variables):
 
@@ -48,7 +50,7 @@ Settings (environment variables):
 |---|---|---|
 | `GATEWAY_MCAST` | `239.194.242.66` | Multicast group the gateway sends to |
 | `GATEWAY_IP` | _(any)_ | Only accept timecode from this gateway IP, e.g. `10.10.160.188`. Set it if more than one gateway is on the network |
-| `GATEWAY_IFACE` | _(system default)_ | Local IP of the network interface to join the group on, for computers with more than one network connection |
+| `GATEWAY_IFACE` | _(automatic)_ | Local IP of the network interface to join the group on. Only the default: an interface chosen on the Config & Status page replaces it. When neither is set, the app joins on the interface whose subnet contains the gateway (`GATEWAY_IP`, or `10.10.160.188` if unset), and falls back to the system default when none does; the page and the server log say which was used |
 
 Observed on the gateway at 10.10.160.188: the group stayed at `239.194.242.66` after restarting both the Eos console and the gateway, and the gateway keeps sending with the desk off. If the group ever changes, find it with Wireshark (`udp port 5568` from the gateway's IP) and set `GATEWAY_MCAST`.
 

@@ -143,3 +143,7 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Settings saved from the config page
+local-settings.json
+local-settings.json.tmp

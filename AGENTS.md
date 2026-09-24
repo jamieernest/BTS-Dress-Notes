@@ -6,7 +6,7 @@ This file is the project's committed home for project-intrinsic agent knowledge:
 
 ## Authentication
 
-Every page (`/`, `/overlay.html`, `/overlay-cast.html`, `/recall.html`, and all of `express.static`) sits behind a Keycloak OIDC login (`server.js`, guard registered before `express.static`). `/login`, `/callback` and `/logout` are the only unauthenticated routes. The server will not start without `SESSION_SECRET`; it starts without `KEYCLOAK_ISSUER`/`KEYCLOAK_CLIENT_ID`/`KEYCLOAK_CLIENT_SECRET` but every page then 503s at `/login` until they're set and the process is restarted (Keycloak discovery only runs once, at boot). One shared Keycloak client is used across every venue, unlike the per-venue `EOS_HOST`/`EOS_PORT` vars.
+Every page (`/`, `/config.html`, `/overlay.html`, `/overlay-cast.html`, `/recall.html`, and all of `express.static`) sits behind a Keycloak OIDC login (`server.js`, guard registered before `express.static`). `/login`, `/callback` and `/logout` are the only unauthenticated routes. The server will not start without `SESSION_SECRET`; it starts without `KEYCLOAK_ISSUER`/`KEYCLOAK_CLIENT_ID`/`KEYCLOAK_CLIENT_SECRET` but every page then 503s at `/login` until they're set and the process is restarted (Keycloak discovery only runs once, at boot). One shared Keycloak client is used across every venue, unlike the per-venue `EOS_HOST`/`EOS_PORT` vars.
 
 `note.userId`/`comment.userId` are the Keycloak `sub` claim (stable per account), not `socket.id` — this is what makes identity survive a page refresh or reconnect. The Socket.IO handshake is authenticated via `io.engine.use(sessionMiddleware)` + an `io.use(...)` guard that reads `socket.request.session.user`; there is no separate per-socket login.
 
@@ -19,6 +19,8 @@ LX cue text arrives two ways, both routed through `handleOscMessage()` in `serve
 ## Timecode sources
 
 `globalState.timeMode` is `midi`, `network` or `realtime`. MIDI and network timecode each have their own `createMtcDecoder()` (`mtc.js`) and state (`globalState.timecode` / `globalState.networkTimecode`); every `timecode-update` carries `source`, and clients display only the source matching the mode. Network timecode is the ETC Response MIDI gateway's ACN/SDT multicast (UDP 5568, shared with sACN), parsed by `acn-midi.js`; see the README for settings. The venue switch does IGMP snooping, so nothing arrives without a group join, and on Wi-Fi every packet arrived twice (hence the SDT sequence filter). `npm test` covers it with packets captured from the gateway.
+
+The MIDI input and multicast interface are chosen on `/config.html` and saved to git-ignored `local-settings.json`, which beats `GATEWAY_IFACE` (env vars are only first-run defaults). With neither set, `net-iface.js` picks the interface on the gateway's subnet. `config.html` sockets are left out of the online users list (`listedUsers()`) but can still change settings, unlike overlays.
 
 ## Maintaining this file
 
