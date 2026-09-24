@@ -91,7 +91,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         fillSelect(midiInputSelect, midiOptions, data.midiInput || '');
 
-        const interfaceOptions = [['auto', 'Automatic (gateway subnet)'],
+        const interfaceOptions = [['auto', 'Automatic (first gateway heard)'],
             ...data.interfaces.map(i => [i.address, `${i.name} - ${i.address}`])];
         if (data.networkInterface !== 'auto' && !data.interfaces.some(i => i.address === data.networkInterface)) {
             interfaceOptions.push([data.networkInterface, `${data.networkInterface} (not present)`]);
@@ -123,9 +123,21 @@ document.addEventListener('DOMContentLoaded', function() {
         byId('mtcMessages').textContent = data.mtcMessagesReceived;
     });
 
+    // Automatic mode: which interface and gateway it locked onto, or that it is
+    // still listening everywhere.
+    function autoInterfaceText(auto) {
+        const joined = auto.joined.map(i => `${i.name} ${i.address}`).join(', ') || 'none';
+        if (!auto.locked) return `automatic: listening on all interfaces (${joined}), waiting for a gateway`;
+        const on = auto.interfaceAddress
+            ? `on ${auto.interfaceName} ${auto.interfaceAddress}`
+            : `on no local subnet, staying on all interfaces (${joined})`;
+        return `automatic: locked onto gateway ${auto.gateway} ${on}`;
+    }
+
     socket.on('network-timecode-status', (status) => {
-        const where = `${status.group}:${status.port}` +
-            (status.interfaceAddress ? ` via ${status.interfaceAddress}` : '');
+        const auto = status.auto;
+        const via = auto ? (auto.interfaceAddress || (auto.locked ? null : 'all interfaces')) : status.interfaceAddress;
+        const where = `${status.group}:${status.port}` + (via ? ` via ${via}` : '');
         if (status.error) {
             setStatus(networkStatus, `Error on ${where}: ${status.error}`, 'bad');
         } else if (!status.listening) {
@@ -139,8 +151,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 (status.gatewayIp ? ` for ${status.gatewayIp}` : '') + ', no timecode yet', '');
         }
         byId('networkGroup').textContent = `${status.group}:${status.port}`;
-        byId('networkInterface').textContent =
-            `${status.interfaceAddress || 'system default'} (${status.interfaceReason || '-'})`;
+        byId('networkInterface').textContent = auto
+            ? autoInterfaceText(auto)
+            : `${status.interfaceAddress || '-'} (${status.interfaceReason || '-'})`;
         byId('networkGatewayIp').textContent = status.gatewayIp || 'any';
         byId('networkSource').textContent = status.source || 'none';
         byId('networkState').textContent = `${status.listening ? 'yes' : 'no'} / ${status.running ? 'yes' : 'no'}`;
