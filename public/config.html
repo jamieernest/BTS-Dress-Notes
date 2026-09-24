@@ -31,6 +31,19 @@
         </section>
 
         <section class="panel">
+            <h2>Inputs</h2>
+            <p class="panel-note">Changes apply straight away and are kept after a restart.</p>
+            <div class="setting-row">
+                <label for="midiInputSelect">MIDI input</label>
+                <select id="midiInputSelect"></select>
+            </div>
+            <div class="setting-row">
+                <label for="networkInterfaceSelect">Network interface</label>
+                <select id="networkInterfaceSelect"></select>
+            </div>
+        </section>
+
+        <section class="panel">
             <h2>Status</h2>
             <div class="status-list">
                 <div id="connectionStatus" class="status-disconnected">Disconnected from Server</div>
@@ -52,6 +65,7 @@
                 <dt>Network timecode</dt><dd id="networkTimecode">--:--:--:--</dd>
                 <dt>Network frame rate</dt><dd id="networkFrameRate">-</dd>
                 <dt>Gateway multicast</dt><dd id="networkGroup">-</dd>
+                <dt>Network interface</dt><dd id="networkInterface">-</dd>
                 <dt>Gateway IP filter</dt><dd id="networkGatewayIp">-</dd>
                 <dt>Gateway source</dt><dd id="networkSource">-</dd>
                 <dt>Listening / receiving</dt><dd id="networkState">-</dd>

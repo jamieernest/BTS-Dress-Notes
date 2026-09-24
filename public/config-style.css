@@ -134,6 +134,35 @@ button:hover {
     transform: none;
 }
 
+.setting-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    margin-bottom: 0.8rem;
+}
+
+.setting-row label {
+    min-width: 10rem;
+    opacity: 0.8;
+}
+
+.setting-row select {
+    flex: 1 1 14rem;
+    min-width: 0;
+    max-width: 100%;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    border-radius: 5px;
+    padding: 0.4rem;
+    font-size: 0.9rem;
+}
+
+.setting-row select option {
+    background: #1e1e1e;
+}
+
 .status-list {
     display: flex;
     flex-direction: column;

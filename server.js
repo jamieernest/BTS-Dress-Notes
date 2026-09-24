@@ -10,6 +10,8 @@ const { Server, Message, encode } = require('node-osc');
 const { createSlipDecoder, decodeOscPacket, extractCueLabel } = require('./eos-osc');
 const { extractMidi, wrapperSequence, createSequenceFilter, senderCid } = require('./acn-midi');
 const { createMtcDecoder } = require('./mtc');
+const { listIpv4Interfaces, resolveInterface } = require('./net-iface');
+const { loadSettings, saveSettings } = require('./settings');
 
 const app = express();
 const server = http.createServer(app);
@@ -24,10 +26,27 @@ const oscPort = process.env.OSC_PORT || 8001;
 // gateway and Eos restarts, but it stays configurable.
 const gatewayGroup = process.env.GATEWAY_MCAST || '239.194.242.66';
 const gatewayIp = process.env.GATEWAY_IP || null; // optional source filter
-const gatewayIface = process.env.GATEWAY_IFACE || undefined; // local IP of the NIC to join on
+// Used to pick the interface on the gateway's subnet when none is chosen.
+const gatewaySubnetAddress = gatewayIp || '10.10.160.188';
 const ACN_PORT = 5568;
 const NETWORK_STOP_MS = 250; // the gateway sends no stop message; quarter-frames just cease
 const NETWORK_RETRY_MS = 5000; // the venue interface may not be up yet when the service starts
+
+// MIDI input and network interface chosen on the config page. Env vars
+// (GATEWAY_IFACE) are only the defaults until something is saved here.
+const SETTINGS_FILE = path.join(__dirname, 'local-settings.json');
+const settings = loadSettings(SETTINGS_FILE);
+if (settings.networkInterface === undefined) {
+    settings.networkInterface = process.env.GATEWAY_IFACE || 'auto';
+}
+
+function persistSettings() {
+    try {
+        saveSettings(SETTINGS_FILE, settings);
+    } catch (error) {
+        console.log(`Settings: could not save ${SETTINGS_FILE}: ${error.message}`);
+    }
+}
 
 // Keycloak SSO configuration - one shared client used across every venue,
 // unlike EOS_HOST/EOS_PORT above which are per-venue.
@@ -270,32 +289,73 @@ const globalState = {
 };
 
 // Try to use EasyMIDI
+let easymidi = null;
 let midiInput = null;
 let openedPortName = 'None';
 let mtcMessagesReceived = 0;
 
-try {
-    const easymidi = require('easymidi');
-    console.log('EasyMIDI module loaded successfully');
-    
-    const inputs = easymidi.getInputs();
-    console.log('Available MIDI inputs:', inputs);
-    
-    if (inputs.length > 1) {
-        const inputName = inputs[1];
-        midiInput = new easymidi.Input(inputName);
-        openedPortName = inputName;
-        globalState.timecode.source = 'midi';
-    } else if (inputs.length > 0) {
-        const inputName = inputs[0];
-        midiInput = new easymidi.Input(inputName);
-        openedPortName = inputName;
-        globalState.timecode.source = 'midi';
-    } else {
-        console.log('No MIDI inputs available. Running in demo mode.');
+function getMidiInputs() {
+    if (!easymidi) return [];
+    try {
+        return easymidi.getInputs();
+    } catch (error) {
+        console.log('Could not list MIDI inputs:', error.message);
+        return [];
     }
+}
+
+function handleMidiMessage(msg) {
+    if (msg._type === 'mtc' && typeof msg.type === 'number' && typeof msg.value === 'number') {
+        parseEasyMIDIMTC(msg.type, msg.value);
+    }
+    else if (msg.bytes && Array.isArray(msg.bytes)) {
+        const [status, data1] = msg.bytes;
+        if (status === 0xF1) {
+            const messageType = data1 >> 4;
+            const value = data1 & 0x0F;
+            parseEasyMIDIMTC(messageType, value);
+        }
+    }
+}
+
+// Close the current MIDI input and open `inputName` (null for none).
+function openMidiInput(inputName) {
+    if (midiInput) {
+        midiInput.close();
+        midiInput = null;
+        openedPortName = 'None';
+    }
+    if (!inputName || !easymidi) return;
+    try {
+        midiInput = new easymidi.Input(inputName);
+        midiInput.on('message', handleMidiMessage);
+        openedPortName = inputName;
+        globalState.timecode.source = 'midi';
+        console.log(`MIDI input: listening on ${inputName}`);
+    } catch (error) {
+        midiInput = null;
+        console.log(`MIDI input: could not open ${inputName}: ${error.message}`);
+    }
+}
+
+try {
+    easymidi = require('easymidi');
+    console.log('EasyMIDI module loaded successfully');
 } catch (error) {
     console.log('EasyMIDI not available:', error.message);
+}
+
+const startupMidiInputs = getMidiInputs();
+console.log('Available MIDI inputs:', startupMidiInputs);
+if (settings.midiInput !== undefined && (settings.midiInput === null || startupMidiInputs.includes(settings.midiInput))) {
+    openMidiInput(settings.midiInput);
+} else {
+    if (settings.midiInput !== undefined) {
+        console.log(`MIDI input: saved input ${settings.midiInput} is not connected, using the default`);
+    }
+    // Default: the second input when there is more than one, else the first.
+    openMidiInput(startupMidiInputs[startupMidiInputs.length > 1 ? 1 : 0]);
+    if (!midiInput) console.log('No MIDI inputs available. Running in demo mode.');
 }
 
 // Shared by the Eos TCP connection and the UDP OSC server.
@@ -399,6 +459,9 @@ const networkStatus = {
     group: gatewayGroup,
     port: ACN_PORT,
     gatewayIp: gatewayIp,
+    interfaceSelection: settings.networkInterface,
+    interfaceAddress: null,
+    interfaceReason: null,
     listening: false,
     running: false,
     source: null,
@@ -477,6 +540,12 @@ function handleGatewayPacket(buf, rinfo) {
 }
 
 function startNetworkTimecode() {
+    // Resolved on every (re)start so an interface that comes up late is found.
+    const iface = resolveInterface(settings.networkInterface, gatewaySubnetAddress, listIpv4Interfaces());
+    networkStatus.interfaceSelection = settings.networkInterface;
+    networkStatus.interfaceAddress = iface.address || null;
+    networkStatus.interfaceReason = iface.reason;
+    console.log(`Network timecode: interface ${iface.address || '(system default)'} - ${iface.reason}`);
     const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true }); // sACN shares port 5568
     socket.on('message', handleGatewayPacket);
     socket.on('error', (error) => {
@@ -494,7 +563,7 @@ function startNetworkTimecode() {
     });
     socket.bind(ACN_PORT, () => {
         try {
-            socket.addMembership(gatewayGroup, gatewayIface);
+            socket.addMembership(gatewayGroup, iface.address);
         } catch (error) {
             socket.emit('error', new Error(`could not join multicast group: ${error.message}`));
             return;
@@ -502,11 +571,30 @@ function startNetworkTimecode() {
         networkStatus.listening = true;
         networkStatus.error = null;
         console.log(`Network timecode: joined multicast group ${gatewayGroup}:${ACN_PORT}` +
-            (gatewayIface ? ` on interface ${gatewayIface}` : '') +
+            (iface.address ? ` on interface ${iface.address}` : '') +
             `, accepting MIDI from ${gatewayIp || 'any gateway'}`);
         emitNetworkStatus();
     });
     networkSocket = socket;
+}
+
+// Leave the multicast group and join again on the current interface setting.
+function restartNetworkTimecode() {
+    if (networkRetryTimer) {
+        clearTimeout(networkRetryTimer);
+        networkRetryTimer = null;
+    }
+    if (networkStopTimer) {
+        clearTimeout(networkStopTimer);
+        networkStopTimer = null;
+    }
+    const oldSocket = networkSocket;
+    networkSocket = null; // its error handler now ignores it
+    if (oldSocket) oldSocket.close();
+    networkDecoder.reset();
+    Object.assign(networkStatus, { listening: false, running: false, source: null, error: null });
+    emitNetworkStatus();
+    startNetworkTimecode();
 }
 
 // Timecode of the source the current time mode displays.
@@ -521,21 +609,24 @@ function formatTimecode(tc) {
     return `${(tc.hours || 0).toString().padStart(2, '0')}:${(tc.minutes || 0).toString().padStart(2, '0')}:${(tc.seconds || 0).toString().padStart(2, '0')}:${(tc.frames || 0).toString().padStart(2, '0')}`;
 }
 
-// EasyMIDI message handler
-if (midiInput) {
-    midiInput.on('message', (msg) => {
-        if (msg._type === 'mtc' && typeof msg.type === 'number' && typeof msg.value === 'number') {
-            parseEasyMIDIMTC(msg.type, msg.value);
-        }
-        else if (msg.bytes && Array.isArray(msg.bytes)) {
-            const [status, data1] = msg.bytes;
-            if (status === 0xF1) {
-                const messageType = data1 >> 4;
-                const value = data1 & 0x0F;
-                parseEasyMIDIMTC(messageType, value);
-            }
-        }
-    });
+function systemStatus() {
+    return {
+        midiAvailable: !!midiInput,
+        portCount: getMidiInputs().length,
+        currentPort: openedPortName,
+        mtcMessagesReceived: mtcMessagesReceived,
+        oscAvailable: !!oscServer
+    };
+}
+
+// Choices shown in the config page's MIDI input and network interface menus.
+function settingsOptions() {
+    return {
+        midiInputs: getMidiInputs(),
+        midiInput: midiInput ? openedPortName : null,
+        interfaces: listIpv4Interfaces().map(i => ({ name: i.name, address: i.address })),
+        networkInterface: settings.networkInterface
+    };
 }
 
 function backup(sync = false) {
@@ -664,14 +755,9 @@ io.on('connection', (socket) => {
     socket.emit('tags-update', globalState.tags);
     socket.emit('time-mode-update', globalState.timeMode);
     socket.emit('lx-cue-update', globalState.currentLxCue);
-    socket.emit('system-status', {
-        midiAvailable: !!midiInput,
-        portCount: midiInput ? require('easymidi').getInputs().length : 0,
-        currentPort: openedPortName,
-        mtcMessagesReceived: mtcMessagesReceived,
-        oscAvailable: !!oscServer
-    });
+    socket.emit('system-status', systemStatus());
     socket.emit('network-timecode-status', networkStatus);
+    socket.emit('settings-options', settingsOptions());
 
     // Only send user-related updates if this is NOT an overlay
     if (!isOverlay) {
@@ -764,6 +850,32 @@ io.on('connection', (socket) => {
             globalState.timeMode = newMode;
             io.emit('time-mode-update', globalState.timeMode);
         }
+    });
+
+    // Handle MIDI input change from the config page ('' or null for none)
+    socket.on('midi-input-change', (inputName) => {
+        if (user.isOverlay) return; // Overlay users can't change settings
+        const name = inputName || null;
+        if (name !== null && !getMidiInputs().includes(name)) return;
+        openMidiInput(name);
+        settings.midiInput = name;
+        persistSettings();
+        if (!midiInput && globalState.timeMode === 'midi') {
+            globalState.timeMode = 'realtime';
+            io.emit('time-mode-update', globalState.timeMode);
+        }
+        io.emit('system-status', systemStatus());
+        io.emit('settings-options', settingsOptions());
+    });
+
+    // Handle network interface change from the config page ('auto' or a local IPv4 address)
+    socket.on('network-interface-change', (selection) => {
+        if (user.isOverlay) return; // Overlay users can't change settings
+        if (selection !== 'auto' && !listIpv4Interfaces().some(i => i.address === selection)) return;
+        settings.networkInterface = selection;
+        persistSettings();
+        restartNetworkTimecode();
+        io.emit('settings-options', settingsOptions());
     });
 
     // Handle LX Cue change (manual input - will be overridden by OSC)

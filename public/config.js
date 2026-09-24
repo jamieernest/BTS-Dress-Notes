@@ -14,6 +14,19 @@ document.addEventListener('DOMContentLoaded', function() {
         realtime: 'Time Mode: Real Time (System Clock)'
     };
     let timeMode = null;
+    const midiInputSelect = byId('midiInputSelect');
+    const networkInterfaceSelect = byId('networkInterfaceSelect');
+
+    function fillSelect(select, options, value) {
+        select.innerHTML = '';
+        options.forEach(([optionValue, label]) => {
+            const option = document.createElement('option');
+            option.value = optionValue;
+            option.textContent = label;
+            select.appendChild(option);
+        });
+        select.value = value;
+    }
 
     function formatTimecode(tc) {
         const pad = n => (n || 0).toString().padStart(2, '0');
@@ -73,11 +86,30 @@ document.addEventListener('DOMContentLoaded', function() {
         byId(`${data.source}FrameRate`).textContent = `${data.frameRate} fps`;
     });
 
+    socket.on('settings-options', (data) => {
+        const midiOptions = [['', 'None'], ...data.midiInputs.map(name => [name, name])];
+        if (data.midiInput && !data.midiInputs.includes(data.midiInput)) {
+            midiOptions.push([data.midiInput, `${data.midiInput} (not connected)`]);
+        }
+        fillSelect(midiInputSelect, midiOptions, data.midiInput || '');
+
+        const interfaceOptions = [['auto', 'Automatic (gateway subnet)'],
+            ...data.interfaces.map(i => [i.address, `${i.name} - ${i.address}`])];
+        if (data.networkInterface !== 'auto' && !data.interfaces.some(i => i.address === data.networkInterface)) {
+            interfaceOptions.push([data.networkInterface, `${data.networkInterface} (not present)`]);
+        }
+        fillSelect(networkInterfaceSelect, interfaceOptions, data.networkInterface);
+    });
+
     socket.on('system-status', (data) => {
         if (data.midiAvailable && data.portCount > 0) {
             midiStatus.textContent = `MIDI Interface: ${data.portCount} port(s) available - ${data.currentPort}`;
             midiStatus.className = 'status-connected';
             midiModeButton.disabled = false;
+        } else if (data.portCount > 0) {
+            midiStatus.textContent = `MIDI Interface: ${data.portCount} port(s) available - none selected`;
+            midiStatus.className = 'status-disconnected';
+            midiModeButton.disabled = true;
         } else {
             midiStatus.textContent = 'MIDI Interface: No MIDI devices found';
             midiStatus.className = 'status-disconnected';
@@ -96,7 +128,8 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     socket.on('network-timecode-status', (status) => {
-        const where = `${status.group}:${status.port}`;
+        const where = `${status.group}:${status.port}` +
+            (status.interfaceAddress ? ` via ${status.interfaceAddress}` : '');
         if (status.error) {
             networkStatus.textContent = `Network Timecode: Error on ${where} - ${status.error}`;
             networkStatus.className = 'status-disconnected';
@@ -114,11 +147,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 (status.gatewayIp ? ` for ${status.gatewayIp}` : '') + ' - no timecode yet';
             networkStatus.className = '';
         }
-        byId('networkGroup').textContent = where;
+        byId('networkGroup').textContent = `${status.group}:${status.port}`;
+        byId('networkInterface').textContent =
+            `${status.interfaceAddress || 'system default'} (${status.interfaceReason || '-'})`;
         byId('networkGatewayIp').textContent = status.gatewayIp || 'any';
         byId('networkSource').textContent = status.source || 'none';
         byId('networkState').textContent = `${status.listening ? 'yes' : 'no'} / ${status.running ? 'yes' : 'no'}`;
         byId('networkError').textContent = status.error || 'none';
+    });
+
+    midiInputSelect.addEventListener('change', () => {
+        socket.emit('midi-input-change', midiInputSelect.value);
+    });
+
+    networkInterfaceSelect.addEventListener('change', () => {
+        socket.emit('network-interface-change', networkInterfaceSelect.value);
     });
 
     timeModeButtons.forEach(button => button.addEventListener('click', () => {

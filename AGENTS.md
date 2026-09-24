@@ -20,6 +20,8 @@ LX cue text arrives two ways, both routed through `handleOscMessage()` in `serve
 
 `globalState.timeMode` is `midi`, `network` or `realtime`. MIDI and network timecode each have their own `createMtcDecoder()` (`mtc.js`) and state (`globalState.timecode` / `globalState.networkTimecode`); every `timecode-update` carries `source`, and clients display only the source matching the mode. Network timecode is the ETC Response MIDI gateway's ACN/SDT multicast (UDP 5568, shared with sACN), parsed by `acn-midi.js`; see the README for settings. The venue switch does IGMP snooping, so nothing arrives without a group join, and on Wi-Fi every packet arrived twice (hence the SDT sequence filter). `npm test` covers it with packets captured from the gateway.
 
+The MIDI input and multicast interface are chosen on `/config.html` and saved to git-ignored `local-settings.json`, which beats `GATEWAY_IFACE` (env vars are only first-run defaults). With neither set, `net-iface.js` picks the interface on the gateway's subnet. `config.html` sockets are left out of the online users list (`listedUsers()`) but can still change settings, unlike overlays.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.
