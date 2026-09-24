@@ -55,25 +55,41 @@ function createGatewayLock({
         schedule(lostMs);
     }
 
-    // Join the group on every interface not joined yet. A failed join (VPN and
-    // virtual adapters often refuse) is logged once and skipped. Returns
-    // whether anything new was joined.
+    // Join the group on every interface, forgetting ones that have gone away.
+    // Interfaces already joined are joined again, since an adapter unplugged
+    // and plugged back in loses its membership; EADDRINUSE means it is still
+    // there. A failed join (VPN and virtual adapters often refuse) is logged
+    // once and skipped. Returns whether the joined set changed.
     function joinAll() {
         let changed = false;
-        for (const iface of listInterfaces()) {
-            if (joined.has(iface.address)) continue;
+        const present = listInterfaces();
+        const addresses = new Set(present.map(i => i.address));
+        for (const address of [...joined.keys()]) {
+            if (addresses.has(address)) continue;
+            try {
+                socket.dropMembership(group, address);
+            } catch {
+                // The membership went with the interface.
+            }
+            joined.delete(address);
+            changed = true;
+        }
+        for (const iface of present) {
             try {
                 socket.addMembership(group, iface.address);
             } catch (error) {
-                if (!failed.has(iface.address)) {
-                    failed.add(iface.address);
-                    log(`Network timecode: can't join ${group} on ${iface.name} (${iface.address}): ${error.message} - skipping it`);
+                if (error.code !== 'EADDRINUSE') {
+                    if (joined.delete(iface.address)) changed = true;
+                    if (!failed.has(iface.address)) {
+                        failed.add(iface.address);
+                        log(`Network timecode: can't join ${group} on ${iface.name} (${iface.address}): ${error.message} - skipping it`);
+                    }
+                    continue;
                 }
-                continue;
             }
             failed.delete(iface.address);
+            if (!joined.has(iface.address)) changed = true;
             joined.set(iface.address, iface);
-            changed = true;
         }
         return changed;
     }
