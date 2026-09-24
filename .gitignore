@@ -147,3 +147,7 @@ vite.config.ts.timestamp-*
 # Settings saved from the config page
 local-settings.json
 local-settings.json.tmp
+
+# Login sessions saved by the server
+local-sessions.json
+local-sessions.json.tmp

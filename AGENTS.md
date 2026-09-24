@@ -10,6 +10,10 @@ Every page (`/`, `/config.html`, `/overlay.html`, `/overlay-cast.html`, `/recall
 
 `note.userId`/`comment.userId` are the Keycloak `sub` claim (stable per account), not `socket.id` — this is what makes identity survive a page refresh or reconnect. The Socket.IO handshake is authenticated via `io.engine.use(sessionMiddleware)` + an `io.use(...)` guard that reads `socket.request.session.user`; there is no separate per-socket login.
 
+Sessions persist across restarts in git-ignored `local-sessions.json` via the in-repo `session-store.js` (no external session service, by design).
+
+The main page keeps a submitted note as pending until the `note-submit` ack arrives and resends every unacknowledged note on each connect; the server dedupes resends by the note's `clientId` (`public/index.js` pending-notes section).
+
 `openid-client` is on v6, which is ESM-only and has a very different functional API from v4/v5 (`discovery()`, `buildAuthorizationUrl()`, `authorizationCodeGrant()`, etc. — no more `Issuer`/`Client` classes). `server.js` is CommonJS, so it's loaded via a dynamic `import('openid-client')` inside the async `initKeycloak()` startup function rather than `require()`. It also refuses non-HTTPS issuers by default; `initKeycloak()` passes `{ execute: [oidc.allowInsecureRequests] }` to `discovery()` automatically when `KEYCLOAK_ISSUER` starts with `http://`, since a venue-LAN Keycloak instance may not have TLS.
 
 ## Eos OSC input
