@@ -50,7 +50,9 @@ Settings (environment variables):
 |---|---|---|
 | `GATEWAY_MCAST` | `239.194.242.66` | Multicast group the gateway sends to |
 | `GATEWAY_IP` | _(any)_ | Only accept timecode from this gateway IP, e.g. `10.10.160.188`. Set it if more than one gateway is on the network |
-| `GATEWAY_IFACE` | _(automatic)_ | Local IP of the network interface to join the group on. Only the default: an interface chosen on the Config & Status page replaces it. When neither is set, the app joins on the interface whose subnet contains the gateway (`GATEWAY_IP`, or `10.10.160.188` if unset), and falls back to the system default when none does; the page and the server log say which was used |
+| `GATEWAY_IFACE` | _(automatic)_ | Local IP of the network interface to join the group on. Only the default: an interface chosen on the Config & Status page replaces it. When neither is set, the app uses automatic mode (below) |
+
+**Automatic interface mode.** The app joins the group on every network interface (one that refuses, such as a VPN, is skipped with a single log line), locks onto the first gateway it hears MIDI from (by IP and ACN CID) and the interface on that gateway's subnet, and leaves the group on the other interfaces. MIDI from any other gateway is then ignored. If the locked gateway sends nothing at all (not even keepalives) for 10 s, the lock is released and the app listens on every interface again. The Config & Status page shows which interface and gateway it locked onto, or that it is still listening on all interfaces. Choose an interface or set `GATEWAY_IP` to pin it down when more than one gateway sends to the group.
 
 Observed on the gateway at 10.10.160.188: the group stayed at `239.194.242.66` after restarting both the Eos console and the gateway, and the gateway keeps sending with the desk off. If the group ever changes, find it with Wireshark (`udp port 5568` from the gateway's IP) and set `GATEWAY_MCAST`.
 
