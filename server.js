@@ -11,6 +11,7 @@ const { createSlipDecoder, decodeOscPacket, extractCueLabel } = require('./eos-o
 const { extractMidi, wrapperSequence, createSequenceFilter, senderCid } = require('./acn-midi');
 const { createMtcDecoder } = require('./mtc');
 const { listIpv4Interfaces, resolveInterface } = require('./net-iface');
+const { createGatewayLock } = require('./gateway-lock');
 const { loadSettings, saveSettings } = require('./settings');
 
 const app = express();
@@ -26,11 +27,13 @@ const oscPort = process.env.OSC_PORT || 8001;
 // gateway and Eos restarts, but it stays configurable.
 const gatewayGroup = process.env.GATEWAY_MCAST || '239.194.242.66';
 const gatewayIp = process.env.GATEWAY_IP || null; // optional source filter
-// Used to pick the interface on the gateway's subnet when none is chosen.
-const gatewaySubnetAddress = gatewayIp || '10.10.160.188';
 const ACN_PORT = 5568;
 const NETWORK_STOP_MS = 250; // the gateway sends no stop message; quarter-frames just cease
 const NETWORK_RETRY_MS = 5000; // the venue interface may not be up yet when the service starts
+// Automatic interface mode: silence after which the locked gateway counts as
+// gone and the group is joined on every interface again. The gateway sends
+// keepalives even with no timecode running, so this only trips when it's gone.
+const NETWORK_LOST_MS = 10000;
 
 // MIDI input and network interface chosen on the config page. Env vars
 // (GATEWAY_IFACE) are only the defaults until something is saved here.
@@ -462,6 +465,7 @@ const networkStatus = {
     interfaceSelection: settings.networkInterface,
     interfaceAddress: null,
     interfaceReason: null,
+    auto: null, // automatic mode: gateway-lock.js state()
     listening: false,
     running: false,
     source: null,
@@ -470,6 +474,7 @@ const networkStatus = {
 let networkSocket = null;
 let networkStopTimer = null;
 let networkRetryTimer = null;
+let gatewayLock = null; // automatic interface mode only
 const ignoredGatewaySources = new Set();
 const gatewaySequenceFilters = new Map(); // per source address
 
@@ -507,15 +512,18 @@ function networkQuarterFrameReceived() {
 
 function handleGatewayPacket(buf, rinfo) {
     const messages = extractMidi(buf);
-    if (messages.length === 0) return; // keepalives, ACKs, sACN and other ACN traffic
-
     if (gatewayIp && rinfo.address !== gatewayIp) {
-        if (!ignoredGatewaySources.has(rinfo.address)) {
+        if (messages.length > 0 && !ignoredGatewaySources.has(rinfo.address)) {
             ignoredGatewaySources.add(rinfo.address);
             console.log(`Network timecode: ignoring MIDI from ${rinfo.address} (CID ${senderCid(buf)}) on ${gatewayGroup} - GATEWAY_IP is ${gatewayIp}`);
         }
         return;
     }
+    // Keepalives from the locked gateway count too, so it isn't released just
+    // because timecode stopped.
+    if (gatewayLock && !gatewayLock.accept(rinfo.address, senderCid(buf), messages.length > 0)) return;
+    if (messages.length === 0) return; // keepalives, ACKs, sACN and other ACN traffic
+
     if (!gatewaySequenceFilters.has(rinfo.address)) {
         gatewaySequenceFilters.set(rinfo.address, createSequenceFilter());
     }
@@ -539,18 +547,27 @@ function handleGatewayPacket(buf, rinfo) {
     }
 }
 
+function stopGatewayLock() {
+    if (gatewayLock) gatewayLock.stop();
+    gatewayLock = null;
+    networkStatus.auto = null;
+}
+
 function startNetworkTimecode() {
+    const auto = settings.networkInterface === 'auto';
     // Resolved on every (re)start so an interface that comes up late is found.
-    const iface = resolveInterface(settings.networkInterface, gatewaySubnetAddress, listIpv4Interfaces());
+    const iface = auto ? null : resolveInterface(settings.networkInterface, listIpv4Interfaces());
     networkStatus.interfaceSelection = settings.networkInterface;
-    networkStatus.interfaceAddress = iface.address || null;
-    networkStatus.interfaceReason = iface.reason;
-    console.log(`Network timecode: interface ${iface.address || '(system default)'} - ${iface.reason}`);
+    networkStatus.interfaceAddress = iface ? iface.address : null;
+    networkStatus.interfaceReason = iface ? iface.reason : 'automatic: all interfaces until a gateway is heard';
+    networkStatus.auto = null;
+    if (iface) console.log(`Network timecode: interface ${iface.address} - ${iface.reason}`);
     const socket = dgram.createSocket({ type: 'udp4', reuseAddr: true }); // sACN shares port 5568
     socket.on('message', handleGatewayPacket);
     socket.on('error', (error) => {
         if (networkSocket !== socket) return;
         console.log(`Network timecode: socket error on ${gatewayGroup}:${ACN_PORT}: ${error.message} - retrying in ${NETWORK_RETRY_MS / 1000} s`);
+        stopGatewayLock();
         networkStatus.listening = false;
         networkStatus.error = error.message;
         emitNetworkStatus();
@@ -562,17 +579,38 @@ function startNetworkTimecode() {
         }, NETWORK_RETRY_MS);
     });
     socket.bind(ACN_PORT, () => {
-        try {
-            socket.addMembership(gatewayGroup, iface.address);
-        } catch (error) {
-            socket.emit('error', new Error(`could not join multicast group: ${error.message}`));
-            return;
+        if (networkSocket !== socket) return;
+        if (auto) {
+            const lock = createGatewayLock({
+                socket,
+                group: gatewayGroup,
+                listInterfaces: listIpv4Interfaces,
+                lostMs: NETWORK_LOST_MS,
+                onChange: () => {
+                    networkStatus.auto = lock.state();
+                    if (!networkStatus.auto.locked) networkStatus.source = null;
+                    emitNetworkStatus();
+                }
+            });
+            if (lock.start() === 0) {
+                lock.stop();
+                socket.emit('error', new Error(`could not join multicast group ${gatewayGroup} on any interface`));
+                return;
+            }
+            gatewayLock = lock;
+            networkStatus.auto = lock.state();
+        } else {
+            try {
+                socket.addMembership(gatewayGroup, iface.address);
+            } catch (error) {
+                socket.emit('error', new Error(`could not join multicast group: ${error.message}`));
+                return;
+            }
+            console.log(`Network timecode: joined multicast group ${gatewayGroup}:${ACN_PORT} on interface ${iface.address}`);
         }
         networkStatus.listening = true;
         networkStatus.error = null;
-        console.log(`Network timecode: joined multicast group ${gatewayGroup}:${ACN_PORT}` +
-            (iface.address ? ` on interface ${iface.address}` : '') +
-            `, accepting MIDI from ${gatewayIp || 'any gateway'}`);
+        console.log(`Network timecode: accepting MIDI from ${gatewayIp || 'any gateway'}`);
         emitNetworkStatus();
     });
     networkSocket = socket;
@@ -588,6 +626,7 @@ function restartNetworkTimecode() {
         clearTimeout(networkStopTimer);
         networkStopTimer = null;
     }
+    stopGatewayLock();
     const oldSocket = networkSocket;
     networkSocket = null; // its error handler now ignores it
     if (oldSocket) oldSocket.close();
@@ -1124,6 +1163,7 @@ process.on('SIGINT', () => {
     if (midiInput) midiInput.close();
     if (oscServer) oscServer.close();
     if (networkRetryTimer) clearTimeout(networkRetryTimer);
+    stopGatewayLock();
     if (networkSocket) networkSocket.close();
     process.exit();
 });

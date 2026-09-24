@@ -30,22 +30,15 @@ function listIpv4Interfaces(interfaces = os.networkInterfaces()) {
     return result;
 }
 
-// Resolve the interface selection to the local address to join on.
-// `selection` is 'auto' or a local IPv4 address. Returns { address, reason };
-// address is undefined when the OS should choose.
-function resolveInterface(selection, gatewayAddress, interfaces) {
-    if (selection && selection !== 'auto') {
-        const match = interfaces.find(i => i.address === selection);
-        return {
-            address: selection,
-            reason: match ? `selected (${match.name})` : 'selected, but no interface currently has this address'
-        };
-    }
-    const match = interfaces.find(i => inSubnet(gatewayAddress, i.address, i.netmask));
-    if (match) {
-        return { address: match.address, reason: `automatic: ${match.name} is on the gateway ${gatewayAddress}'s subnet` };
-    }
-    return { address: undefined, reason: `automatic: no interface is on the gateway ${gatewayAddress}'s subnet, using the system default` };
+// Resolve an interface chosen on the config page or by GATEWAY_IFACE (a local
+// IPv4 address) to { address, reason }. Automatic mode ('auto') is handled by
+// gateway-lock.js instead.
+function resolveInterface(selection, interfaces) {
+    const match = interfaces.find(i => i.address === selection);
+    return {
+        address: selection,
+        reason: match ? `selected (${match.name})` : 'selected, but no interface currently has this address'
+    };
 }
 
 module.exports = { inSubnet, listIpv4Interfaces, resolveInterface };
