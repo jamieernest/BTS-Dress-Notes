@@ -890,6 +890,14 @@ document.addEventListener('DOMContentLoaded', function() {
         updateChatMessages();
     });
 
+    // The server was reset from the config page: forget the saved chat copy
+    // and the notes still waiting to be acknowledged, so neither comes back.
+    window.socket.on('all-reset', () => {
+        chatCopy.onReset();
+        for (const { element } of pendingNotes.values()) element.remove();
+        pendingNotes.clear();
+    });
+
     window.socket.on('export-data', (data) => {
         const blob = new Blob([data.data], { type: data.mimeType });
         const url = URL.createObjectURL(blob);

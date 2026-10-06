@@ -164,6 +164,29 @@ document.addEventListener('DOMContentLoaded', function() {
         socket.emit('network-interface-change', networkInterfaceSelect.value);
     });
 
+    // Two steps: the first click only asks, the second deletes.
+    const resetButton = byId('resetButton');
+    const resetConfirm = byId('resetConfirm');
+    const resetResult = byId('resetResult');
+    resetButton.addEventListener('click', () => {
+        resetResult.hidden = true;
+        resetConfirm.hidden = false;
+        resetButton.hidden = true;
+    });
+    byId('resetCancelButton').addEventListener('click', () => {
+        resetConfirm.hidden = true;
+        resetButton.hidden = false;
+    });
+    byId('resetConfirmButton').addEventListener('click', () => {
+        socket.emit('reset-all');
+        resetConfirm.hidden = true;
+        resetButton.hidden = false;
+    });
+    socket.on('all-reset', () => {
+        resetResult.textContent = `All notes and chat were reset at ${new Date().toLocaleTimeString()}.`;
+        resetResult.hidden = false;
+    });
+
     timeModeButtons.forEach(button => button.addEventListener('click', () => {
         if (!button.disabled && button.dataset.mode !== timeMode) {
             socket.emit('time-mode-change', button.dataset.mode);

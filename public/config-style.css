@@ -134,6 +134,32 @@ button:hover {
     transform: none;
 }
 
+.danger-panel {
+    border-color: rgba(244, 67, 54, 0.5);
+}
+
+.danger-button {
+    background: rgba(244, 67, 54, 0.3);
+    border-color: #f44336;
+    font-weight: bold;
+}
+
+.danger-button:hover {
+    background: rgba(244, 67, 54, 0.5);
+}
+
+.reset-confirm {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    margin-top: 1rem;
+}
+
+.reset-confirm[hidden] {
+    display: none;
+}
+
 .setting-row {
     display: flex;
     flex-wrap: wrap;

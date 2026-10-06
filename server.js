@@ -13,6 +13,7 @@ const { createMtcDecoder } = require('./mtc');
 const { listIpv4Interfaces, resolveInterface } = require('./net-iface');
 const { loadSettings, saveSettings } = require('./settings');
 const { FileSessionStore } = require('./session-store');
+const { backupFilename, findRestorableBackup, writeBackupFile } = require('./notes-backup');
 const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
 
 const app = express();
@@ -650,8 +651,18 @@ function settingsOptions() {
     };
 }
 
+const BACKUPS_DIR = process.env.BACKUPS_DIR || path.join(__dirname, 'backups');
+
+// Until the start-up restore below has run, the server's notes are not the
+// notes it should be backing up: an empty server must not write a backup that
+// outranks the good one from before the crash.
+let notesRestored = false;
+
 function backup(sync = false) {
-    let data;
+    if (!notesRestored) {
+        console.log('Backup skipped: notes not restored yet');
+        return;
+    }
     const exportData = {
         notes: globalState.notes,
         exportedAt: new Date().toISOString(),
@@ -662,18 +673,17 @@ function backup(sync = false) {
         })),
         tags: globalState.tags
     };
-    data = JSON.stringify(exportData, null, 2);
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `backup-${timestamp}.json`;
+    const data = JSON.stringify(exportData, null, 2);
+    const filename = backupFilename();
     try {
-        fs.mkdirSync(path.join(__dirname, 'backups'), { recursive: true });
+        fs.mkdirSync(BACKUPS_DIR, { recursive: true });
         if (sync) {
             // Crash/shutdown handlers call process.exit() immediately after
             // backup(), so the write must complete before returning.
-            fs.writeFileSync(path.join(__dirname, 'backups', filename), data);
+            writeBackupFile(BACKUPS_DIR, filename, data);
             console.log(`Backup saved to backups/${filename}`);
         } else {
-            fs.writeFile(path.join(__dirname, 'backups', filename), data, (error) => {
+            writeBackupFile(BACKUPS_DIR, filename, data, (error) => {
                 if (error) {
                     console.log('Error saving backup file:', error.message);
                 } else {
@@ -686,12 +696,36 @@ function backup(sync = false) {
     }
 }
 
+// On start, load the notes and tags from the newest backup that is under two
+// hours old and passes the check (see notes-backup.js), so a crash does not
+// lose the dress notes while a restart days later starts clean. A bad backup
+// is skipped, never fatal.
+function restoreNotes() {
+    try {
+        const found = findRestorableBackup(BACKUPS_DIR);
+        for (const { file, reason } of found.skipped) {
+            console.log(`Notes restore: skipped backups/${file}: ${reason}`);
+        }
+        if (found.file) {
+            globalState.notes = found.data.notes;
+            if (found.data.tags) globalState.tags = found.data.tags;
+            console.log(`Notes restore: loaded ${found.data.notes.length} notes from backups/${found.file}`);
+        } else {
+            console.log(`Notes restore: starting empty (${found.reason})`);
+        }
+    } catch (error) {
+        console.log('Notes restore: starting empty (restore failed):', error.message);
+    }
+    notesRestored = true;
+}
+restoreNotes();
+
 // Schedule backups every minute
-setInterval(backup, 1 * 60 * 1000);
+setInterval(backup, Number(process.env.BACKUP_INTERVAL_MS) || 1 * 60 * 1000);
 
 // Delete backups older than 1 day
 setInterval(() => {
-    const backupDir = path.join(__dirname, 'backups');
+    const backupDir = BACKUPS_DIR;
     fs.readdir(backupDir, (err, files) => {
         if (err) return;
         const now = Date.now();
@@ -724,11 +758,13 @@ process.on('unhandledRejection', (reason, promise) => {
     process.exit(1);
 });
 
-process.on('SIGINT', () => {
-    console.log('Received SIGINT. Backing up and shutting down...');
-    backup(true);
-    process.exit(0);
-});
+for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, () => {
+        console.log(`Received ${signal}. Backing up and shutting down...`);
+        backup(true);
+        process.exit(0);
+    });
+}
 
 
 // Session is available during the WS handshake as socket.request.session.
@@ -1050,6 +1086,14 @@ io.on('connection', (socket) => {
         }
     });
     
+    // Reset from the config page: empties the notes and the chat for everyone.
+    // Same rule as the other config page controls: any non-overlay user.
+    socket.on('reset-all', () => {
+        if (user.isOverlay) return;
+        console.log(`Reset of all notes and chat requested by ${user.name}`);
+        resetNotesAndChat();
+    });
+
     // Handle backup import (only for non‑overlay users)
     socket.on('import-backup', (data) => {
         if (user.isOverlay) return; // Overlay users can't import
@@ -1118,6 +1162,22 @@ io.on('connection', (socket) => {
         }
     });
 });
+
+// Clears every note and chat message on the server and in every connected
+// browser. Closing the chat restore window drops any offers and stops browsers
+// from offering their copy again, and the backup written straight afterwards
+// is the newest one, so a restart cannot bring the cleared notes back. Tags
+// are kept: they are the department list, not show data, and the notes that
+// are gone were the only things that used them.
+function resetNotesAndChat() {
+    globalState.notes = [];
+    globalState.chatMessages = [];
+    chatRestore.close();
+    io.emit('all-reset'); // each page also drops its saved chat copy and unsent notes
+    io.emit('notes-update', globalState.notes);
+    emitToChatClients('chat-messages-update', globalState.chatMessages);
+    backup(true);
+}
 
 // Users shown in the online users list: overlay and config pages are left out.
 function listedUsers() {
