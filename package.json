@@ -5,7 +5,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node --env-file-if-exists=.env server.js",
-    "test": "node --test test/eos-osc.test.js test/acn-midi.test.js test/net-iface.test.js test/settings.test.js",
+    "test": "node --test test/eos-osc.test.js test/acn-midi.test.js test/net-iface.test.js test/settings.test.js test/session-store.test.js",
     "dev": "nodemon --exec \"node --env-file-if-exists=.env\" server.js"
   },
   "dependencies": {

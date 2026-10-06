@@ -202,6 +202,41 @@ textarea:focus {
     max-height: 600px;
 }
 
+.connection-banner {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 1000;
+    padding: 0.5rem 1rem;
+    background: rgba(255, 152, 0, 0.95);
+    color: #000;
+    font-weight: 600;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.connection-banner[hidden] {
+    display: none;
+}
+
+.note-item.pending {
+    border-left-color: #ff9800;
+    border-left-style: dashed;
+    opacity: 0.75;
+}
+
+.note-pending-badge {
+    display: inline-block;
+    margin-bottom: 0.5rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+    background: rgba(255, 152, 0, 0.3);
+    color: #ffb74d;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
 .note-item {
     background: rgba(255, 255, 255, 0.1);
     border-radius: 8px;

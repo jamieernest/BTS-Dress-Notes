@@ -12,6 +12,7 @@ const { extractMidi, wrapperSequence, createSequenceFilter, senderCid } = requir
 const { createMtcDecoder } = require('./mtc');
 const { listIpv4Interfaces, resolveInterface } = require('./net-iface');
 const { loadSettings, saveSettings } = require('./settings');
+const { FileSessionStore } = require('./session-store');
 
 const app = express();
 const server = http.createServer(app);
@@ -66,7 +67,10 @@ io.engine.trustProxy = true;
 // Session cookie is signed by this app; secure:false is intentional - the
 // venue LAN serves this app over plain HTTP, and the goal is to minimize
 // dependence on anything outside the venue LAN (see captain's decision).
+// Sessions are kept in git-ignored local-sessions.json so logins survive a
+// server restart.
 const sessionMiddleware = session({
+    store: new FileSessionStore({ file: path.join(__dirname, 'local-sessions.json') }),
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
@@ -894,8 +898,17 @@ io.on('connection', (socket) => {
     });
     
     // Handle note submission (only for non-overlay users)
-    socket.on('note-submit', (data) => {
+    // The client resends a note it has no acknowledgement for after a
+    // reconnect, tagged with its own clientId, so a resend must not duplicate
+    // a note that already arrived. The ack carries the stored note.
+    socket.on('note-submit', (data, ack) => {
         if (user.isOverlay) return;
+        const respond = typeof ack === 'function' ? ack : () => {};
+        const clientId = typeof data.clientId === 'string' ? data.clientId : undefined;
+        if (clientId) {
+            const existing = globalState.notes.find(n => n.clientId === clientId);
+            if (existing) return respond(existing);
+        }
         
         const noteTimecode = data.timecode || {...currentModeTimecode()};
         
@@ -912,9 +925,11 @@ io.on('connection', (socket) => {
             act: globalState.currentAct, // Use current act from OSC
             comments: []
         };
+        if (clientId) note.clientId = clientId;
         
         globalState.notes.push(note);
         
+        respond(note);
         io.emit('note-added', note);
     });
 
