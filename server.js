@@ -71,7 +71,7 @@ io.engine.trustProxy = true;
 // Sessions are kept in git-ignored local-sessions.json so logins survive a
 // server restart.
 const sessionMiddleware = session({
-    store: new FileSessionStore({ file: path.join(__dirname, 'local-sessions.json') }),
+    store: new FileSessionStore({ file: process.env.SESSIONS_FILE || path.join(__dirname, 'local-sessions.json') }),
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,

@@ -28,7 +28,9 @@ The MIDI input and multicast interface are chosen on `/config.html` and saved to
 
 ## Chat restore
 
-Chat lives only in `globalState.chatMessages`. After a restart, clients offer the log they last received (`chat-restore-offer`, `lastServerChat` in `public/index.js`) and `chat-restore.js` restores it once two distinct users offer an identical log, only while chat is still empty. Any new chat message closes restoring.
+Chat lives only in `globalState.chatMessages`. After a restart, clients offer the log they last received (`chat-restore-offer`) and `chat-restore.js` restores it once two distinct users offer an identical log, only while chat is still empty. Any new chat message closes restoring.
+
+The client's copy is kept in `localStorage` by `public/chat-copy.js` (12 h expiry), not page memory, so it survives reloads and `/login` bounces while the server is down. `test/chat-restore-e2e.test.js` runs the real `server.js` against a stub OIDC provider (`SESSIONS_FILE` overrides the session file) with two logged-in users through a restart, a reload and a lost session.
 
 ## Maintaining this file
 
