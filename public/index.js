@@ -867,10 +867,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
     window.socket.on('chat-message-added', (msg) => {
         chatMessagesList.push(msg);
+        lastServerChat = chatMessagesList.slice(-100);
         updateChatMessages();
     });
 
+    // The last non-empty log the server sent. After a server restart the first
+    // update is empty, and this copy is offered back so the server can restore it.
+    let lastServerChat = [];
     window.socket.on('chat-messages-update', (msgs) => {
+        if (msgs.length === 0 && lastServerChat.length > 0) {
+            window.socket.emit('chat-restore-offer', lastServerChat);
+        } else {
+            lastServerChat = msgs;
+        }
         chatMessagesList = msgs;
         updateChatMessages();
     });

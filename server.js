@@ -13,6 +13,7 @@ const { createMtcDecoder } = require('./mtc');
 const { listIpv4Interfaces, resolveInterface } = require('./net-iface');
 const { loadSettings, saveSettings } = require('./settings');
 const { FileSessionStore } = require('./session-store');
+const { createChatRestore } = require('./chat-restore');
 
 const app = express();
 const server = http.createServer(app);
@@ -291,6 +292,9 @@ const globalState = {
     currentLxCue: '1',
     currentAct: 'Preshow'
 };
+
+// Chat is restored from client offers only while it is still empty since start
+const chatRestore = createChatRestore();
 
 // Try to use EasyMIDI
 let easymidi = null;
@@ -964,6 +968,7 @@ io.on('connection', (socket) => {
             timestamp: new Date().toISOString()
         };
         
+        chatRestore.close();
         globalState.chatMessages.push(chatMessage);
         
         // Keep only last 100 messages to prevent memory issues
@@ -973,6 +978,18 @@ io.on('connection', (socket) => {
         
         io.emit('chat-message-added', chatMessage);
         io.emit('chat-messages-update', globalState.chatMessages);
+    });
+
+    // A client that still holds the chat log from before a restart offers it back
+    socket.on('chat-restore-offer', (log) => {
+        if (user.isOverlay || user.isConfig) return;
+        const restored = chatRestore.offer(user.id, log, globalState.chatMessages);
+        if (!restored) return;
+        globalState.chatMessages = restored;
+        for (const s of io.sockets.sockets.values()) {
+            const u = globalState.users.get(s.id);
+            if (u && !u.isOverlay) s.emit('chat-messages-update', restored);
+        }
     });
 
     // Send chat history to newly connected clients (only for non-overlay)
