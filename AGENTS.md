@@ -26,6 +26,10 @@ LX cue text arrives two ways, both routed through `handleOscMessage()` in `serve
 
 The MIDI input and multicast interface are chosen on `/config.html` and saved to git-ignored `local-settings.json`, which beats `GATEWAY_IFACE` (env vars are only first-run defaults). With neither set, `net-iface.js` picks the interface on the gateway's subnet. `config.html` sockets are left out of the online users list (`listedUsers()`) but can still change settings, unlike overlays.
 
+## Chat restore
+
+Chat lives only in `globalState.chatMessages`. After a restart, clients offer the log they last received (`chat-restore-offer`, `lastServerChat` in `public/index.js`) and `chat-restore.js` restores it once two distinct users offer an identical log, only while chat is still empty. Any new chat message closes restoring.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.
