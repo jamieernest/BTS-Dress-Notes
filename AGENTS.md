@@ -28,9 +28,11 @@ The MIDI input and multicast interface are chosen on `/config.html` and saved to
 
 ## Chat restore
 
-Chat lives only in `globalState.chatMessages`. After a restart, clients offer the log they last received (`chat-restore-offer`) and `chat-restore.js` restores it once two distinct users offer an identical log, only while chat is still empty. Any new chat message closes restoring.
+Chat lives only in `globalState.chatMessages`, with no length cap; the hard ceilings are the browser's ~5 MB localStorage and the socket's `maxHttpBufferSize` (16 MB, `server.js`), and `public/chat-copy.js` cuts to the most recent messages when either is hit. New messages go out alone as `chat-message-added`; the full list (`chat-messages-update`) is only sent on connect and after a restore.
 
-The client's copy is kept in `localStorage` by `public/chat-copy.js` (12 h expiry), not page memory, so it survives reloads and `/login` bounces while the server is down. `test/chat-restore-e2e.test.js` runs the real `server.js` against a stub OIDC provider (`SESSIONS_FILE` overrides the session file) with two logged-in users through a restart, a reload and a lost session.
+After a restart clients offer their copy (`chat-restore-offer`). `chat-restore.js` restores the fullest log that two distinct users vouch for (a log vouches for another that contains all its messages, same id and content), merging it into the messages already on the server by timestamp and id, so messages sent after the restart don't block it and a later, larger agreed log still adds to it. The window opens at start and closes `CHAT_RESTORE_WINDOW_MS` later (default 30 min); the server tells clients via `chat-restore-status` (sent before the log on connect). While it is open a browser only grows its copy; once closed it adopts the server's log.
+
+The copy is kept in `localStorage` (2 h expiry), not page memory, so it survives reloads and `/login` bounces while the server is down. `test/chat-restore-e2e.test.js` runs the real `server.js` against a stub OIDC provider (`SESSIONS_FILE` overrides the session file) with logged-in users through restarts, reloads and a lost session.
 
 ## Maintaining this file
 
