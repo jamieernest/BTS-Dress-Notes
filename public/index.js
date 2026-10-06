@@ -865,20 +865,24 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // The server sends each new message on its own, and the whole log only on
+    // connecting and after a restore.
     window.socket.on('chat-message-added', (msg) => {
+        if (chatMessagesList.some((m) => m.id === msg.id)) return;
         chatMessagesList.push(msg);
         chatCopy.onMessageAdded(chatMessagesList);
         updateChatMessages();
     });
 
-    // The last non-empty log the server sent, kept in localStorage so it survives
-    // a reload. After a server restart the first update is empty, and this copy
-    // is offered back so the server can restore it.
+    // The chat log kept in localStorage so it survives a reload. After a server
+    // restart this copy is offered back so the server can restore it, and it is
+    // not replaced by the server's log until the server says restoring is over.
     const chatCopy = createChatCopy({
         // reached inside chatCopy's try/catch, as merely touching localStorage can throw
         getItem: (key) => localStorage.getItem(key),
         setItem: (key, value) => localStorage.setItem(key, value)
     });
+    window.socket.on('chat-restore-status', ({ open }) => chatCopy.onRestoreStatus(open));
     window.socket.on('chat-messages-update', (msgs) => {
         const offer = chatCopy.onServerLog(msgs);
         if (offer) window.socket.emit('chat-restore-offer', offer);
