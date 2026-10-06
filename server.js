@@ -13,11 +13,13 @@ const { createMtcDecoder } = require('./mtc');
 const { listIpv4Interfaces, resolveInterface } = require('./net-iface');
 const { loadSettings, saveSettings } = require('./settings');
 const { FileSessionStore } = require('./session-store');
-const { createChatRestore, boundChatMessage } = require('./chat-restore');
+const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+// A restarted server is offered chat copies of up to ~5 MB (the browser's
+// localStorage quota), well above the 1 MB default for one incoming message.
+const io = socketIo(server, { maxHttpBufferSize: 16e6 });
 
 const eosHost = process.env.EOS_HOST || '10.10.160.143';
 const eosPort = process.env.EOS_PORT || 3037;
@@ -293,8 +295,19 @@ const globalState = {
     currentAct: 'Preshow'
 };
 
-// Chat is restored from client offers only while it is still empty since start
-const chatRestore = createChatRestore();
+// After a restart the chat is restored from client offers, but only while this
+// window (opened at start) is open; see chat-restore.js. Clients are told when
+// it closes so they can stop protecting their saved copy.
+function emitToChatClients(event, payload) {
+    for (const s of io.sockets.sockets.values()) {
+        const u = globalState.users.get(s.id);
+        if (u && !u.isOverlay) s.emit(event, payload);
+    }
+}
+const chatRestore = createChatRestore({
+    windowMs: Number(process.env.CHAT_RESTORE_WINDOW_MS) || DEFAULT_WINDOW_MS,
+    onClose: () => emitToChatClients('chat-restore-status', { open: false })
+});
 
 // Try to use EasyMIDI
 let easymidi = null;
@@ -969,16 +982,8 @@ io.on('connection', (socket) => {
             timestamp: new Date().toISOString()
         };
         
-        chatRestore.close();
         globalState.chatMessages.push(chatMessage);
-        
-        // Keep only last 100 messages to prevent memory issues
-        if (globalState.chatMessages.length > 100) {
-            globalState.chatMessages = globalState.chatMessages.slice(-100);
-        }
-        
         io.emit('chat-message-added', chatMessage);
-        io.emit('chat-messages-update', globalState.chatMessages);
     });
 
     // A client that still holds the chat log from before a restart offers it back
@@ -986,15 +991,13 @@ io.on('connection', (socket) => {
         if (user.isOverlay || user.isConfig) return;
         const restored = chatRestore.offer(user.id, log, globalState.chatMessages);
         if (!restored) return;
-        globalState.chatMessages = restored;
-        for (const s of io.sockets.sockets.values()) {
-            const u = globalState.users.get(s.id);
-            if (u && !u.isOverlay) s.emit('chat-messages-update', restored);
-        }
+        globalState.chatMessages = mergeChatLogs(globalState.chatMessages, restored);
+        emitToChatClients('chat-messages-update', globalState.chatMessages);
     });
 
     // Send chat history to newly connected clients (only for non-overlay)
     if (!isOverlay) {
+        socket.emit('chat-restore-status', { open: !chatRestore.closed }); // before the log, so the client knows how to treat it
         socket.emit('chat-messages-update', globalState.chatMessages);
     }
 
