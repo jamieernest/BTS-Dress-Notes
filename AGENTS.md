@@ -34,6 +34,10 @@ After a restart clients offer their copy (`chat-restore-offer`). `chat-restore.j
 
 The copy is kept in `localStorage` (2 h expiry), not page memory, so it survives reloads and `/login` bounces while the server is down. `test/chat-restore-e2e.test.js` runs the real `server.js` against a stub OIDC provider (`SESSIONS_FILE` overrides the session file) with logged-in users through restarts, reloads and a lost session.
 
+## Notes backup, restore and reset
+
+Notes live only in `globalState.notes`; `server.js` `backup()` writes them (with tags) to `backups/` every minute and on crash/SIGINT/SIGTERM, through a temp file and rename (`notes-backup.js`). On start `restoreNotes()` loads the newest backup under 2 hours old that passes `checkBackup()`, falling back to older ones; `backup()` refuses to run until that has happened so an empty server cannot outrank a good backup. Age and order come from the timestamp in the file name, not mtime. Restored tags stay in memory only (`tags.json` is a tracked file). The "Reset all notes and chat" button on `/config.html` sends `reset-all` (same non-overlay rule as the other settings); `resetNotesAndChat()` clears both, closes the chat restore window, tells browsers (`all-reset`: drop chat copy and unsent notes) and writes a backup at once so a restart stays empty. Tags are kept. `BACKUPS_DIR` and `BACKUP_INTERVAL_MS` exist for the tests (`test/e2e-harness.js` is shared by the e2e tests).
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

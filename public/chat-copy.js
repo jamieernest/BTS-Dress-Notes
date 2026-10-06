@@ -120,6 +120,14 @@
                 sync();
                 return missing ? newestWithin(copy, MAX_OFFER_CHARS) : null;
             },
+            // The server was reset: the chat is gone for everyone, so the saved
+            // copy goes too and must never be offered back.
+            onReset() {
+                restoreOpen = false;
+                current = [];
+                haveLog = true;
+                remember([]);
+            },
             // `log` is the page's full list after one more message was added.
             onMessageAdded(log) {
                 current = log;

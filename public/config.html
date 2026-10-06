@@ -43,6 +43,18 @@
             </div>
         </section>
 
+        <section class="panel danger-panel">
+            <h2>Reset</h2>
+            <p class="panel-note">Deletes every note and every chat message for everyone, on the server and in every open browser, and drops unsent notes and saved chat copies. A restart afterwards comes up empty. Tags are kept. Use it after a dress.</p>
+            <button type="button" id="resetButton" class="danger-button">Reset all notes and chat</button>
+            <div id="resetConfirm" class="reset-confirm" hidden>
+                <span>Delete all notes and chat for everyone? This cannot be undone.</span>
+                <button type="button" id="resetConfirmButton" class="danger-button">Yes, delete everything</button>
+                <button type="button" id="resetCancelButton">Cancel</button>
+            </div>
+            <p id="resetResult" class="panel-note" hidden></p>
+        </section>
+
         <section class="panel">
             <h2>Status</h2>
             <div class="status-list">
