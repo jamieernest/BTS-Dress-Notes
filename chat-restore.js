@@ -32,6 +32,17 @@ function sanitizeChatLog(raw) {
     return log;
 }
 
+// Bounds a live chat message to the limits sanitizeChatLog enforces, so every
+// stored message can later be restored. Returns null if the text is not a string.
+function boundChatMessage({ user, userId, text }) {
+    if (typeof text !== 'string') return null;
+    return {
+        user: String(user ?? '').slice(0, MAX_NAME),
+        userId: String(userId ?? '').slice(0, MAX_NAME),
+        text: text.slice(0, MAX_TEXT)
+    };
+}
+
 function createChatRestore() {
     const offers = new Map(); // userId -> { key, log }
     let closed = false;
@@ -63,4 +74,4 @@ function createChatRestore() {
     };
 }
 
-module.exports = { createChatRestore, sanitizeChatLog, MAX_MESSAGES };
+module.exports = { createChatRestore, sanitizeChatLog, boundChatMessage, MAX_MESSAGES };

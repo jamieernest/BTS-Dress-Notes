@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { createChatRestore, sanitizeChatLog } = require('../chat-restore');
+const { createChatRestore, sanitizeChatLog, boundChatMessage } = require('../chat-restore');
 
 function log(n = 3, text = 'hi') {
     return Array.from({ length: n }, (_, i) => ({
@@ -66,4 +66,11 @@ test('malformed or oversized offers are rejected', () => {
     const r = createChatRestore();
     assert.strictEqual(r.offer('a', 'junk', []), null);
     assert.strictEqual(r.offer('b', 'junk', []), null);
+});
+
+test('bounded live messages always pass the restore sanitizer', () => {
+    const b = boundChatMessage({ user: 'u'.repeat(1000), userId: 's'.repeat(1000), text: 'x'.repeat(100000) });
+    const out = sanitizeChatLog([{ id: 'a1', ...b, timestamp: new Date().toISOString() }]);
+    assert.ok(out);
+    assert.strictEqual(boundChatMessage({ user: 'u', userId: 's', text: { a: 1 } }), null);
 });

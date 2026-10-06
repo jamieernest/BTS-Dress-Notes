@@ -13,7 +13,7 @@ const { createMtcDecoder } = require('./mtc');
 const { listIpv4Interfaces, resolveInterface } = require('./net-iface');
 const { loadSettings, saveSettings } = require('./settings');
 const { FileSessionStore } = require('./session-store');
-const { createChatRestore } = require('./chat-restore');
+const { createChatRestore, boundChatMessage } = require('./chat-restore');
 
 const app = express();
 const server = http.createServer(app);
@@ -959,12 +959,13 @@ io.on('connection', (socket) => {
     // Handle chat message submission (only for non-overlay users)
     socket.on('chat-message', (data) => {
         if (user.isOverlay) return; // Overlay users can't chat
-        
+
+        const bounded = boundChatMessage({ user: user.name, userId: user.id, text: data && data.text });
+        if (!bounded) return;
+
         const chatMessage = {
             id: Date.now() + Math.random().toString(36).substr(2, 9),
-            user: user.name,
-            userId: user.id,
-            text: data.text,
+            ...bounded,
             timestamp: new Date().toISOString()
         };
         
