@@ -89,10 +89,16 @@ function authorsOf(notes) {
 }
 
 // Gives every note by a known author that author's recorded display name, so a
-// person's notes show one name after a restore. Ownership (userId) is untouched.
+// person's notes show one name after a restore. A userId that is not a recorded
+// author (a socket id from a backup written before authors were Keycloak
+// identities) is dropped, leaving the note ownerless and editable by anyone.
 function applyAuthors(notes, authors = []) {
     const names = new Map(authors.map((a) => [a.userId, a.name]));
-    for (const n of notes) if (n.userId && names.has(n.userId)) n.user = names.get(n.userId);
+    for (const n of notes) {
+        if (!n.userId) continue;
+        if (names.has(n.userId)) n.user = names.get(n.userId);
+        else delete n.userId;
+    }
     return notes;
 }
 

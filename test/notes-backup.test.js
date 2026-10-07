@@ -80,6 +80,13 @@ test('authorsOf lists each Keycloak identity once with its latest name, and skip
     assert.deepStrictEqual(authorsOf(notes), [{ userId: 'sub-1', name: 'Alice' }, { userId: 'sub-2', name: 'Bob' }]);
 });
 
+test('applyAuthors leaves a note with an unrecorded userId (legacy socket id) ownerless', () => {
+    const notes = [{ ...note('a'), userId: 'socket-abc' }, { ...note('b'), userId: 'sub-1' }];
+    applyAuthors(notes, [{ userId: 'sub-1', name: 'One' }]);
+    assert.strictEqual(notes[0].userId, undefined);
+    assert.strictEqual(notes[1].userId, 'sub-1');
+});
+
 test('applyAuthors relabels by identity and never changes who owns a note', () => {
     const notes = [{ ...note('a'), userId: 'sub-1', user: 'Old name' }, note('b')];
     applyAuthors(notes, [{ userId: 'sub-1', name: 'New name' }]);

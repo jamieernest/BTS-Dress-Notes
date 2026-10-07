@@ -121,3 +121,29 @@ test('an older backup without author data restores cleanly and its notes stay ed
     bob.emit('note-edit-text', { noteId: 'old1', newText: 'bob can edit' });
     assert.strictEqual((await edit).newText, 'bob can edit');
 });
+
+test('a backup whose notes carry a legacy socket id as userId restores them editable by anyone', async (t) => {
+    const oidc = await startOidc();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'note-author-e2e-'));
+    const app = createApp({ issuer: oidc.issuer, sessionsFile: path.join(dir, 'sessions.json'), port: await freePort() });
+    await app.start();
+    const bobCookie = await login(app, oidc, 'bob');
+    t.after(async () => {
+        await app.stop().catch(() => {});
+        oidc.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+    await app.stop();
+    fs.rmSync(app.backupsDir, { recursive: true, force: true });
+    fs.mkdirSync(app.backupsDir, { recursive: true });
+    const old = { id: 'old2', text: 'from a socket', user: 'someone', userId: 'AbCdEf123_socketid', timestamp: new Date().toISOString(), tags: [], comments: [] };
+    fs.writeFileSync(path.join(app.backupsDir, backupFilename()), JSON.stringify({ notes: [old], totalNotes: 1, users: [] }));
+    await app.start();
+
+    const bob = io(`http://127.0.0.1:${app.port}`, { extraHeaders: { cookie: bobCookie }, reconnection: false });
+    t.after(() => bob.close());
+    const edit = new Promise((resolve) => bob.on('note-edit-text', resolve));
+    await until(() => bob.connected, 'bob to connect');
+    bob.emit('note-edit-text', { noteId: 'old2', newText: 'bob can edit' });
+    assert.strictEqual((await edit).newText, 'bob can edit');
+});
