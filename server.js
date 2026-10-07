@@ -14,6 +14,7 @@ const { listIpv4Interfaces, resolveInterface } = require('./net-iface');
 const { loadSettings, saveSettings } = require('./settings');
 const { FileSessionStore } = require('./session-store');
 const { backupFilename, findRestorableBackup, writeBackupFile } = require('./notes-backup');
+const { sanitizeAge, insertionIndex } = require('./public/note-order');
 const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
 
 const app = express();
@@ -954,6 +955,8 @@ io.on('connection', (socket) => {
     // The client resends a note it has no acknowledgement for after a
     // reconnect, tagged with its own clientId, so a resend must not duplicate
     // a note that already arrived. The ack carries the stored note.
+    // A late note carries ageMs (how long ago it was written); it is stamped
+    // and placed by that rather than by its arrival (see public/note-order.js).
     socket.on('note-submit', (data, ack) => {
         if (user.isOverlay) return;
         const respond = typeof ack === 'function' ? ack : () => {};
@@ -972,7 +975,7 @@ io.on('connection', (socket) => {
             text: data.text,
             timecode: noteTimecode,
             lxCue: data.lxCue || globalState.currentLxCue,
-            timestamp: new Date().toISOString(),
+            timestamp: new Date(Date.now() - sanitizeAge(data.ageMs)).toISOString(),
             frameRate: data.frameRate || currentModeTimecode().frameRate,
             tags: data.tags || [],
             act: globalState.currentAct, // Use current act from OSC
@@ -980,7 +983,7 @@ io.on('connection', (socket) => {
         };
         if (clientId) note.clientId = clientId;
         
-        globalState.notes.push(note);
+        globalState.notes.splice(insertionIndex(globalState.notes, note), 0, note);
         
         respond(note);
         io.emit('note-added', note);

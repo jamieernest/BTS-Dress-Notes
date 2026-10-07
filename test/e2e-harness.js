@@ -172,7 +172,7 @@ class Browser {
         return page;
     }
 
-    note(text) { this.page.socket.emit('note-submit', { text, clientId: `c-${Math.random().toString(36).slice(2)}` }); }
+    note(text, extra = {}) { this.page.socket.emit('note-submit', { text, clientId: `c-${Math.random().toString(36).slice(2)}`, ...extra }); }
     noteTexts() { return this.page.notes.map((n) => n.text); }
     say(text) { this.page.socket.emit('chat-message', { text }); }
     texts() { return this.page.log ? this.page.log.map((m) => m.text) : null; }

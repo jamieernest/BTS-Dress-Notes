@@ -16,6 +16,8 @@ The main page keeps a submitted note as pending until the `note-submit` ack arri
 
 `openid-client` is on v6, which is ESM-only and has a very different functional API from v4/v5 (`discovery()`, `buildAuthorizationUrl()`, `authorizationCodeGrant()`, etc. — no more `Issuer`/`Client` classes). `server.js` is CommonJS, so it's loaded via a dynamic `import('openid-client')` inside the async `initKeycloak()` startup function rather than `require()`. It also refuses non-HTTPS issuers by default; `initKeycloak()` passes `{ execute: [oidc.allowInsecureRequests] }` to `discovery()` automatically when `KEYCLOAK_ISSUER` starts with `http://`, since a venue-LAN Keycloak instance may not have TLS.
 
+A note resent after an outage carries `ageMs` (recomputed per send); the server stamps `timestamp` as its clock minus that age and inserts by stamp (`public/note-order.js`), so list order is write order, not arrival order. The browser's own timecode is kept; late notes still take the server's current act and LX fallback at arrival.
+
 ## Eos OSC input
 
 LX cue text arrives two ways, both routed through `handleOscMessage()` in `server.js`: the TCP connection to the desk (`EOS_PORT`, 3037) and the UDP OSC server (`OSC_PORT`). Port 3037 is OSC 1.1 SLIP-framed, and one TCP `data` chunk routinely holds several packets, so never parse raw chunks as strings; decode with `eos-osc.js`. Cue text is `<list>/<label> <time> [<percent>]`, and labels can contain `/` (e.g. `1/1899 B/O 3.0 100%`); during a fade Eos resends it with a falling time and rising percentage. `npm test` runs regression tests built from captured desk traffic. Set `DEBUG_EOS=1` to log every decoded TCP message.
