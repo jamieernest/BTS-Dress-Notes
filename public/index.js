@@ -949,6 +949,16 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     noteInput.addEventListener('blur', startAutoResumeTimer);
 
+    // Typing anywhere else on the page starts a note (see type-to-note.js).
+    document.addEventListener('keydown', (e) => {
+        const ctx = {
+            modalOpen: editTagsModal.style.display === 'flex',
+            noteHasText: noteInput.value.length > 0,
+            body: document.body
+        };
+        if (typeToNote.shouldFocusNote(e, document.activeElement, ctx)) noteInput.focus();
+    });
+
     sendNoteBtn.addEventListener('click', () => {
         const text = noteInput.value.trim();
         if (text && currentUser.frozenTimecode) {
