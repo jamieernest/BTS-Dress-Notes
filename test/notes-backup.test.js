@@ -3,7 +3,7 @@ const assert = require('node:assert');
 const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');
-const { backupFilename, backupTime, checkBackup, findRestorableBackup, writeBackupFile, MAX_AGE_MS } = require('../notes-backup');
+const { authorsOf, applyAuthors, backupFilename, backupTime, checkBackup, findRestorableBackup, writeBackupFile, MAX_AGE_MS } = require('../notes-backup');
 
 const note = (id) => ({ id, text: 't', timestamp: '2026-10-07T18:00:00.000Z', tags: [], comments: [] });
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'notes-backup-'));
@@ -73,4 +73,26 @@ test('writeBackupFile leaves only the finished file, in both modes', async () =>
     await new Promise((resolve, reject) => writeBackupFile(dir, 'backup-2026-10-07T18-01-00-000Z.json', '{"notes":[1]}', (e) => (e ? reject(e) : resolve())));
     assert.deepStrictEqual(fs.readdirSync(dir).sort(), ['backup-2026-10-07T18-00-00-000Z.json', 'backup-2026-10-07T18-01-00-000Z.json']);
     assert.throws(() => writeBackupFile(path.join(dir, 'missing'), 'x.json', ''));
+});
+
+test('authorsOf lists each Keycloak identity once with its latest name, and skips notes with no author', () => {
+    const notes = [{ ...note('a'), userId: 'sub-1', user: 'Al' }, note('b'), { ...note('c'), userId: 'sub-1', user: 'Alice' }, { ...note('d'), userId: 'sub-2', user: 'Bob' }];
+    assert.deepStrictEqual(authorsOf(notes), [{ userId: 'sub-1', name: 'Alice' }, { userId: 'sub-2', name: 'Bob' }]);
+});
+
+test('applyAuthors relabels by identity and never changes who owns a note', () => {
+    const notes = [{ ...note('a'), userId: 'sub-1', user: 'Old name' }, note('b')];
+    applyAuthors(notes, [{ userId: 'sub-1', name: 'New name' }]);
+    assert.strictEqual(notes[0].user, 'New name');
+    assert.strictEqual(notes[0].userId, 'sub-1');
+    assert.strictEqual(notes[1].userId, undefined);
+    assert.doesNotThrow(() => applyAuthors([note('c')]));
+});
+
+test('checkBackup accepts backups with or without author data and rejects malformed author data', () => {
+    assert.strictEqual(checkBackup({ notes: [{ ...note('a'), userId: 's' }], authors: [{ userId: 's', name: 'S' }] }), null);
+    assert.strictEqual(checkBackup({ notes: [note('a')] }), null);
+    assert.ok(checkBackup({ notes: [{ ...note('a'), userId: 5 }] }));
+    assert.ok(checkBackup({ notes: [], authors: 'x' }));
+    assert.ok(checkBackup({ notes: [], authors: [{ name: 'no id' }] }));
 });

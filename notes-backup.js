@@ -45,6 +45,7 @@ function checkBackup(data) {
         if (typeof note.timestamp !== 'string' || Number.isNaN(Date.parse(note.timestamp))) {
             return `note ${note.id} has no valid timestamp`;
         }
+        if (note.userId !== undefined && typeof note.userId !== 'string') return `note ${note.id} userId is not a string`;
         if (note.tags !== undefined && !Array.isArray(note.tags)) return `note ${note.id} tags are not a list`;
         if (note.timecode !== undefined && (!note.timecode || typeof note.timecode !== 'object')) {
             return `note ${note.id} timecode is not an object`;
@@ -66,7 +67,33 @@ function checkBackup(data) {
             }
         }
     }
+    if (data.authors !== undefined) {
+        if (!Array.isArray(data.authors)) return 'authors are not a list';
+        for (const a of data.authors) {
+            if (!a || typeof a !== 'object' || typeof a.userId !== 'string' || typeof a.name !== 'string') {
+                return 'an author is malformed';
+            }
+        }
+    }
     return null;
+}
+
+// Who wrote the notes: one { userId, name } per Keycloak identity (the token
+// subject, which is what the author-only edit rule compares), with the display
+// name last seen on one of that person's notes as a label only. Notes without a
+// userId have no author and are left out.
+function authorsOf(notes) {
+    const names = new Map();
+    for (const n of notes) if (n.userId) names.set(n.userId, n.user || names.get(n.userId) || n.userId);
+    return [...names].map(([userId, name]) => ({ userId, name }));
+}
+
+// Gives every note by a known author that author's recorded display name, so a
+// person's notes show one name after a restore. Ownership (userId) is untouched.
+function applyAuthors(notes, authors = []) {
+    const names = new Map(authors.map((a) => [a.userId, a.name]));
+    for (const n of notes) if (n.userId && names.has(n.userId)) n.user = names.get(n.userId);
+    return notes;
 }
 
 // Finds the newest backup in `dir` that is under `maxAgeMs` old and passes
@@ -133,4 +160,4 @@ function writeBackupFile(dir, filename, text, callback) {
     });
 }
 
-module.exports = { MAX_AGE_MS, backupFilename, backupTime, checkBackup, findRestorableBackup, writeBackupFile };
+module.exports = { MAX_AGE_MS, authorsOf, applyAuthors, backupFilename, backupTime, checkBackup, findRestorableBackup, writeBackupFile };

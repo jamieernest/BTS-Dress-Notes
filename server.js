@@ -13,7 +13,7 @@ const { createMtcDecoder } = require('./mtc');
 const { listIpv4Interfaces, resolveInterface } = require('./net-iface');
 const { loadSettings, saveSettings } = require('./settings');
 const { FileSessionStore } = require('./session-store');
-const { backupFilename, findRestorableBackup, writeBackupFile } = require('./notes-backup');
+const { authorsOf, applyAuthors, backupFilename, findRestorableBackup, writeBackupFile } = require('./notes-backup');
 const { sanitizeAge, insertionIndex } = require('./public/note-order');
 const { canEditNote } = require('./public/note-author');
 const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
@@ -715,6 +715,7 @@ function backup(sync = false) {
         notes: globalState.notes,
         exportedAt: new Date().toISOString(),
         totalNotes: globalState.notes.length,
+        authors: authorsOf(globalState.notes),
         users: listedUsers().map(u => ({
             name: u.name,
             joinedAt: u.joinedAt
@@ -755,7 +756,7 @@ function restoreNotes() {
             console.log(`Notes restore: skipped backups/${file}: ${reason}`);
         }
         if (found.file) {
-            globalState.notes = found.data.notes;
+            globalState.notes = applyAuthors(found.data.notes, found.data.authors);
             if (found.data.tags) globalState.tags = found.data.tags;
             console.log(`Notes restore: loaded ${found.data.notes.length} notes from backups/${found.file}`);
         } else {
