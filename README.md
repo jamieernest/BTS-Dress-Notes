@@ -40,6 +40,8 @@ MIDI and network timecode are separate sources; each mode shows its own source's
 
 The Config & Status page also chooses the MIDI input and the network interface for network timecode. Changes apply immediately and are saved to `local-settings.json` (git-ignored) so they survive a restart. Until an input is chosen there, the app opens the second MIDI input if there is more than one, otherwise the first.
 
+The server connects to the Eos console over TCP (`EOS_HOST`, `EOS_PORT`) at start and does not retry on its own. If the console was off or the link dropped, press **Reconnect to Eos** on the Config & Status page; the connection state is shown next to the button.
+
 ## Network timecode
 
 The gateway sends each MIDI message it receives (including QLab's MTC) as ACN (ANSI E1.17) multicast on UDP port 5568. The app joins that multicast group and listens; it doesn't take part in the Eos session. The Config & Status page shows which group it is listening on and which gateway it is receiving from, and the server log prints the group at startup and the gateway's IP and CID on the first packet. When no quarter-frame arrives for 250 ms the stream is treated as stopped.
