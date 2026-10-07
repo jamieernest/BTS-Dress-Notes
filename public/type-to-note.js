@@ -33,5 +33,15 @@
         return true;
     }
 
-    return { shouldFocusNote, isTextEntry };
+    // Escape in the note box: 'cancel' (box empty: drop the started note and
+    // release the frozen timecode), 'blur' (has text: only leave the box, so a
+    // slipped finger cannot discard it) or null (not ours to handle).
+    function escapeAction(e, activeElement, ctx = {}) {
+        if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return null;
+        if (e.key !== 'Escape' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return null;
+        if (ctx.modalOpen || !activeElement || activeElement !== ctx.noteInput) return null;
+        return String(ctx.noteValue || '').trim() === '' ? 'cancel' : 'blur';
+    }
+
+    return { shouldFocusNote, isTextEntry, escapeAction };
 }));
