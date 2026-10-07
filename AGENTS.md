@@ -24,6 +24,10 @@ LX cue text arrives two ways, both routed through `handleOscMessage()` in `serve
 
 The Eos TCP socket is owned by `connectToEOS()` in `server.js`: opened at start and by the config page's "Reconnect to Eos" button (`eos-reconnect`), never retried automatically. State (`connecting`/`connected`/`failed`/`disconnected`) goes to every client as `eos-status`; a press while `connecting` is ignored, otherwise the old socket is destroyed first so only one is ever live. `test/eos-reconnect-e2e.test.js` uses a stand-in TCP console.
 
+## Type to start a note
+
+`public/type-to-note.js` decides (unit-tested in `test/type-to-note.test.js`) when a keydown anywhere on `/` focuses `noteInput`; focus is what runs `startTyping`, and the browser delivers that same keystroke to the box, so don't `preventDefault` or insert the character yourself.
+
 ## Timecode sources
 
 `globalState.timeMode` is `midi`, `network` or `realtime`. MIDI and network timecode each have their own `createMtcDecoder()` (`mtc.js`) and state (`globalState.timecode` / `globalState.networkTimecode`); every `timecode-update` carries `source`, and clients display only the source matching the mode. Network timecode is the ETC Response MIDI gateway's ACN/SDT multicast (UDP 5568, shared with sACN), parsed by `acn-midi.js`; see the README for settings. The venue switch does IGMP snooping, so nothing arrives without a group join, and on Wi-Fi every packet arrived twice (hence the SDT sequence filter). `npm test` covers it with packets captured from the gateway.
