@@ -15,6 +15,7 @@ const { loadSettings, saveSettings } = require('./settings');
 const { FileSessionStore } = require('./session-store');
 const { backupFilename, findRestorableBackup, writeBackupFile } = require('./notes-backup');
 const { sanitizeAge, insertionIndex } = require('./public/note-order');
+const { canEditNote } = require('./public/note-author');
 const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
 
 const app = express();
@@ -1092,7 +1093,8 @@ io.on('connection', (socket) => {
         if (user.isOverlay) return;
         const { noteId, newText } = data;
         const note = globalState.notes.find(n => n.id === noteId);
-        if (note) {
+        // Only the author (by session identity) may edit; see public/note-author.js
+        if (note && canEditNote(note, user.id)) {
             note.text = newText;
             note.lastEdited = new Date().toISOString();
             note.lastEditedBy = user.name;
