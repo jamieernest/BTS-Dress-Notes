@@ -165,6 +165,7 @@ async function importSetup(t) {
         sockets.push(socket);
         socket.notes = [];
         socket.on('notes-update', (notes) => { socket.notes = notes; });
+        socket.on('note-added', (note) => { socket.notes = [...socket.notes, note]; });
         await until(() => socket.connected, `${name} to connect`);
         return socket;
     };
