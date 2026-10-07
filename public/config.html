@@ -43,6 +43,15 @@
             </div>
         </section>
 
+        <section class="panel">
+            <h2>Eos console</h2>
+            <p class="panel-note">LX cues come from the console over TCP. If it was off or unreachable when the server started, or the link dropped, reconnect here.</p>
+            <div class="setting-row">
+                <button type="button" id="eosReconnectButton">Reconnect to Eos</button>
+                <span id="eosConnectionState" class="eos-state">-</span>
+            </div>
+        </section>
+
         <section class="panel danger-panel">
             <h2>Reset</h2>
             <p class="panel-note">Deletes every note and every chat message for everyone, on the server and in every open browser, and drops unsent notes and saved chat copies. A restart afterwards comes up empty. Tags are kept. Use it after a dress.</p>
@@ -61,6 +70,7 @@
                 <div id="connectionStatus" class="status-disconnected">Disconnected from Server</div>
                 <div id="midiStatus">MIDI Interface: Scanning...</div>
                 <div id="networkStatus">Network Timecode: Starting...</div>
+                <div id="eosStatus">Eos TCP: -</div>
                 <div id="oscStatus">LX Cues: Manual Input</div>
                 <div id="timeModeStatus">Time Mode: -</div>
             </div>
