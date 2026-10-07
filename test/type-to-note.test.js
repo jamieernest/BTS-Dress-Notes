@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { shouldFocusNote } = require('../public/type-to-note');
+const { shouldFocusNote, escapeAction } = require('../public/type-to-note');
 
 const body = { nodeType: 1, tagName: 'BODY', getAttribute: () => null };
 const el = (tagName, extra = {}) => ({ nodeType: 1, tagName, getAttribute: () => null, ...extra });
@@ -52,4 +52,23 @@ test('space only counts when nothing is focused and the note already has text', 
     assert.ok(shouldFocusNote(key(' '), body, ctx({ noteHasText: true })));
     assert.ok(!shouldFocusNote(key(' '), el('BUTTON'), ctx({ noteHasText: true })));
     assert.ok(!shouldFocusNote(key(' '), el('INPUT', { type: 'checkbox' }), ctx({ noteHasText: true })));
+});
+
+test('Escape in the note box cancels an empty note and only leaves a written one', () => {
+    const noteInput = el('TEXTAREA');
+    const esc = (value, extra, over) => escapeAction(key('Escape', extra), noteInput, { noteInput, noteValue: value, ...over });
+    assert.equal(esc(''), 'cancel');
+    assert.equal(esc('  \n '), 'cancel');
+    assert.equal(esc('hello'), 'blur');
+});
+
+test('Escape is left alone elsewhere', () => {
+    const noteInput = el('TEXTAREA');
+    const other = el('TEXTAREA');
+    assert.equal(escapeAction(key('Escape'), other, { noteInput, noteValue: '' }), null); // chat, comment, edit
+    assert.equal(escapeAction(key('Escape'), body, { noteInput, noteValue: '' }), null);
+    assert.equal(escapeAction(key('Escape'), noteInput, { noteInput, noteValue: '', modalOpen: true }), null);
+    assert.equal(escapeAction(key('Escape', { defaultPrevented: true }), noteInput, { noteInput, noteValue: '' }), null);
+    assert.equal(escapeAction(key('Escape', { isComposing: true }), noteInput, { noteInput, noteValue: '' }), null);
+    assert.equal(escapeAction(key('a'), noteInput, { noteInput, noteValue: '' }), null);
 });

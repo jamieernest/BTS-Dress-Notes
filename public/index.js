@@ -957,6 +957,17 @@ document.addEventListener('DOMContentLoaded', function() {
             body: document.body
         };
         if (typeToNote.shouldFocusNote(e, document.activeElement, ctx)) noteInput.focus();
+
+        // Escape leaves the note box; an empty note is also cancelled.
+        const action = typeToNote.escapeAction(e, document.activeElement, {
+            modalOpen: ctx.modalOpen,
+            noteInput,
+            noteValue: noteInput.value
+        });
+        if (action) {
+            noteInput.blur();
+            if (action === 'cancel') cancelNote();
+        }
     });
 
     sendNoteBtn.addEventListener('click', () => {
