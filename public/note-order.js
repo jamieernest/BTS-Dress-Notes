@@ -1,4 +1,4 @@
-// Where a note belongs in the list, and how old a client says it is.
+// Where a note belongs in the list, which end of the list is shown first, and how old a client says it is.
 //
 // A note written while the browser was disconnected reaches the server late.
 // Browser clocks cannot be trusted to agree with the server's, so the browser
@@ -37,5 +37,25 @@
         return i;
     }
 
-    return { MAX_AGE_MS, sanitizeAge, insertionIndex };
+    function timecodeSeconds(tc) {
+        if (!tc) return 0;
+        return (tc.hours || 0) * 3600 + (tc.minutes || 0) * 60 + (tc.seconds || 0) + (tc.frames || 0) / (tc.frameRate || 30);
+    }
+
+    // The order a note list is shown in: newest at the top. Stamp order (timecode when a note has no
+    // stamp) reversed, so notes with equal stamps show the later arrival first. The server's array is
+    // never reordered: storage, backups and the JSON export stay oldest first.
+    function newestFirst(notes) {
+        return notes
+            .map((note, i) => ({ note, i }))
+            .sort((a, b) => {
+                const x = stampMs(a.note);
+                const y = stampMs(b.note);
+                const diff = x !== null && y !== null ? y - x : timecodeSeconds(b.note.timecode) - timecodeSeconds(a.note.timecode);
+                return diff || b.i - a.i;
+            })
+            .map(({ note }) => note);
+    }
+
+    return { MAX_AGE_MS, sanitizeAge, insertionIndex, newestFirst };
 }));
