@@ -570,8 +570,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function insertNoteInOrder(noteElement, note) {
-        // Relies on notes always being pushed/appended in chronological order
-        // (see 'note-added' handler) rather than re-sorting on every insert.
+        // Only for a note that belongs last; addNote rebuilds the list for one that doesn't.
         // Pending notes stay below every note the server has.
         notesList.insertBefore(noteElement, notesList.querySelector('.note-item.pending'));
         const shouldShow = (filterTag === 'all' || note.tags.includes(filterTag)) &&
@@ -601,10 +600,15 @@ document.addEventListener('DOMContentLoaded', function() {
     function addNote(note) {
         if (noteElements.has(note.id)) return;
         const wasNearBottom = isNearBottom();   // Check BEFORE insertion
-        allNotes.push(note);
-        const element = createNoteElement(note);
-        insertNoteInOrder(element, note);
-        updateActFilter();
+        const index = NoteOrder.insertionIndex(allNotes, note);
+        allNotes.splice(index, 0, note);
+        if (index < allNotes.length - 1) {
+            // A late note (written while disconnected) belongs above later ones.
+            rebuildFullNotesList();
+        } else {
+            insertNoteInOrder(createNoteElement(note), note);
+            updateActFilter();
+        }
         if (wasNearBottom) {
             scrollToBottom();
         } else {
@@ -651,9 +655,11 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function sendPendingNote(note) {
+    // The age is recomputed on every send: the browser's clock is not the
+    // server's, but how long ago the note was written is the same on both.
+    function sendPendingNote(note, writtenAt) {
         if (!window.socket.connected) return;
-        window.socket.emit('note-submit', note, (stored) => {
+        window.socket.emit('note-submit', { ...note, ageMs: Math.max(0, Date.now() - writtenAt) }, (stored) => {
             clearPendingNote(stored.clientId);
             addNote(stored);
         });
@@ -669,13 +675,14 @@ document.addEventListener('DOMContentLoaded', function() {
     function submitNote(data) {
         const clientId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
         const note = { ...data, clientId };
+        const writtenAt = Date.now();
         const wasNearBottom = isNearBottom();
         const element = createPendingNoteElement(note);
-        pendingNotes.set(clientId, { note, element });
+        pendingNotes.set(clientId, { note, element, writtenAt });
         notesList.appendChild(element);
         if (wasNearBottom) scrollToBottom();
         else toggleScrollButton();
-        sendPendingNote(note);
+        sendPendingNote(note, writtenAt);
     }
 
     function updateCommentsForNote(noteId) {
@@ -709,7 +716,7 @@ document.addEventListener('DOMContentLoaded', function() {
     window.socket.on('connect', () => {
         connectionBanner.hidden = true;
         updatePendingBadges();
-        for (const { note } of pendingNotes.values()) sendPendingNote(note);
+        for (const { note, writtenAt } of pendingNotes.values()) sendPendingNote(note, writtenAt);
     });
 
     window.socket.on('current-user', (data) => {
