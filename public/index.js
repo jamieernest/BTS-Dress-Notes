@@ -479,7 +479,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const timecodeDisplay = formatNoteTimecode(note);
         const tagElements = getTagElements(note.tags);
         const editButton = `<button class="small edit-tags-btn" data-action="edit-tags" data-note-id="${note.id}">Edit Tags</button>`;
-        const editNoteButton = `<button class="small edit-note-btn" data-action="edit-note" data-note-id="${note.id}">Edit Note</button>`;
+        const editNoteButton = !NoteAuthor.canEditNote(note, currentUser.sub) ? '' : `<button class="small edit-note-btn" data-action="edit-note" data-note-id="${note.id}">Edit Note</button>`;
         const editedIndicator = note.lastEdited ? `<div class="note-edited">Last edited by ${escapeHtml(note.lastEditedBy || 'unknown')} at ${new Date(note.lastEdited).toLocaleTimeString()}</div>` : '';
         const isCommentsExpanded = expandedCommentSections.has(note.id);
         const commentCount = note.comments ? note.comments.length : 0;
@@ -720,10 +720,12 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     window.socket.on('current-user', (data) => {
+        const changed = currentUser.sub !== data.sub;
         currentUser.name = data.name;
         currentUser.sub = data.sub;
         currentUserName.textContent = data.name;
         updateChatUserName();
+        if (changed) rebuildFullNotesList(); // edit buttons depend on who we are, which may arrive after the notes
     });
 
     window.socket.on('user-joined', (data) => updateUserCount(data.userCount));

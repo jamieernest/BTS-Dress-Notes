@@ -13,8 +13,9 @@ const { createMtcDecoder } = require('./mtc');
 const { listIpv4Interfaces, resolveInterface } = require('./net-iface');
 const { loadSettings, saveSettings } = require('./settings');
 const { FileSessionStore } = require('./session-store');
-const { backupFilename, findRestorableBackup, writeBackupFile } = require('./notes-backup');
+const { authorsOf, applyAuthors, backupFilename, findRestorableBackup, writeBackupFile } = require('./notes-backup');
 const { sanitizeAge, insertionIndex } = require('./public/note-order');
+const { canEditNote } = require('./public/note-author');
 const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
 
 const app = express();
@@ -714,6 +715,7 @@ function backup(sync = false) {
         notes: globalState.notes,
         exportedAt: new Date().toISOString(),
         totalNotes: globalState.notes.length,
+        authors: authorsOf(globalState.notes),
         users: listedUsers().map(u => ({
             name: u.name,
             joinedAt: u.joinedAt
@@ -754,7 +756,7 @@ function restoreNotes() {
             console.log(`Notes restore: skipped backups/${file}: ${reason}`);
         }
         if (found.file) {
-            globalState.notes = found.data.notes;
+            globalState.notes = applyAuthors(found.data.notes, found.data.authors);
             if (found.data.tags) globalState.tags = found.data.tags;
             console.log(`Notes restore: loaded ${found.data.notes.length} notes from backups/${found.file}`);
         } else {
@@ -1092,7 +1094,8 @@ io.on('connection', (socket) => {
         if (user.isOverlay) return;
         const { noteId, newText } = data;
         const note = globalState.notes.find(n => n.id === noteId);
-        if (note) {
+        // Only the author (by session identity) may edit; see public/note-author.js
+        if (note && canEditNote(note, user.id)) {
             note.text = newText;
             note.lastEdited = new Date().toISOString();
             note.lastEditedBy = user.name;
@@ -1157,7 +1160,10 @@ io.on('connection', (socket) => {
 
         // Validate that the backup contains a notes array and optionally tags
         if (data && Array.isArray(data.notes)) {
-            globalState.notes = data.notes;
+            const authors = Array.isArray(data.authors)
+                ? data.authors.filter((a) => a && typeof a.userId === 'string' && typeof a.name === 'string')
+                : [];
+            globalState.notes = applyAuthors(data.notes.filter((n) => n && typeof n === 'object'), authors);
             
             // Restore tags if present in backup
             if (data.tags && Array.isArray(data.tags)) {
@@ -1188,6 +1194,7 @@ io.on('connection', (socket) => {
                 notes: globalState.notes,
                 exportedAt: new Date().toISOString(),
                 totalNotes: globalState.notes.length,
+                authors: authorsOf(globalState.notes),
                 users: listedUsers().map(u => ({
                     name: u.name,
                     joinedAt: u.joinedAt
