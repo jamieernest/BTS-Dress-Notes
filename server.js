@@ -421,13 +421,54 @@ function handleOscMessage(address, value) {
 const connectMessage = new Message('/eos/subscribe=1');
 const buffer = encode(connectMessage);
 
-function subscribeToEOS() {
-    let eosClient = new net.Socket();
-    eosClient.connect(eosPort, eosHost);
+// Eos TCP connection. connectToEOS() is called at start and from the config
+// page's reconnect button; there is never more than one socket, and each one
+// gets its own stream decoder. No automatic retry.
+const EOS_CONNECT_TIMEOUT_MS = Number(process.env.EOS_CONNECT_TIMEOUT_MS) || 10000;
+const eosStatus = { state: 'disconnected', error: null, host: eosHost, port: Number(eosPort) };
+let eosSocket = null;
 
-    eosClient.on('connect', function() {
+function setEosStatus(state, error = null) {
+    eosStatus.state = state;
+    eosStatus.error = error;
+    io.emit('eos-status', eosStatus);
+}
+
+function connectToEOS() {
+    // A press while an attempt is in progress does not stack another.
+    if (eosStatus.state === 'connecting') return;
+
+    if (eosSocket) {
+        const old = eosSocket;
+        eosSocket = null; // its handlers ignore everything from now on
+        old.removeAllListeners('data');
+        old.on('error', () => {});
+        old.destroy();
+    }
+
+    const sock = new net.Socket();
+    eosSocket = sock;
+    setEosStatus('connecting');
+    let failed = false;
+    const fail = (message) => {
+        if (eosSocket !== sock) return;
+        failed = true;
+        console.log('Error connecting to EOS via TCP:', message);
+        setEosStatus('failed', message);
+        sock.destroy();
+    };
+
+    sock.setTimeout(EOS_CONNECT_TIMEOUT_MS);
+    sock.on('timeout', () => {
+        if (eosStatus.state === 'connecting') fail(`timed out after ${EOS_CONNECT_TIMEOUT_MS / 1000}s`);
+    });
+
+    sock.on('connect', function() {
+        if (eosSocket !== sock) return;
         console.log('Connected to EOS');
-        eosClient.write(buffer);
+        sock.setTimeout(0);
+        sock.write(buffer);
+        setEosStatus('connected');
     });
 
     const pushSlip = createSlipDecoder(function(packet) {
@@ -438,12 +479,17 @@ function subscribeToEOS() {
             handleOscMessage(address, value);
         }
     });
+    sock.on('data', pushSlip);
 
-    eosClient.on('data', pushSlip);
+    sock.on('error', (err) => fail(err.code || err.message));
 
-    eosClient.on('error', function(err) {
-        console.log('Error connecting to EOS via TCP:', err);
+    sock.on('close', () => {
+        if (eosSocket !== sock) return;
+        eosSocket = null;
+        if (!failed) setEosStatus('disconnected');
     });
+
+    sock.connect(eosPort, eosHost);
 }
 
 // OSC Server for LX Cues and scenes from qlab
@@ -815,6 +861,7 @@ io.on('connection', (socket) => {
     socket.emit('lx-cue-update', globalState.currentLxCue);
     socket.emit('system-status', systemStatus());
     socket.emit('network-timecode-status', networkStatus);
+    socket.emit('eos-status', eosStatus);
     socket.emit('settings-options', settingsOptions());
 
     // Only send user-related updates if this is NOT an overlay
@@ -1089,6 +1136,13 @@ io.on('connection', (socket) => {
         }
     });
     
+    // Reconnect to the Eos console from the config page; same rule as the other controls.
+    socket.on('eos-reconnect', () => {
+        if (user.isOverlay) return;
+        console.log(`Eos TCP reconnect requested by ${user.name}`);
+        connectToEOS();
+    });
+
     // Reset from the config page: empties the notes and the chat for everyone.
     // Same rule as the other config page controls: any non-overlay user.
     socket.on('reset-all', () => {
@@ -1214,7 +1268,7 @@ initKeycloak().finally(() => {
             console.log(`OSC Server listening for LX cues on port ${oscPort}`);
         }
 
-        subscribeToEOS();
+        connectToEOS();
         startNetworkTimecode();
     });
 });

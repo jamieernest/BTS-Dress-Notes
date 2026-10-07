@@ -235,3 +235,8 @@ button:hover {
         margin-bottom: 0.5rem;
     }
 }
+
+.eos-state {
+    opacity: 0.85;
+    overflow-wrap: anywhere;
+}
