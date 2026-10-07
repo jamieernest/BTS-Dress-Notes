@@ -147,3 +147,63 @@ test('a backup whose notes carry a legacy socket id as userId restores them edit
     bob.emit('note-edit-text', { noteId: 'old2', newText: 'bob can edit' });
     assert.strictEqual((await edit).newText, 'bob can edit');
 });
+
+async function importSetup(t) {
+    const oidc = await startOidc();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'note-author-e2e-'));
+    const app = createApp({ issuer: oidc.issuer, sessionsFile: path.join(dir, 'sessions.json'), port: await freePort() });
+    await app.start();
+    const sockets = [];
+    t.after(async () => {
+        sockets.forEach((s) => s.close());
+        await app.stop().catch(() => {});
+        oidc.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+    const connect = async (name) => {
+        const socket = io(`http://127.0.0.1:${app.port}`, { extraHeaders: { cookie: await login(app, oidc, name) }, reconnection: false });
+        sockets.push(socket);
+        socket.notes = [];
+        socket.on('notes-update', (notes) => { socket.notes = notes; });
+        await until(() => socket.connected, `${name} to connect`);
+        return socket;
+    };
+    return { connect };
+}
+
+const importFile = async (socket, file) => {
+    const done = new Promise((resolve) => socket.once('import-success', resolve));
+    socket.emit('import-backup', file);
+    await done;
+};
+
+test('importing a file without authors leaves its notes editable by anyone', async (t) => {
+    const { connect } = await importSetup(t);
+    const bob = await connect('bob');
+    const legacy = { id: 'imp1', text: 'legacy', user: 'x', userId: 'socketid123', timestamp: new Date().toISOString(), tags: [], comments: [] };
+    await importFile(bob, { notes: [legacy] });
+    const edit = new Promise((resolve) => bob.once('note-edit-text', resolve));
+    bob.emit('note-edit-text', { noteId: 'imp1', newText: 'bob edited' });
+    assert.strictEqual((await edit).newText, 'bob edited');
+});
+
+test('an exported file keeps authorship by Keycloak identity when imported again', async (t) => {
+    const { connect } = await importSetup(t);
+    const alice = await connect('alice');
+    const bob = await connect('bob');
+    alice.emit('note-submit', { id: 'rt1', clientId: 'c1', text: 'alice note', timestamp: new Date().toISOString(), tags: [], comments: [] });
+    await until(() => alice.notes.length === 1, 'the note to arrive');
+    const exported = new Promise((resolve) => alice.once('export-data', resolve));
+    alice.emit('export-request', 'json');
+    const file = JSON.parse((await exported).data);
+    assert.deepStrictEqual(file.authors.map((a) => a.userId), [alice.notes[0].userId]);
+
+    await importFile(bob, file);
+    const edits = [];
+    bob.on('note-edit-text', (e) => edits.push(e));
+    bob.emit('note-edit-text', { noteId: alice.notes[0].id, newText: 'hijacked' });
+    await sleep(400);
+    assert.strictEqual(edits.length, 0, 'bob cannot edit the imported note');
+    alice.emit('note-edit-text', { noteId: alice.notes[0].id, newText: 'mine' });
+    await until(() => edits.length === 1, 'the author edit after import');
+});

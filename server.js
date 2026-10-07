@@ -1160,7 +1160,10 @@ io.on('connection', (socket) => {
 
         // Validate that the backup contains a notes array and optionally tags
         if (data && Array.isArray(data.notes)) {
-            globalState.notes = data.notes;
+            const authors = Array.isArray(data.authors)
+                ? data.authors.filter((a) => a && typeof a.userId === 'string' && typeof a.name === 'string')
+                : [];
+            globalState.notes = applyAuthors(data.notes.filter((n) => n && typeof n === 'object'), authors);
             
             // Restore tags if present in backup
             if (data.tags && Array.isArray(data.tags)) {
@@ -1191,6 +1194,7 @@ io.on('connection', (socket) => {
                 notes: globalState.notes,
                 exportedAt: new Date().toISOString(),
                 totalNotes: globalState.notes.length,
+                authors: authorsOf(globalState.notes),
                 users: listedUsers().map(u => ({
                     name: u.name,
                     joinedAt: u.joinedAt
