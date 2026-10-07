@@ -433,9 +433,19 @@ textarea:focus {
     font-weight: bold;
 }
 
+.users-panel {
+    margin-top: 1rem;
+}
+
+.users-panel summary {
+    cursor: pointer;
+    font-weight: 600;
+    user-select: none;
+}
+
 .users-list {
     list-style: none;
-    margin-top: 1rem;
+    margin-top: 0.5rem;
 }
 
 .user-item {
@@ -979,7 +989,7 @@ footer {
     }
 }
 
-.scroll-to-bottom-btn {
+.scroll-to-top-btn {
     position: fixed;
     bottom: 2rem;
     right: 2rem;
@@ -998,7 +1008,7 @@ footer {
     justify-content: center;
     transition: all 0.3s ease;
 }
-.scroll-to-bottom-btn:hover {
+.scroll-to-top-btn:hover {
     transform: scale(1.1);
     background: #45a049;
 }

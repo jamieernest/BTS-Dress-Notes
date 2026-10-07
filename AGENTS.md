@@ -16,7 +16,7 @@ The main page keeps a submitted note as pending until the `note-submit` ack arri
 
 `openid-client` is on v6, which is ESM-only and has a very different functional API from v4/v5 (`discovery()`, `buildAuthorizationUrl()`, `authorizationCodeGrant()`, etc. — no more `Issuer`/`Client` classes). `server.js` is CommonJS, so it's loaded via a dynamic `import('openid-client')` inside the async `initKeycloak()` startup function rather than `require()`. It also refuses non-HTTPS issuers by default; `initKeycloak()` passes `{ execute: [oidc.allowInsecureRequests] }` to `discovery()` automatically when `KEYCLOAK_ISSUER` starts with `http://`, since a venue-LAN Keycloak instance may not have TLS.
 
-A note resent after an outage carries `ageMs` (recomputed per send); the server stamps `timestamp` as its clock minus that age and inserts by stamp (`public/note-order.js`), so list order is write order, not arrival order. The browser's own timecode is kept; late notes still take the server's current act and LX fallback at arrival.
+A note resent after an outage carries `ageMs` (recomputed per send); the server stamps `timestamp` as its clock minus that age and inserts by stamp (`public/note-order.js`), so list order is write order, not arrival order. Browsers show it newest first (`NoteOrder.newestFirst()`); the server's array, backups and the JSON export stay oldest first. The browser's own timecode is kept; late notes still take the server's current act and LX fallback at arrival.
 
 ## Eos OSC input
 

@@ -40,7 +40,10 @@
                     <span class="user-name-display" id="currentUserName">Guest</span>
                     <a href="/logout" id="logoutLink" class="logout-link">Log out</a>
                 </div>
-                <ul class="users-list" id="usersList"></ul>
+                <details class="users-panel" id="usersPanel" open>
+                    <summary>Online users</summary>
+                    <ul class="users-list" id="usersList"></ul>
+                </details>
             </div>
             
             <div class="timecode-section">
@@ -124,7 +127,7 @@
                 </div>
             </div>
         </div>
-        <button id="scrollToBottomBtn" class="scroll-to-bottom-btn" style="display: none;">↓</button>
+        <button id="scrollToTopBtn" class="scroll-to-top-btn" style="display: none;">↑</button>
         <!-- New Chat Section -->
         <div class="chat-section">
             <div class="chat-input-area">

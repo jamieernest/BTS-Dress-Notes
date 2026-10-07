@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const lxCueInput = document.getElementById('lxCueInput');
     const sendNoteBtn = document.getElementById('sendNote');
     const cancelNoteBtn = document.getElementById('cancelNote');
+    const usersPanel = document.getElementById('usersPanel');
     const usersList = document.getElementById('usersList');
     const notesList = document.getElementById('notesList');
     const exportJsonBtn = document.getElementById('exportJson');
@@ -30,7 +31,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const chatMessages = document.getElementById('chatMessages');
     const chatCount = document.getElementById('chatCount');
     const chatUserName = document.getElementById('chatUserName');
-    const scrollToBottomBtn = document.getElementById('scrollToBottomBtn');
+    const scrollToTopBtn = document.getElementById('scrollToTopBtn');
     const connectionBanner = document.getElementById('connectionBanner');
 
     // --- State variables ---
@@ -107,16 +108,6 @@ document.addEventListener('DOMContentLoaded', function() {
     function formatTimecode(tc) {
         if (!tc || typeof tc !== 'object') return '00:00:00:00';
         return `${(tc.hours || 0).toString().padStart(2, '0')}:${(tc.minutes || 0).toString().padStart(2, '0')}:${(tc.seconds || 0).toString().padStart(2, '0')}:${(tc.frames || 0).toString().padStart(2, '0')}`;
-    }
-
-    function timecodeToSeconds(tc) {
-        if (!tc) return 0;
-        const hours = tc.hours || 0;
-        const minutes = tc.minutes || 0;
-        const seconds = tc.seconds || 0;
-        const frames = tc.frames || 0;
-        const frameRate = tc.frameRate || 30;
-        return hours * 3600 + minutes * 60 + seconds + frames / frameRate;
     }
 
     function formatCommentTime(timestamp) {
@@ -442,20 +433,18 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- Scroll button logic ---
-    function isNearBottom() {
-        const scrollHeight = notesList.scrollHeight;
-        const scrollTop = notesList.scrollTop;
-        const clientHeight = notesList.clientHeight;
-        return scrollHeight - (scrollTop + clientHeight) < 50;
+    // Newest notes are at the top of the list.
+    function isNearTop() {
+        return notesList.scrollTop < 50;
     }
 
     function toggleScrollButton() {
-        if (isNearBottom()) scrollToBottomBtn.style.display = 'none';
-        else scrollToBottomBtn.style.display = 'flex';
+        if (isNearTop()) scrollToTopBtn.style.display = 'none';
+        else scrollToTopBtn.style.display = 'flex';
     }
 
-    function scrollToBottom() {
-        notesList.scrollTo({ top: notesList.scrollHeight, behavior: 'smooth' });
+    function scrollToTop() {
+        notesList.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     // --- Incremental DOM update functions ---
@@ -570,9 +559,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function insertNoteInOrder(noteElement, note) {
-        // Only for a note that belongs last; addNote rebuilds the list for one that doesn't.
-        // Pending notes stay below every note the server has.
-        notesList.insertBefore(noteElement, notesList.querySelector('.note-item.pending'));
+        // Only for a note that is the newest; addNote rebuilds the list for one that isn't.
+        // Pending notes stay above every note the server has.
+        notesList.insertBefore(noteElement, notesList.querySelector('.note-item:not(.pending)'));
         const shouldShow = (filterTag === 'all' || note.tags.includes(filterTag)) &&
                            (filterAct === 'all' || (note.act || 'Preshow') === filterAct);
         noteElement.style.display = shouldShow ? 'block' : 'none';
@@ -582,15 +571,11 @@ document.addEventListener('DOMContentLoaded', function() {
         captureCommentInputs();                // Save any in‑progress comments
         notesList.innerHTML = '';
         noteElements.clear();
-        const chronologicalNotes = [...allNotes].sort((a, b) => {
-            if (a.timestamp && b.timestamp) return new Date(a.timestamp) - new Date(b.timestamp);
-            return timecodeToSeconds(a.timecode) - timecodeToSeconds(b.timecode);
-        });
-        for (const note of chronologicalNotes) {
+        for (const { element } of [...pendingNotes.values()].reverse()) notesList.appendChild(element);
+        for (const note of NoteOrder.newestFirst(allNotes)) {
             const element = createNoteElement(note);
             notesList.appendChild(element);
         }
-        for (const { element } of pendingNotes.values()) notesList.appendChild(element);
         updateActFilter();
         filterNotes();
         restoreCommentInputs();                // Restore comment text and focus
@@ -599,18 +584,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function addNote(note) {
         if (noteElements.has(note.id)) return;
-        const wasNearBottom = isNearBottom();   // Check BEFORE insertion
+        const wasNearTop = isNearTop();   // Check BEFORE insertion
         const index = NoteOrder.insertionIndex(allNotes, note);
         allNotes.splice(index, 0, note);
         if (index < allNotes.length - 1) {
-            // A late note (written while disconnected) belongs above later ones.
+            // A late note (written while disconnected) belongs below later ones.
             rebuildFullNotesList();
         } else {
             insertNoteInOrder(createNoteElement(note), note);
             updateActFilter();
         }
-        if (wasNearBottom) {
-            scrollToBottom();
+        if (wasNearTop) {
+            scrollToTop();
         } else {
             toggleScrollButton();
         }
@@ -676,11 +661,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const clientId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
         const note = { ...data, clientId };
         const writtenAt = Date.now();
-        const wasNearBottom = isNearBottom();
+        const wasNearTop = isNearTop();
         const element = createPendingNoteElement(note);
         pendingNotes.set(clientId, { note, element, writtenAt });
-        notesList.appendChild(element);
-        if (wasNearBottom) scrollToBottom();
+        // The newest pending note goes above the older ones.
+        notesList.insertBefore(element, notesList.firstChild);
+        if (wasNearTop) scrollToTop();
         else toggleScrollButton();
         sendPendingNote(note, writtenAt);
     }
@@ -726,6 +712,14 @@ document.addEventListener('DOMContentLoaded', function() {
         currentUserName.textContent = data.name;
         updateChatUserName();
         if (changed) rebuildFullNotesList(); // edit buttons depend on who we are, which may arrive after the notes
+    });
+
+    // Collapsing the online users list is remembered per browser (nice to have, so failures are ignored).
+    try {
+        if (localStorage.getItem('users-panel-collapsed') === '1') usersPanel.open = false;
+    } catch (e) { /* storage unavailable */ }
+    usersPanel.addEventListener('toggle', () => {
+        try { localStorage.setItem('users-panel-collapsed', usersPanel.open ? '0' : '1'); } catch (e) { /* ignore */ }
     });
 
     window.socket.on('user-joined', (data) => updateUserCount(data.userCount));
@@ -842,14 +836,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     window.socket.on('comment-submit', ({ noteId, comment }) => {
-        const wasNearBottom = isNearBottom();
         const note = allNotes.find(n => n.id === noteId);
         if (note) {
             if (!note.comments) note.comments = [];
             note.comments.push(comment);
             updateCommentsForNote(noteId);
-            if (wasNearBottom) scrollToBottom();
-            else toggleScrollButton();
         }
     });
 
@@ -1149,7 +1140,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    scrollToBottomBtn.addEventListener('click', scrollToBottom);
+    scrollToTopBtn.addEventListener('click', scrollToTop);
     let scrollTimeout;
     notesList.addEventListener('scroll', () => {
         clearTimeout(scrollTimeout);
