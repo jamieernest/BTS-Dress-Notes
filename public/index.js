@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const lxCueInput = document.getElementById('lxCueInput');
     const sendNoteBtn = document.getElementById('sendNote');
     const cancelNoteBtn = document.getElementById('cancelNote');
+    const configLink = document.getElementById('configLink');
     const usersPanel = document.getElementById('usersPanel');
     const usersList = document.getElementById('usersList');
     const notesList = document.getElementById('notesList');
@@ -709,6 +710,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const changed = currentUser.sub !== data.sub;
         currentUser.name = data.name;
         currentUser.sub = data.sub;
+        configLink.hidden = !data.isAdmin; // the config page is for admins only
         currentUserName.textContent = data.name;
         updateChatUserName();
         if (changed) rebuildFullNotesList(); // edit buttons depend on who we are, which may arrive after the notes
