@@ -677,7 +677,21 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- Socket.io setup ---
-    window.socket = io();
+    // Tabs of one browser share this id, so the online users list shows them as one device.
+    function deviceId() {
+        const key = 'device-id';
+        try {
+            let id = localStorage.getItem(key);
+            if (!id) {
+                id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : `d-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+                localStorage.setItem(key, id);
+            }
+            return id;
+        } catch (e) {
+            return undefined; // storage unavailable: the server treats this page as its own device
+        }
+    }
+    window.socket = io({ auth: { deviceId: deviceId() } });
 
     // The server refuses the socket handshake when the session is missing or
     // expired (e.g. the 12-hour login ran out, or local-sessions.json was deleted).
@@ -695,6 +709,15 @@ document.addEventListener('DOMContentLoaded', function() {
     window.socket.on('disconnect', () => {
         connectionBanner.hidden = false;
         updatePendingBadges();
+    });
+
+    // Leaving the page (e.g. to /config.html) can freeze it in the back/forward
+    // cache with its socket still open, which the server only drops after its
+    // ping timeout, while coming back reconnects. Close the socket on the way
+    // out so the old connection never lingers, and reopen it when restored.
+    window.addEventListener('pagehide', () => window.socket.disconnect());
+    window.addEventListener('pageshow', (event) => {
+        if (event.persisted) window.socket.connect();
     });
 
     // The server sends full state on every connect, so only the banner and
@@ -725,13 +748,31 @@ document.addEventListener('DOMContentLoaded', function() {
     window.socket.on('user-joined', (data) => updateUserCount(data.userCount));
     window.socket.on('user-left', (data) => updateUserCount(data.userCount));
 
+    // People with several devices collapse to their name; which ones are expanded survives list updates.
+    const expandedUsers = new Set();
+    const typingBadge = (isTyping) => isTyping ? '<span class="user-typing"><span class="typing-indicator"></span>writing note</span>' : '';
+
     window.socket.on('users-update', (users) => {
         updateUserCount(users.length);
         usersList.innerHTML = '';
         users.forEach(user => {
             const userItem = document.createElement('li');
             userItem.className = 'user-item';
-            userItem.innerHTML = `${escapeHtml(user.name)}${user.isTyping ? '<span class="user-typing"><span class="typing-indicator"></span>writing note</span>' : ''}`;
+            const devices = user.devices || [];
+            if (devices.length < 2) {
+                userItem.innerHTML = `<span>${escapeHtml(user.name)}</span>${typingBadge(user.isTyping)}`;
+            } else {
+                userItem.classList.add('user-item-multi');
+                const details = document.createElement('details');
+                details.className = 'user-devices';
+                details.open = expandedUsers.has(user.id);
+                details.addEventListener('toggle', () => {
+                    if (details.open) expandedUsers.add(user.id); else expandedUsers.delete(user.id);
+                });
+                details.innerHTML = `<summary><span>${escapeHtml(user.name)} <span class="user-device-count">${devices.length} devices</span></span>${typingBadge(user.isTyping)}</summary>` +
+                    `<ul>${devices.map(d => `<li class="user-device"><span>${escapeHtml(d.label)}</span>${typingBadge(d.isTyping)}</li>`).join('')}</ul>`;
+                userItem.appendChild(details);
+            }
             usersList.appendChild(userItem);
         });
     });
