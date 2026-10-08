@@ -43,5 +43,19 @@
         return String(ctx.noteValue || '').trim() === '' ? 'cancel' : 'blur';
     }
 
-    return { shouldFocusNote, isTextEntry, escapeAction };
+    // How long an empty note box may stay unfocused before its frozen timecode
+    // is released. Short enough that clicking in and wandering off does not hold
+    // the timecode, long enough to click a tag or reach for the box again.
+    const AUTO_RELEASE_MS = 3000;
+
+    // Whether the unfocused-note timer should release the frozen timecode and
+    // drop the started note: only when nothing has been put into it. Text or a
+    // chosen tag means the person has started a note, so it is kept, as with
+    // Escape on a note that has text.
+    function shouldAutoRelease(ctx = {}) {
+        if (ctx.noteFocused) return false;
+        return String(ctx.noteValue || '').trim() === '' && !ctx.tagsSelected;
+    }
+
+    return { shouldFocusNote, isTextEntry, escapeAction, shouldAutoRelease, AUTO_RELEASE_MS };
 }));
