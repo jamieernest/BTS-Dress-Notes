@@ -16,6 +16,7 @@ const { FileSessionStore } = require('./session-store');
 const { authorsOf, applyAuthors, backupFilename, findRestorableBackup, writeBackupFile } = require('./notes-backup');
 const { sanitizeAge, insertionIndex } = require('./public/note-order');
 const { canEditNote } = require('./public/note-author');
+const { createAdmins } = require('./admins');
 const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
 
 const app = express();
@@ -88,6 +89,16 @@ const sessionMiddleware = session({
     }
 });
 app.use(sessionMiddleware);
+
+// Who may use the Config & Status page and its controls; see admins.js.
+const admins = createAdmins({
+    file: process.env.ADMINS_FILE || path.join(__dirname, 'admins.json'),
+    env: process.env.ADMIN_USERS,
+    log: (message) => console.log(message)
+});
+if (!admins.isEnforced()) {
+    console.log('Admins: no admins.json or ADMIN_USERS, so everyone can use the Config page.');
+}
 
 // openid-client v6 is ESM-only; loaded once via dynamic import at startup.
 let oidc = null;
@@ -170,6 +181,8 @@ app.get('/callback', async (req, res) => {
             sub: claims.sub,
             name: claims.name || claims.preferred_username || claims.email || claims.sub,
             email: claims.email || null,
+            emailVerified: claims.email_verified,
+            username: claims.preferred_username || null,
             idToken: tokens.id_token || null
         };
         delete req.session.oidc;
@@ -213,6 +226,18 @@ function requireAuth(req, res, next) {
 }
 
 app.use(requireAuth);
+
+// The config page is for admins only. This sits before express.static, which
+// would otherwise serve it, and compares the decoded, lower-cased path so
+// /Config.html or /%63onfig.html cannot get round it.
+const ADMIN_ONLY_PATHS = new Set(['/config.html', '/config.js']);
+app.use((req, res, next) => {
+    let requested;
+    try { requested = decodeURIComponent(req.path).toLowerCase(); } catch (e) { requested = ''; }
+    if (!ADMIN_ONLY_PATHS.has(requested) || admins.isAdmin(req.session.user)) return next();
+    console.log(`Config page refused for ${req.session.user.name}`);
+    res.status(403).type('html').send('<!doctype html><title>Not allowed</title><p>The Config &amp; Status page is for admins. <a href="/">Back to Live Notes</a></p>');
+});
 
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
@@ -305,6 +330,12 @@ function emitToChatClients(event, payload) {
     for (const s of io.sockets.sockets.values()) {
         const u = globalState.users.get(s.id);
         if (u && !u.isOverlay) s.emit(event, payload);
+    }
+}
+// Only the config page uses these (MIDI port names, interface addresses).
+function emitToAdmins(event, payload) {
+    for (const s of io.sockets.sockets.values()) {
+        if (admins.isAdmin(s.request.session && s.request.session.user)) s.emit(event, payload);
     }
 }
 const chatRestore = createChatRestore({
@@ -840,6 +871,15 @@ io.on('connection', (socket) => {
     const isConfig = !!socket.handshake.headers.referer &&
                      socket.handshake.headers.referer.includes('config.html');
 
+    // Checked on every use, so editing admins.json takes effect without a restart.
+    const isAdmin = () => admins.isAdmin(socket.request.session && socket.request.session.user);
+    // Config page controls: ignored (and logged) unless the person is an admin.
+    const denyUnlessAdmin = (what) => {
+        if (isAdmin()) return false;
+        console.log(`${what} refused for ${sessionUser.name}: not an admin`);
+        return true;
+    };
+
     const user = {
         id: sessionUser.sub,
         name: sessionUser.name,
@@ -864,11 +904,11 @@ io.on('connection', (socket) => {
     socket.emit('system-status', systemStatus());
     socket.emit('network-timecode-status', networkStatus);
     socket.emit('eos-status', eosStatus);
-    socket.emit('settings-options', settingsOptions());
+    if (isAdmin()) socket.emit('settings-options', settingsOptions());
 
     // Only send user-related updates if this is NOT an overlay
     if (!isOverlay) {
-        socket.emit('current-user', { name: user.name, sub: user.id });
+        socket.emit('current-user', { name: user.name, sub: user.id, isAdmin: isAdmin() });
 
         // Send filtered users list (excluding overlay and config pages)
         const filteredUsers = listedUsers();
@@ -952,7 +992,12 @@ io.on('connection', (socket) => {
     // Handle time mode change (only for non-overlay users)
     socket.on('time-mode-change', (newMode) => {
         if (user.isOverlay) return; // Overlay users can't change time mode
-        
+        // The main page switches itself to real time when there is no MIDI input;
+        // that is the only change anyone but an admin may make.
+        const midiFallback = newMode === 'realtime' && globalState.timeMode === 'midi' &&
+            !(midiInput && getMidiInputs().length > 0);
+        if (!midiFallback && denyUnlessAdmin('Time mode change')) return;
+
         if (newMode === 'midi' || newMode === 'network' || newMode === 'realtime') {
             globalState.timeMode = newMode;
             io.emit('time-mode-update', globalState.timeMode);
@@ -962,6 +1007,7 @@ io.on('connection', (socket) => {
     // Handle MIDI input change from the config page ('' or null for none)
     socket.on('midi-input-change', (inputName) => {
         if (user.isOverlay) return; // Overlay users can't change settings
+        if (denyUnlessAdmin('MIDI input change')) return;
         const name = inputName || null;
         if (name !== null && !getMidiInputs().includes(name)) return;
         openMidiInput(name);
@@ -972,17 +1018,18 @@ io.on('connection', (socket) => {
             io.emit('time-mode-update', globalState.timeMode);
         }
         io.emit('system-status', systemStatus());
-        io.emit('settings-options', settingsOptions());
+        emitToAdmins('settings-options', settingsOptions());
     });
 
     // Handle network interface change from the config page ('auto' or a local IPv4 address)
     socket.on('network-interface-change', (selection) => {
         if (user.isOverlay) return; // Overlay users can't change settings
+        if (denyUnlessAdmin('Network interface change')) return;
         if (selection !== 'auto' && !listIpv4Interfaces().some(i => i.address === selection)) return;
         settings.networkInterface = selection;
         persistSettings();
         restartNetworkTimecode();
-        io.emit('settings-options', settingsOptions());
+        emitToAdmins('settings-options', settingsOptions());
     });
 
     // Handle LX Cue change (manual input - will be overridden by OSC)
@@ -1139,17 +1186,18 @@ io.on('connection', (socket) => {
         }
     });
     
-    // Reconnect to the Eos console from the config page; same rule as the other controls.
+    // Reconnect to the Eos console from the config page.
     socket.on('eos-reconnect', () => {
         if (user.isOverlay) return;
+        if (denyUnlessAdmin('Eos reconnect')) return;
         console.log(`Eos TCP reconnect requested by ${user.name}`);
         connectToEOS();
     });
 
     // Reset from the config page: empties the notes and the chat for everyone.
-    // Same rule as the other config page controls: any non-overlay user.
     socket.on('reset-all', () => {
         if (user.isOverlay) return;
+        if (denyUnlessAdmin('Reset of notes and chat')) return;
         console.log(`Reset of all notes and chat requested by ${user.name}`);
         resetNotesAndChat();
     });

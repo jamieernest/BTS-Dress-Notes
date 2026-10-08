@@ -151,3 +151,6 @@ local-settings.json.tmp
 # Login sessions saved by the server
 local-sessions.json
 local-sessions.json.tmp
+
+# Who may use the Config page (see admins.example.json)
+admins.json

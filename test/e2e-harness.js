@@ -68,7 +68,7 @@ async function startOidc() {
             let body = '';
             for await (const chunk of req) body += chunk;
             const who = codes.get(new URLSearchParams(body).get('code'));
-            const idToken = await new jose.SignJWT({ name: who })
+            const idToken = await new jose.SignJWT({ name: who, preferred_username: who, email: `${who}@example.com`, email_verified: true })
                 .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
                 .setIssuer(issuer).setAudience('bts').setSubject(`sub-${who}`)
                 .setIssuedAt().setExpirationTime('1h').sign(privateKey);
@@ -88,6 +88,7 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
     return {
         port,
         backupsDir,
+        adminsFile: path.join(path.dirname(sessionsFile), 'admins.json'),
         // Kills the process without the shutdown backup, as a crash or power cut would.
         async kill() {
             const exited = new Promise((resolve) => child.once('exit', resolve));
@@ -101,6 +102,8 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
                 env: {
                     ...process.env, PORT: String(port), OSC_PORT: String(oscPort), SESSIONS_FILE: sessionsFile,
                     BACKUPS_DIR: backupsDir,
+                    // no admin list unless a test writes `adminsFile`, so by default everybody is an admin
+                    ADMINS_FILE: path.join(path.dirname(sessionsFile), 'admins.json'), ADMIN_USERS: '',
                     SESSION_SECRET: 'test', KEYCLOAK_ISSUER: issuer, KEYCLOAK_CLIENT_ID: 'bts',
                     KEYCLOAK_CLIENT_SECRET: 'x', EOS_HOST: '127.0.0.1', EOS_PORT: String(await freePort()), ...env
                 },

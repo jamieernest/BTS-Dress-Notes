@@ -26,7 +26,19 @@ npm i
 
 7. Every page requires login via Keycloak SSO. Set `SESSION_SECRET` (required - the server won't start without it) and, to enable login, `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID` and `KEYCLOAK_CLIENT_SECRET` (one shared client covers every venue). See `AGENTS.md` for how these are used. Logins last 12 hours and are saved to `local-sessions.json` (git-ignored) so they survive a server restart; changing `SESSION_SECRET` or deleting that file logs everyone out.
 
-8. Run by running `npm start`
+8. (Recommended) Choose who may use the Config & Status page. Copy `admins.example.json` to `admins.json` (git-ignored) and list people by Keycloak username, email or `sub`, or set `ADMIN_USERS` to a comma separated list (both are combined). Everyone else loses the page, its link and its controls (time mode, MIDI input, network interface, Eos reconnect, reset). Editing `admins.json` takes effect without a restart. See [Admins](#admins).
+
+9. Run by running `npm start`
+
+# Admins
+
+Only admins may use the Config & Status page (`/config.html`) and the controls on it. Other people never see the link, get a 403 for the page, and the server ignores those controls if they are sent anyway. Everything else on the main page is open to every logged-in user.
+
+Admins are listed in `admins.json` (path overridable with `ADMINS_FILE`) and/or the `ADMIN_USERS` environment variable. An entry is a Keycloak **username**, **email** (ignored if Keycloak marks it unverified) or **`sub`**, case-insensitive; display names are not matched. The file is either an array or `{ "admins": [...] }`; see `admins.example.json`.
+
+- **No `admins.json` and no `ADMIN_USERS`:** the check is off and everyone is an admin, as before this feature. The server log notes this at start, so set a list on any server that matters.
+- **A list that exists is always enforced.** An empty list, or a file that is not valid JSON, means nobody is an admin (the server log says why) rather than everybody.
+- Logins that were saved before this feature have no username, so a username entry only matches after that person logs in again (an email or `sub` entry works at once).
 
 # Timecode modes
 
