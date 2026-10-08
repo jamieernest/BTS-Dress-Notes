@@ -16,6 +16,7 @@ const { FileSessionStore } = require('./session-store');
 const { authorsOf, applyAuthors, backupFilename, findRestorableBackup, writeBackupFile } = require('./notes-backup');
 const { sanitizeAge, insertionIndex } = require('./public/note-order');
 const { canEditNote } = require('./public/note-author');
+const { deviceLabel, groupUsers, deviceIdOf } = require('./online-users');
 const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
 
 const app = express();
@@ -848,7 +849,9 @@ io.on('connection', (socket) => {
         currentLxCue: null,
         joinedAt: new Date(),
         isOverlay: isOverlay,
-        isConfig: isConfig
+        isConfig: isConfig,
+        deviceId: deviceIdOf(socket),
+        deviceLabel: deviceLabel(socket.handshake.headers['user-agent'])
     };
 
     globalState.users.set(socket.id, user);
@@ -874,8 +877,10 @@ io.on('connection', (socket) => {
         const filteredUsers = listedUsers();
         socket.emit('users-update', filteredUsers);
         
-        // Notify about new user joining (only for listed users)
+        // Notify about new user joining (only for listed users). Everyone else
+        // also gets the new list: user-joined only carries the count.
         if (!isConfig) {
+            socket.broadcast.emit('users-update', filteredUsers);
             io.emit('user-joined', {
                 user: user.name,
                 userCount: filteredUsers.length
@@ -1243,9 +1248,13 @@ function resetNotesAndChat() {
     backup(true);
 }
 
-// Users shown in the online users list: overlay and config pages are left out.
+// Users shown in the online users list: overlay and config pages are left out,
+// and each person appears once with the devices they are on (online-users.js).
+// A person can briefly hold two sockets without having two pages open: a page
+// that has navigated away or been frozen (back/forward cache, a sleeping phone)
+// keeps its old socket until Socket.IO's ping timeout while the page reconnects.
 function listedUsers() {
-    return Array.from(globalState.users.values()).filter(u => !u.isOverlay && !u.isConfig);
+    return groupUsers(globalState.users.values());
 }
 
 // Helper functions for tags

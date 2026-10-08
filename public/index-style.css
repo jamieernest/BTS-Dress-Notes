@@ -455,6 +455,35 @@ textarea:focus {
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.user-item-multi {
+    display: block;
+}
+
+.user-devices summary {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.user-device-count {
+    opacity: 0.6;
+    font-size: 0.85rem;
+    margin-left: 0.4rem;
+}
+
+.user-devices ul {
+    list-style: none;
+    margin: 0.4rem 0 0 1rem;
+}
+
+.user-device {
+    display: flex;
+    align-items: center;
+    padding: 0.25rem 0;
+    font-size: 0.9rem;
+    opacity: 0.85;
+}
+
 .user-typing {
     color: #ff9800;
     font-style: italic;
