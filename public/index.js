@@ -381,8 +381,12 @@ document.addEventListener('DOMContentLoaded', function() {
     function startAutoResumeTimer() {
         clearAutoResumeTimer();
         autoResumeTimer = setTimeout(function() {
-            if (noteInput.value.trim() === '' && document.activeElement !== noteInput) cancelNote();
-        }, 15000);
+            if (typeToNote.shouldAutoRelease({
+                noteFocused: document.activeElement === noteInput,
+                noteValue: noteInput.value,
+                tagsSelected: selectedTags.length > 0
+            })) cancelNote();
+        }, typeToNote.AUTO_RELEASE_MS);
     }
 
     function clearAutoResumeTimer() {
@@ -928,7 +932,10 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    noteInput.addEventListener('focus', startTyping);
+    noteInput.addEventListener('focus', () => {
+        clearAutoResumeTimer(); // coming back to the box within the window keeps the freeze
+        startTyping();
+    });
     noteInput.addEventListener('input', () => {
         sendNoteBtn.disabled = noteInput.value.trim().length === 0;
         startAutoResumeTimer();
