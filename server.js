@@ -14,6 +14,8 @@ const { listIpv4Interfaces, resolveInterface } = require('./net-iface');
 const { loadSettings, saveSettings } = require('./settings');
 const { FileSessionStore } = require('./session-store');
 const { authorsOf, applyAuthors, backupFilename, backupTime, checkBackup, findRestorableBackup, writeBackupFile } = require('./notes-backup');
+const savedShows = require('./saved-shows');
+const SAVED_SHOWS_DIR = process.env.SAVED_SHOWS_DIR || path.join(__dirname, 'saved-shows');
 const { sanitizeAge, insertionIndex } = require('./public/note-order');
 const { canEditNote } = require('./public/note-author');
 const input = require('./note-input');
@@ -366,33 +368,46 @@ app.get('/session', (req, res) => {
     res.json({ name: req.session.user.name, sub: req.session.user.sub });
 });
 
+// Saved shows for Past notes (saved from the config page, see saved-shows.js).
+app.get('/shows', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json(await savedShows.listShows(SAVED_SHOWS_DIR));
+});
+app.get('/shows/:id', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const show = await savedShows.readShow(SAVED_SHOWS_DIR, req.params.id);
+    if (!show) return res.status(404).json({ error: 'not found' });
+    res.json(show);
+});
+
+// Render the shared icon sprite with each page: an external <use> would
+// otherwise leave icons blank until another request finishes. Read the source
+// files per request so frontend edits still work without a dev-server restart.
+const htmlPages = {
+    '/': 'index.html', '/index.html': 'index.html', '/recall.html': 'recall.html',
+    '/config.html': 'config.html', '/overlay.html': 'overlay.html', '/overlay-cast.html': 'overlay-cast.html'
+};
+app.get(Object.keys(htmlPages), async (req, res, next) => {
+    try {
+        const page = htmlPages[req.path.toLowerCase().replace(/\/$/, '') || '/'];
+        const [html, icons] = await Promise.all([
+            fs.promises.readFile(path.join(__dirname, 'public', page), 'utf8'),
+            fs.promises.readFile(path.join(__dirname, 'public', 'icons.svg'), 'utf8')
+        ]);
+        const sprite = icons.replace('<svg ', '<svg id="app-icons" class="icon-sprite" aria-hidden="true" ');
+        const rendered = html.replaceAll('icons.svg#', '#').replace(/<body\b[^>]*>/, body => `${body}\n${sprite}`);
+        res.set('Cache-Control', 'private, no-cache');
+        res.type('html').send(rendered);
+    } catch (error) {
+        next(error);
+    }
+});
+
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
 // Browser libraries, served from node_modules so they are pinned by package-lock.json.
 app.get('/vendor/purify.min.js', (req, res) => {
     res.sendFile(require.resolve('dompurify/dist/purify.min.js'));
-});
-
-// Add explicit route for root
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// Add route for recall page
-app.get('/recall.html', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'recall.html'));
-});
-
-app.get('/config.html', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'config.html'));
-});
-
-app.get('/overlay.html', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'overlay.html'));
-});
-
-app.get('/overlay-cast.html', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'overlay-cast.html'));
 });
 
 app.get('/favicon.ico', (req, res) => {
@@ -874,6 +889,21 @@ let backupWriting = false;
 let backupAgain = false;
 let lastBackupFile = null;
 
+// What a backup, the JSON export and a saved show hold (Past notes reads all three).
+function notesExport() {
+    return {
+        notes: globalState.notes,
+        exportedAt: new Date().toISOString(),
+        totalNotes: globalState.notes.length,
+        authors: authorsOf(globalState.notes),
+        users: listedUsers().map(u => ({
+            name: u.name,
+            joinedAt: u.joinedAt
+        })),
+        tags: globalState.tags
+    };
+}
+
 function scheduleBackup() {
     if (backupTimer) return;
     backupTimer = setTimeout(() => {
@@ -891,18 +921,7 @@ function backup(sync = false) {
         backupAgain = true;
         return;
     }
-    const exportData = {
-        notes: globalState.notes,
-        exportedAt: new Date().toISOString(),
-        totalNotes: globalState.notes.length,
-        authors: authorsOf(globalState.notes),
-        users: listedUsers().map(u => ({
-            name: u.name,
-            joinedAt: u.joinedAt
-        })),
-        tags: globalState.tags
-    };
-    const data = JSON.stringify(exportData, null, 2);
+    const data = JSON.stringify(notesExport(), null, 2);
     const filename = backupFilename();
     const previous = lastBackupFile;
     const written = () => {
@@ -1411,6 +1430,26 @@ io.on('connection', (socket) => {
         resetNotesAndChat();
     });
 
+    // Save from the config page: the notes as they are now, under a name, for
+    // Past notes; with `reset`, then the same reset as the button above.
+    on('save-show', (data, ack) => {
+        const respond = typeof ack === 'function' ? ack : () => {};
+        if (user.isOverlay) return;
+        const name = savedShows.cleanShowName(data && data.name);
+        if (!name) return respond({ error: 'Give the show a name first.' });
+        if (globalState.notes.length === 0) return respond({ error: 'There are no notes to save.' });
+        let show;
+        try {
+            show = savedShows.saveShow(SAVED_SHOWS_DIR, name, notesExport());
+        } catch (error) {
+            console.log('Error saving show:', error.message);
+            return respond({ error: "The notes couldn't be saved. Nothing was reset." });
+        }
+        console.log(`Show "${name}" (${show.totalNotes} notes) saved by ${user.name}${data.reset ? ', then reset' : ''}`);
+        respond({ show });
+        if (data.reset) resetNotesAndChat();
+    });
+
     // Handle backup import (only for non-overlay users). The file gets the same
     // check as a backup loaded at start-up, so a bad one changes nothing.
     on('import-backup', (data) => {
@@ -1447,18 +1486,7 @@ io.on('connection', (socket) => {
         let data, mimeType, filename;
 
         if (format === 'json') {
-            const exportData = {
-                notes: globalState.notes,
-                exportedAt: new Date().toISOString(),
-                totalNotes: globalState.notes.length,
-                authors: authorsOf(globalState.notes),
-                users: listedUsers().map(u => ({
-                    name: u.name,
-                    joinedAt: u.joinedAt
-                })),
-                tags: globalState.tags
-            };
-            data = JSON.stringify(exportData, null, 2);
+            data = JSON.stringify(notesExport(), null, 2);
             mimeType = 'application/json';
             filename = `timecoded-notes-${timestamp}.json`;
         }

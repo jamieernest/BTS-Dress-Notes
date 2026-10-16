@@ -87,20 +87,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateRealTimeDisplay() {
-        const now = new Date();
-        const hours = now.getHours();
-        const minutes = now.getMinutes();
-        const seconds = now.getSeconds();
-        const milliseconds = now.getMilliseconds();
-
-        const ms = Math.floor(milliseconds / 10);
-        const formattedTimecode = 
-            `${hours.toString().padStart(2, '0')}:` +
-            `${minutes.toString().padStart(2, '0')}:` +
-            `${seconds.toString().padStart(2, '0')}:` +
-            `${ms.toString().padStart(2, '0')}`;
-
-        realtimeValue.textContent = formattedTimecode;
+        realtimeValue.textContent = TimecodeFormat.formatTimecode(TimecodeFormat.timeOfDay());
     }
 
     // Initial display - exactly like original overlay

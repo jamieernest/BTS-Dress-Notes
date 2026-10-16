@@ -43,6 +43,16 @@
         return String(ctx.noteValue || '').trim() === '' ? 'cancel' : 'blur';
     }
 
+    // Focus has moved out of the note box: 'cancel' when the box is empty and
+    // focus went somewhere else on the page (a click or Tab away), else null.
+    // Moving to the box's own tags or buttons, or to another window, keeps the
+    // started note; text is never dropped this way.
+    function leaveAction(ctx = {}) {
+        if (String(ctx.noteValue || '').trim() !== '') return null;
+        if (ctx.focusInComposer || !ctx.pageFocused) return null;
+        return 'cancel';
+    }
+
     // How long the note box may sit empty before its frozen timecode is let go.
     const EMPTY_RELEASE_MS = 15000;
 
@@ -55,5 +65,5 @@
         return ctx.focused ? 'release' : 'cancel';
     }
 
-    return { shouldFocusNote, isTextEntry, escapeAction, emptyBoxAction, EMPTY_RELEASE_MS };
+    return { shouldFocusNote, isTextEntry, escapeAction, leaveAction, emptyBoxAction, EMPTY_RELEASE_MS };
 }));

@@ -1,0 +1,5 @@
+// Restore layout before first paint, so an open chat doesn't squeeze the page
+// sideways after it appears. Values and content are restored by index.js.
+try {
+    document.documentElement.classList.toggle('chat-open', localStorage.getItem('chat-open') === '1');
+} catch (e) { /* storage unavailable */ }

@@ -27,6 +27,9 @@
 
 html { background: var(--bg); }
 
+/* Shared symbols are included in the HTML by server.js, before any icon use. */
+.icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
+
 body {
     font-family: var(--font);
     font-size: 14px;
@@ -145,6 +148,17 @@ kbd {
 .select[aria-expanded="true"] { border-color: var(--accent); }
 .select:hover { border-color: var(--border-strong); color: var(--text); }
 .select:focus-visible { outline: none; border-color: var(--accent); }
+
+.input {
+    height: 30px;
+    padding: 0 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 13px;
+}
+.input:hover { border-color: var(--border-strong); }
+.input:focus { outline: none; border-color: var(--accent); }
 
 /* Empty states */
 .empty {

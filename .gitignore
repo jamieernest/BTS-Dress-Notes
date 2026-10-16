@@ -151,3 +151,6 @@ local-settings.json.tmp
 # Login sessions saved by the server
 local-sessions.json
 local-sessions.json.tmp
+
+# Shows saved from the config page
+saved-shows/

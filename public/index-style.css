@@ -279,6 +279,41 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
 }
 .notes-list:empty { display: none; }
 
+/* Loading is shared by notes, chat and past notes (loading-state.js). Reserve
+   space while waiting, and reveal skeletons only for a slower first load. */
+.awaiting-data { visibility: hidden; }
+.loading-region:not(.is-loading) > [data-loading-placeholder] { display: none; }
+.loading-region.is-loading > [data-loading-content] { display: none; }
+.loading-region > [data-loading-placeholder] { visibility: hidden; }
+.loading-region.show-loading > [data-loading-placeholder] { visibility: visible; }
+
+.bone {
+    display: block;
+    height: 12px;
+    border-radius: 4px;
+    background: var(--surface-2) linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.035), transparent) fixed;
+    background-size: 60vw 100%;
+    background-repeat: no-repeat;
+}
+.show-loading .bone {
+    animation: shimmer 1.6s ease-in-out infinite;
+}
+@keyframes shimmer { from { background-position: -60vw 0; } to { background-position: 100vw 0; } }
+@media (prefers-reduced-motion: reduce) { .show-loading .bone { animation: none; } }
+.skeleton .note:hover { background: none; }
+.bone.avatar-bone { width: 28px; height: 28px; border-radius: 50%; }
+.bone.avatar-bone.sm { width: 22px; height: 22px; flex: none; }
+.bone.head-bone { width: 70px; height: 10px; margin: 4px 0; }
+.bone.meta-bone { width: 170px; height: 10px; }
+.bone.line { height: 13px; margin: 5px 0 4px; }
+.bone.chip-bone { width: 64px; height: 22px; border-radius: 11px; }
+.bone.search-bone { width: 240px; height: 30px; border-radius: var(--radius); }
+.bone.bubble-bone { height: 32px; border-radius: 14px; }
+.chat-msg.skeleton { width: 85%; }
+.chat-msg.mine .bone.bubble-bone { margin-left: auto; }
+.bone.w-30 { width: 30%; } .bone.w-40 { width: 40%; } .bone.w-45 { width: 45%; } .bone.w-50 { width: 50%; }
+.bone.w-60 { width: 60%; } .bone.w-70 { width: 70%; } .bone.w-80 { width: 80%; } .bone.w-90 { width: 90%; }
+
 .group-head {
     display: flex;
     align-items: baseline;
@@ -436,24 +471,22 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
 .comment-box-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; padding: 4px 6px 6px; }
 .comment-box-actions .btn { height: 26px; }
 
-/* Under a thread, so a further reply doesn't mean going back up to the note's reply icon. */
-.reply-prompt { width: 100%; align-items: center; text-align: left; cursor: text; }
-.reply-prompt > .avatar { margin-top: 0; }
-.reply-prompt-box {
-    flex: 1;
-    min-width: 0;
-    height: 34px;
-    display: flex;
+/* Under a thread, so a further reply doesn't mean going back up to the note's reply icon.
+   Lined up with the reply text (22px avatar + 10px gap). */
+.reply-more {
+    display: inline-flex;
     align-items: center;
-    padding: 0 10px;
-    background: var(--bg);
-    border: 1px solid var(--border);
+    gap: 6px;
+    height: 26px;
+    margin: 8px 0 -6px 26px;
+    padding: 0 6px;
     border-radius: var(--radius);
     color: var(--text-3);
+    font-size: 12px;
 }
-.reply-prompt:hover .reply-prompt-box { border-color: var(--border-strong); color: var(--text-2); }
-.reply-prompt:focus-visible { outline: none; }
-.reply-prompt:focus-visible .reply-prompt-box { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.reply-more svg { width: 14px; height: 14px; }
+.reply-more:hover { background: var(--hover); color: var(--text); }
+.reply-more:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--accent); color: var(--text); }
 
 .toast {
     position: fixed;
@@ -509,8 +542,8 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
 }
 /* Wide screens: the page makes room for the chat instead of hiding under it. */
 @media (min-width: 1100px) {
-    body.chat-open .page { margin-right: 360px; }
-    body.chat-open .drawer { box-shadow: none; }
+    .chat-open .page { margin-right: 360px; }
+    .chat-open .drawer { box-shadow: none; }
 }
 
 .drawer-head {

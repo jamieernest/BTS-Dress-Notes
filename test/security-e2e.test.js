@@ -41,6 +41,17 @@ test('pages only run scripts from this site', async (t) => {
         assert.doesNotMatch(html, /\son[a-z]+\s*=/i, `${page} has an inline event handler`);
     }
 
+    for (const page of ['/', '/index.html', '/recall.html', '/config.html', '/overlay.html', '/overlay-cast.html']) {
+        const rendered = await fetch(`${base}${page}`, { headers: { cookie } });
+        assert.strictEqual(rendered.status, 200, page);
+        const body = await rendered.text();
+        assert.match(body, /<svg id="app-icons" class="icon-sprite" aria-hidden="true"/, page);
+        assert.match(body, /<symbol id="i-chat"/, page);
+        assert.doesNotMatch(body.replace(/<!--[\s\S]*?-->/g, ''), /<use href="icons\.svg#/, `${page} should draw icons without another request`);
+        assert.doesNotMatch(body, /<script(?![^>]*\bsrc=)[^>]*>/, page);
+        assert.match(rendered.headers.get('cache-control'), /private/);
+    }
+
     const purify = await fetch(`${base}/vendor/purify.min.js`, { headers: { cookie } });
     assert.strictEqual(purify.status, 200);
     assert.match(await purify.text(), /DOMPurify/);

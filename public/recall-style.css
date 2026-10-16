@@ -23,10 +23,40 @@
 .drop-zone .btn { margin-top: 16px; }
 .drop-zone .field-error { margin: 12px auto 0; max-width: 420px; }
 
+.show-name { font-weight: 400; color: var(--text-2); }
+.show-name::before { content: " \00b7  "; color: var(--text-3); }
+
+/* Shows saved from the settings page, newest first. */
+.saved-shows { margin-top: 32px; }
+.saved-shows-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+.saved-shows-list {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    overflow: hidden;
+}
+.saved-show {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--border);
+    text-decoration: none;
+    font-size: 13px;
+}
+.saved-show:last-child { border-bottom: 0; }
+.saved-show:hover { background: var(--hover); }
+.saved-show-name { flex: 1; min-width: 200px; font-weight: 500; overflow-wrap: anywhere; }
+
 .notes { margin-top: 8px; }
-.file-info { font-size: 13px; margin-bottom: 12px; overflow-wrap: anywhere; }
 
 @media (max-width: 640px) {
     .topbar .brand { display: none; }
     .drop-zone { margin-top: 24px; min-height: 260px; padding: 32px 16px; }
 }
+
+/* Set by recall-boot.js while a saved show is fetched. */
+#showLoading { display: none; }
+.opening-show #dropZone, .opening-show #savedShows { display: none; }
+.opening-show #showLoading { display: block; }

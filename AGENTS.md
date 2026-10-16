@@ -28,9 +28,13 @@ Everything from a socket goes through the zod schemas in `note-input.js` / `chat
 
 ## Frontend HTML and icons
 
-The CSP (helmet in `server.js`) allows only `'self'` scripts, so no inline handlers or `<script>` blocks. Build markup through `SafeHtml.setHtml` (DOMPurify, `public/safe-html.js`), never `innerHTML`. DOMPurify's html profile strips `<svg><use>`, so `public/index.js` templates emit `<i data-icon="name">` placeholders that its local `setHtml()` swaps for `svg > use[href=#i-name]` from the sprite in `index.html`.
+The CSP (helmet in `server.js`) allows only `'self'` scripts, so no inline handlers or `<script>` blocks. Build markup through `SafeHtml.setHtml` (DOMPurify, `public/safe-html.js`), never `innerHTML`. Icons are symbols in `public/icons.svg` (`<use href="icons.svg#i-name"/>` in source HTML). The authenticated HTML routes in `server.js` include that shared sprite and switch uses to local ids, so icons paint with the page; keep it as the single source. DOMPurify's html profile strips `<svg><use>`, so templates emit `<i data-icon="name">` placeholders that `NoteView.setHtml()` swaps for the sprite.
+
+Shared UI lives in `public/note-view.js` (note, reply, tag chip, avatar and scene-group templates; search/filter matching; the colourful filter dropdown `createDropdown()`) and `public/timecode-format.js` (every timecode and time-of-day display). The notes page and Past notes both draw through them; extend these rather than re-implementing a variant in a page script (`test/note-view.test.js`).
 
 `public/base.css` (tokens, buttons, topbar, chips, selects) is loaded by every page; each page's own CSS only adds its layout. A note always keeps at least one tag: the composer requires one, the tag picker (opened from the note's tag chips) won't untick the last, and the server's `note-update-tags` refuses an empty list. Keep backend detail (saving, servers, sockets) out of user-facing text.
+
+The main page draws this tab's last notes and header state (`public/notes-snapshot.js`, sessionStorage, saved on `pagehide`/hidden, cleared on logout) before the socket connects; server updates always replace them. `public/index-boot.js` restores the chat layout before paint. `public/loading-state.js` shares delayed skeletons and their minimum visible time across notes, chat and saved shows; cached content bypasses the delay. Keep the initial loading classes in HTML so neither defaults nor empty states flash before scripts run. `rebuildFullNotesList()` draws progressively (first 30, then batches via `setTimeout`), so code that needs every row drawn can't assume it right after a rebuild. `notes-update` with the same ids updates changed notes in place (`updateNoteElement`) rather than rebuilding; avoid adding full rebuilds to connect-time handlers, since each costs about 0.5 ms per note in DOMPurify.
 
 ## Eos OSC input
 
@@ -40,7 +44,7 @@ The Eos TCP socket is owned by `connectToEOS()` in `server.js`: opened at start 
 
 ## Type to start a note
 
-`public/type-to-note.js` decides (unit-tested in `test/type-to-note.test.js`) when a keydown anywhere on `/` focuses `noteInput`; focus is what runs `startTyping`, and the browser delivers that same keystroke to the box, so don't `preventDefault` or insert the character yourself. Escape in the note box is `escapeAction()` in the same file: it blurs, and also calls `cancelNote` only when the box is empty (text, tags and frozen timecode are kept otherwise). Once the box has been empty for `EMPTY_RELEASE_MS` (15 s, restarted by focus, input and blur), `emptyBoxAction()` unfreezes the timecode (still focused; the next key freezes it again) or cancels the note (box left).
+`public/type-to-note.js` decides (unit-tested in `test/type-to-note.test.js`) when a keydown anywhere on `/` focuses `noteInput`; focus is what runs `startTyping`, and the browser delivers that same keystroke to the box, so don't `preventDefault` or insert the character yourself. Escape in the note box is `escapeAction()` in the same file: it blurs, and also calls `cancelNote` only when the box is empty (text, tags and frozen timecode are kept otherwise); `leaveAction()` does the same cancel when focus leaves the composer for elsewhere on the page with the box empty. Once the box has been empty for `EMPTY_RELEASE_MS` (15 s, restarted by focus, input and blur), `emptyBoxAction()` unfreezes the timecode (still focused; the next key freezes it again) or cancels the note (box left).
 
 ## Timecode sources
 
@@ -59,6 +63,8 @@ The copy is kept in `localStorage` (2 h expiry), not page memory, so it survives
 ## Notes backup, restore and reset
 
 Notes live only in `globalState.notes`; `server.js` `backup()` writes them (with tags) to `backups/` through a temp file and rename (`notes-backup.js`): `scheduleBackup()` about `BACKUP_DELAY_MS` after every change (a newer file from the same minute replaces the last, so roughly one per minute), every minute as a safety net, and on crash/SIGINT/SIGTERM. On start `restoreNotes()` loads the newest backup under 2 hours old that passes `checkBackup()`, falling back to older ones; `backup()` refuses to run until that has happened so an empty server cannot outrank a good backup. Age and order come from the timestamp in the file name, not mtime. Restored tags stay in memory only (`tags.json` is a tracked file). The "Reset all notes and chat" button on `/config.html` sends `reset-all` (same non-overlay rule as the other settings); `resetNotesAndChat()` clears both, closes the chat restore window, tells browsers (`all-reset`: drop chat copy and unsent notes) and writes a backup at once so a restart stays empty. Tags are kept. `BACKUPS_DIR`, `BACKUP_INTERVAL_MS` and `TAGS_FILE` exist for the tests (`test/e2e-harness.js` is shared by the e2e tests).
+
+Saved shows (`saved-shows.js`) are named copies of the notes export in git-ignored `saved-shows/` (`SAVED_SHOWS_DIR`), one file per show, id = file name. The config page's "Save notes" sends `save-show` (`{ name, reset }`, acked; reset runs only after the file is written). They are never loaded back into live notes or aged out. Past notes lists them from `GET /shows` and opens `GET /shows/:id` (ids are checked against a pattern, never joined as paths); an open show and its filters live in the URL (`?show=&scene=&tag=&q=`) so a reload keeps them, while a file opened from the computer stays client-side only. Chat is not saved.
 
 ## Maintaining this file
 

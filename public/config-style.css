@@ -38,6 +38,9 @@
 .row .select { margin-left: auto; max-width: 340px; min-width: 220px; background-color: var(--bg); }
 .row .btn { flex: none; }
 
+.row .input { flex: 1; min-width: 200px; }
+.section-note a, .result a { color: var(--accent); }
+
 .row-link { text-decoration: none; }
 .row-link:hover { background: var(--hover); }
 .row-link:first-child { border-radius: 8px 8px 0 0; }
@@ -123,6 +126,7 @@
     .row-label, .row .state-dot + .row-label { width: auto; }
     .row-value { flex-basis: 100%; order: 3; padding-left: 18px; }
     .row:not(:has(.state-dot)) .row-value { padding-left: 0; }
+    .row .input { flex-basis: 100%; }
     .row .select { margin-left: 0; min-width: 0; width: 100%; max-width: none; }
     .segmented { margin-left: 0; }
     .debug-grid { grid-template-columns: 1fr; gap: 2px; }

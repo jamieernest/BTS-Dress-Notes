@@ -14,6 +14,25 @@
     </header>
 
     <main class="settings">
+        <section class="section" aria-labelledby="saveTitle">
+            <h2 id="saveTitle">Save notes</h2>
+            <p class="section-note">Keeps the notes as they are now under a name, to open later in <a href="/recall.html">Past notes</a>.</p>
+            <form id="saveShowForm" class="rows">
+                <div class="row row-wrap">
+                    <label class="row-label" for="showNameInput">Name</label>
+                    <input type="text" id="showNameInput" class="input" maxlength="100" placeholder="e.g. Overture Dress Notes 2026" autocomplete="off" required>
+                    <button type="submit" id="saveShowButton" class="btn outline">Save</button>
+                    <button type="button" id="saveResetButton" class="btn danger-outline">Save and reset&hellip;</button>
+                    <div id="saveResetConfirm" class="reset-confirm" role="alert" hidden>
+                        <span>Save these notes, then delete all notes and chat for everyone?</span>
+                        <button type="button" id="saveResetCancelButton" class="btn ghost">Cancel</button>
+                        <button type="button" id="saveResetConfirmButton" class="btn danger">Save and reset</button>
+                    </div>
+                </div>
+            </form>
+            <p id="saveResult" class="section-note result" role="status" hidden></p>
+        </section>
+
         <section class="section" aria-labelledby="statusTitle">
             <h2 id="statusTitle">Status</h2>
             <div class="rows">
@@ -114,6 +133,7 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="keepalive.js"></script>
+    <script src="timecode-format.js"></script>
     <script src="config.js"></script>
 </body>
 </html>

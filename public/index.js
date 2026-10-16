@@ -24,6 +24,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const menuPopover = $('menuPopover');
     const notesList = $('notesList');
     const notesEmpty = $('notesEmpty');
+    const notesSection = document.querySelector('section.notes');
     const notesNoMatch = $('notesNoMatch');
     const notesCount = $('notesCount');
     const clearFiltersBtn = $('clearFilters');
@@ -68,6 +69,7 @@ document.addEventListener('DOMContentLoaded', function() {
     };
     const liveSources = { midi: false, network: false };
     let currentGlobalLxCue = '1';
+    let oscAvailable = true; // cue comes from the desk; without it the cue is typed in
     let allNotes = [];
     let timeMode = 'realtime';
     let realTimeInterval = null;
@@ -77,7 +79,19 @@ document.addEventListener('DOMContentLoaded', function() {
     let chatMessagesList = [];
     let unreadChat = 0;
     let currentAct = 'Preshow';
+    let lastUsers = [];
     const filters = { tag: 'all', act: 'all', search: '' };
+    const filterDropdown = (button, popover, key, update) => NoteView.createDropdown({
+        button, popover,
+        beforeOpen: () => closePopovers(),
+        onChange: (value) => {
+            filters[key] = value;
+            update();
+            filterNotes();
+        }
+    });
+    const actDropdown = filterDropdown(actFilter, actFilterPopover, 'act', updateActFilter);
+    const tagDropdown = filterDropdown(tagFilter, tagFilterPopover, 'tag', updateFilterTags);
     const noteElements = new Map();
     // Notes submitted but not yet acknowledged by the server, keyed by the
     // clientId sent with them: clientId -> { note, element, writtenAt }.
@@ -95,70 +109,12 @@ document.addEventListener('DOMContentLoaded', function() {
     let tagPickerNoteId = null;
 
     // --- Helper functions ---
-    // See public/safe-html.js: escape every value, set HTML only through setHtml().
-    const { escapeHtml: esc } = SafeHtml;
-    const safeColor = (color) => SafeHtml.safeColour(color, '#8a8f98');
-    const SVG_NS = 'http://www.w3.org/2000/svg';
-
-    // Like SafeHtml.setHtml, then swaps each <i data-icon="name"> placeholder
-    // for the matching icon from the page's sprite. DOMPurify strips <svg><use>,
-    // so icons are made here with DOM calls instead of in the markup.
-    function setHtml(element, html) {
-        SafeHtml.setHtml(element, html);
-        for (const placeholder of element.querySelectorAll('i[data-icon]')) {
-            const svg = document.createElementNS(SVG_NS, 'svg');
-            svg.setAttribute('class', `icon ${placeholder.dataset.class || ''}`.trim());
-            svg.setAttribute('aria-hidden', 'true');
-            const use = document.createElementNS(SVG_NS, 'use');
-            use.setAttribute('href', `#i-${placeholder.dataset.icon}`);
-            svg.appendChild(use);
-            placeholder.replaceWith(svg);
-        }
-    }
-
-    const pad = (n) => String(n || 0).padStart(2, '0');
-
-    function formatTimecode(tc) {
-        if (!tc || typeof tc !== 'object') return '00:00:00:00';
-        if (tc.displayMode === 'realtime') return `${pad(tc.hours)}:${pad(tc.minutes)}:${pad(tc.seconds)}.${pad(Math.floor((tc.milliseconds || 0) / 10))}`;
-        return `${pad(tc.hours)}:${pad(tc.minutes)}:${pad(tc.seconds)}:${pad(tc.frames)}`;
-    }
-
-    function formatNoteTimecode(note) {
-        if (!note.timecode) return formatTimecode(null);
-        if (note.frameRate === 'ms') return formatTimecode({ ...note.timecode, displayMode: 'realtime' });
-        return formatTimecode(note.timecode);
-    }
-
-    function clockTime(timestamp) {
-        return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    }
-
-    function relativeTime(timestamp) {
-        const mins = Math.floor((Date.now() - new Date(timestamp)) / 60000);
-        if (mins < 1) return 'just now';
-        if (mins < 60) return `${mins}m ago`;
-        return clockTime(timestamp);
-    }
-
-    function plural(n, word) {
-        return `${n} ${word}${n === 1 ? '' : 's'}`;
-    }
+    // Templates and helpers shared with past notes: public/note-view.js.
+    const { esc, safeColor, setHtml, clockTime, relativeTime, plural, avatarHTML, dotHTML } = NoteView;
+    const { formatTimecode } = TimecodeFormat;
 
     function isMine(item) {
         return NoteAuthor.canEditNote(item, currentUser.sub);
-    }
-
-    function initials(name) {
-        const parts = String(name || '?').trim().split(/\s+/);
-        return ((parts[0] || '?')[0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
-    }
-
-    // A stable colour per person, so the same face shows up the same way everywhere.
-    function personColor(key) {
-        let h = 0;
-        for (const ch of String(key)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-        return `hsl(${h % 360}, 45%, 42%)`;
     }
 
     // Older backups may lack a note's tags or comments; the page assumes lists.
@@ -167,7 +123,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function tagById(id) {
-        return availableTags.find(t => t.id === id) || { id, name: id, color: '#8a8f98' };
+        return availableTags.find(t => t.id === id) || NoteView.unknownTag(id);
     }
 
     const TOAST_MS = 6000;
@@ -190,7 +146,9 @@ document.addEventListener('DOMContentLoaded', function() {
     function loadTagsFromStorage() {
         try {
             const storedTags = localStorage.getItem('midi-timecode-notes-tags');
-            if (storedTags) availableTags = JSON.parse(storedTags);
+            const parsed = JSON.parse(storedTags);
+            if (Array.isArray(parsed)) availableTags = parsed.filter(tag => tag &&
+                typeof tag.id === 'string' && typeof tag.name === 'string' && typeof tag.color === 'string');
         } catch (e) { /* storage unavailable */ }
     }
 
@@ -210,75 +168,47 @@ document.addEventListener('DOMContentLoaded', function() {
         ).join(''));
     }
 
-    // A filter is a button opening a list of choices rather than a <select>,
-    // which can't show each tag's colour. color '' draws an empty ring, so
-    // "All tags" lines up with the coloured dots under it.
-    function dotHTML(color) {
-        if (color === undefined) return '';
-        return color ? `<span class="dot" style="--tag: ${safeColor(color)}"></span>` : '<span class="dot ring"></span>';
-    }
-
-    function renderDropdown(button, popover, options, value) {
-        const current = options.find(o => o.value === value) || options[0];
-        setHtml(button, `${dotHTML(current.color)}<span>${esc(current.label)}</span>`);
-        button.classList.toggle('active', value !== 'all');
-        setHtml(popover, options.map(o => `
-            <button type="button" class="tag-option" role="option" data-value="${esc(o.value)}" aria-selected="${o.value === value}">
-                ${dotHTML(o.color)}${esc(o.label)}<i data-icon="check" data-class="check"></i>
-            </button>`).join(''));
-    }
-
     function updateFilterTags() {
         if (filters.tag !== 'all' && !availableTags.some(t => t.id === filters.tag)) filters.tag = 'all';
-        renderDropdown(tagFilter, tagFilterPopover, [
-            { value: 'all', label: 'All tags', color: '' },
-            ...availableTags.map(tag => ({ value: tag.id, label: tag.name, color: tag.color }))
-        ], filters.tag);
+        tagDropdown.render(NoteView.tagOptions(availableTags), filters.tag);
         tagFilter.hidden = availableTags.length === 0;
     }
 
     // --- Filtering ---
-    function noteMatches(note) {
-        if (filters.tag !== 'all' && !note.tags.includes(filters.tag)) return false;
-        if (filters.act !== 'all' && (note.act || 'Preshow') !== filters.act) return false;
-        if (filters.search) {
-            const haystack = [
-                note.text, note.user, note.lxCue, note.act,
-                ...note.tags.map(id => tagById(id).name),
-                ...(note.comments || []).map(c => `${c.user} ${c.text}`)
-            ].join(' ').toLowerCase();
-            if (!haystack.includes(filters.search)) return false;
-        }
-        return true;
-    }
-
-    function filtersActive() {
-        return filters.tag !== 'all' || filters.act !== 'all' || filters.search !== '';
-    }
+    const noteMatches = (note) => NoteView.noteMatches(note, filters, tagById);
+    const filtersActive = () => NoteView.filtersActive(filters);
 
     // Shows/hides rows, then each act heading with how many of its notes show.
+    // The counts come from the notes, not the rows: a long list is still being
+    // drawn for a moment after a rebuild (see rebuildFullNotesList). Headings
+    // are the runs of one act in newest-first order, the same as drawn.
     function filterNotes() {
+        const notesById = new Map(allNotes.map(n => [n.id, n]));
+        const isShown = (note) => !!note && !deletedNotes.has(note.id) && noteMatches(note);
+        const runCounts = [];
+        let lastAct = null;
         let shown = 0;
-        let head = null;
-        let headCount = 0;
-        const closeGroup = () => {
-            if (!head) return;
-            head.hidden = headCount === 0;
-            head.querySelector('.group-count').textContent = plural(headCount, 'note');
-        };
-        for (const el of notesList.children) {
-            if (el.classList.contains('group-head')) {
-                closeGroup();
-                head = el;
-                headCount = 0;
-            } else if (!el.classList.contains('pending')) {
-                const note = allNotes.find(n => n.id === el.dataset.noteId);
-                const visible = !!note && !deletedNotes.has(note.id) && noteMatches(note);
-                el.hidden = !visible;
-                if (visible) { shown++; headCount++; }
+        for (const note of NoteOrder.newestFirst(allNotes)) {
+            const act = note.act || 'Preshow';
+            if (act !== lastAct) {
+                runCounts.push(0);
+                lastAct = act;
+            }
+            if (isShown(note)) {
+                runCounts[runCounts.length - 1]++;
+                shown++;
             }
         }
-        closeGroup();
+        let run = 0;
+        for (const el of notesList.children) {
+            if (el.classList.contains('group-head')) {
+                const count = runCounts[run++] || 0;
+                el.hidden = count === 0;
+                el.querySelector('.group-count').textContent = plural(count, 'note');
+            } else if (!el.classList.contains('pending')) {
+                el.hidden = !isShown(notesById.get(el.dataset.noteId));
+            }
+        }
 
         const total = allNotes.length - deletedNotes.size;
         notesCount.textContent = filtersActive() ? `${shown} of ${plural(total, 'note')}` : '';
@@ -287,13 +217,21 @@ document.addEventListener('DOMContentLoaded', function() {
         notesNoMatch.hidden = !(total > 0 && shown === 0 && filtersActive());
     }
 
+    const notesLoading = createLoadingState(notesSection);
+    const chatLoading = createLoadingState(chatDrawer);
+    const liveHeader = document.querySelector('.topbar .live');
+    const liveReceived = new Set();
+    function receivedLive(part) {
+        liveReceived.add(part);
+        if (['act', 'mode', 'cue', 'system'].every(key => liveReceived.has(key))) {
+            liveHeader.classList.remove('awaiting-data');
+        }
+    }
+
     function updateActFilter() {
         const acts = [...new Set(allNotes.filter(n => !deletedNotes.has(n.id)).map(note => note.act || 'Preshow'))];
         if (filters.act !== 'all' && !acts.includes(filters.act)) filters.act = 'all';
-        renderDropdown(actFilter, actFilterPopover, [
-            { value: 'all', label: 'All scenes' },
-            ...acts.map(act => ({ value: act, label: act }))
-        ], filters.act);
+        actDropdown.render(NoteView.sceneOptions(acts), filters.act);
         actFilter.hidden = acts.length < 2 && filters.act === 'all';
     }
 
@@ -318,6 +256,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function updateGlobalLxCueDisplay(cue) {
         globalLxCueElement.textContent = cue || '--';
+    }
+
+    // Without a cue feed from the desk the cue is typed in by hand.
+    function updateCueMode() {
+        lxCueInput.hidden = oscAvailable;
+        globalLxCueElement.hidden = !oscAvailable;
     }
 
     function updatePersonalLxCueDisplay(cue) {
@@ -364,19 +308,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function realTimeNow() {
-        const now = new Date();
-        return {
-            hours: now.getHours(),
-            minutes: now.getMinutes(),
-            seconds: now.getSeconds(),
-            milliseconds: now.getMilliseconds(),
-            displayMode: 'realtime'
-        };
-    }
-
     function updateRealTimeDisplay() {
-        const now = realTimeNow();
+        const now = TimecodeFormat.timeOfDay();
         updateGlobalTimecodeDisplay(now);
         if (!currentUser.isTyping) updatePersonalTimecodeDisplay(now);
     }
@@ -396,7 +329,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (currentUser.isTyping) return;
         currentUser.isTyping = true;
         if (timeMode === 'realtime') {
-            currentUser.frozenTimecode = { ...realTimeNow(), frameRate: 'ms' };
+            currentUser.frozenTimecode = { ...TimecodeFormat.timeOfDay(), frameRate: 'ms' };
         } else {
             currentUser.frozenTimecode = { ...currentGlobalTimecode, displayMode: timeMode };
         }
@@ -504,37 +437,28 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         const list = [...people.values()].sort((a, b) => (b.me - a.me) || a.name.localeCompare(b.name));
         userCount.textContent = `${list.length} online`;
+        usersButton.classList.remove('awaiting-data');
 
         const MAX = 4;
         setHtml(avatarStack, list.slice(0, MAX).map(p =>
-            `<span class="avatar${p.isTyping ? ' typing' : ''}" style="background:${personColor(p.key)}">${esc(initials(p.name))}</span>`
+            avatarHTML(p.key, p.name, p.isTyping ? 'typing' : '')
         ).join('') + (list.length > MAX ? `<span class="avatar more">+${list.length - MAX}</span>` : ''));
 
         setHtml(usersList, list.map(p => `
             <li>
-                <span class="avatar" style="background:${personColor(p.key)}">${esc(initials(p.name))}</span>
+                ${avatarHTML(p.key, p.name)}
                 <span>${esc(p.name)}</span>${p.me ? '<span class="you">you</span>' : ''}
                 ${p.isTyping ? '<span class="writing">writing…</span>' : ''}
             </li>`).join(''));
     }
 
-    // --- Popovers (online list, menu, tag picker) ---
-    function placePopover(popover, anchor, align) {
-        popover.hidden = false;
-        const r = anchor.getBoundingClientRect();
-        const w = popover.offsetWidth;
-        const h = popover.offsetHeight;
-        let left = align === 'right' ? r.right - w : r.left;
-        left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
-        let top = r.bottom + 4;
-        if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 4);
-        popover.style.left = `${left}px`;
-        popover.style.top = `${top}px`;
-    }
+    // --- Popovers (online list, menu, filters, tag picker) ---
+    const { placePopover } = NoteView;
 
     function closePopovers() {
         let closed = false;
-        for (const [popover, button] of [[usersPopover, usersButton], [menuPopover, menuButton], [actFilterPopover, actFilter], [tagFilterPopover, tagFilter]]) {
+        for (const dropdown of [actDropdown, tagDropdown]) closed = dropdown.close() || closed;
+        for (const [popover, button] of [[usersPopover, usersButton], [menuPopover, menuButton]]) {
             if (popover.hidden) continue;
             closed = true;
             const hadFocus = popover.contains(document.activeElement);
@@ -661,7 +585,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function setChatOpen(open) {
         chatDrawer.hidden = !open;
-        document.body.classList.toggle('chat-open', open);
+        document.documentElement.classList.toggle('chat-open', open);
         chatToggle.setAttribute('aria-expanded', String(open));
         if (open) {
             unreadChat = 0;
@@ -690,12 +614,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- Rendering notes ---
-    function tagChipsHTML(note) {
-        return note.tags.map(id => {
-            const tag = tagById(id);
-            return `<span class="chip" style="--tag: ${safeColor(tag.color)}"><span class="dot"></span>${esc(tag.name)}</span>`;
-        }).join('');
-    }
+    const tagChipsHTML = (note) => NoteView.tagChipsHTML(note.tags, tagById);
 
     // A note's tags are one dropdown: the chips and a chevron open the tag picker.
     function tagTriggerHTML(note) {
@@ -705,25 +624,8 @@ document.addEventListener('DOMContentLoaded', function() {
             ${tagChipsHTML(note) || '<span class="chip add-tag">Add a tag</span>'}<i data-icon="chevron"></i></button>`;
     }
 
-    function avatarHTML(key, name, extraClass) {
-        return `<span class="avatar${extraClass ? ` ${extraClass}` : ''}" style="background:${personColor(key)}" aria-hidden="true">${esc(initials(name))}</span>`;
-    }
-
     function iconButton(action, icon, label, extra) {
         return `<button type="button" class="icon-btn" data-action="${action}" aria-label="${label}" title="${label}"${extra || ''}><i data-icon="${icon}"></i></button>`;
-    }
-
-    // Who wrote it, then where in the show (cue and timecode), then when.
-    function noteHeadHTML(note, name, side) {
-        const rate = note.frameRate === 'ms' ? 'real time' : `${note.frameRate || 30} fps`;
-        const title = note.timestamp ? `${rate} · sent ${new Date(note.timestamp).toLocaleString()}` : rate;
-        return `
-            <div class="note-head">
-                <span class="note-author">${esc(name)}</span>
-                <span class="note-cue">Cue ${esc(note.lxCue || '–')}</span>
-                <span class="note-tc mono" title="${esc(title)}">${esc(formatNoteTimecode(note))}</span>
-                ${side}
-            </div>`;
     }
 
     function commentHTML(note, comment) {
@@ -741,20 +643,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     <button type="button" class="btn ghost" data-action="cancel-comment-edit" data-comment-id="${esc(comment.id)}">Cancel</button>
                     <button type="button" class="btn primary" data-action="save-comment" data-comment-id="${esc(comment.id)}">Save</button>
                 </div>
-            </div>` : `<div class="comment-text">${esc(comment.text)}</div>`;
-        const edited = comment.lastEdited ? ' · edited' : '';
-        return `
-            <div class="comment" data-comment-id="${esc(comment.id)}">
-                ${avatarHTML(comment.userId || comment.user, comment.user, 'sm')}
-                <div class="comment-main">
-                    <div class="comment-head">
-                        <span class="comment-user">${esc(comment.user)}</span>
-                        <span class="muted" title="${esc(new Date(comment.timestamp).toLocaleString())}">${relativeTime(comment.timestamp)}${edited}</span>
-                        ${tools}
-                    </div>
-                    ${body}
-                </div>
-            </div>`;
+            </div>` : undefined;
+        return NoteView.commentHTML(comment, { tools, body });
     }
 
     function noteHTML(note) {
@@ -772,10 +662,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <button type="button" class="btn ghost" data-action="cancel-note-edit">Cancel</button>
                     <button type="button" class="btn primary" data-action="save-note">Save</button>
                 </div>
-            </div>` : `<div class="note-text">${esc(note.text)}</div>`;
-
-        const edited = note.lastEdited
-            ? `<div class="note-edited">Edited by ${esc(note.lastEditedBy || 'unknown')} at ${clockTime(note.lastEdited)}</div>` : '';
+            </div>` : undefined;
 
         // While the note is being edited, Save and Cancel are its only actions.
         const actions = editing ? '' : `
@@ -785,37 +672,27 @@ document.addEventListener('DOMContentLoaded', function() {
                 ${canDelete ? iconButton('delete-note', 'trash', 'Delete note') : ''}
             </span>`;
 
-        const foot = `<div class="note-foot">${tagTriggerHTML(note)}</div>`;
-
         const draft = commentDrafts.get(note.id) || '';
-        return `
-            <article class="note" data-note-id="${esc(note.id)}">
-                ${avatarHTML(note.userId || note.user, note.user)}
-                <div class="note-main">
-                    ${noteHeadHTML(note, note.user, actions)}
-                    ${body}${edited}
-                    ${foot}
-                    ${comments.length || replying ? `
-                    <div class="comments">
-                        ${comments.map(c => commentHTML(note, c)).join('')}
-                        ${replying ? `
-                        <div class="comment-input">
-                            ${avatarHTML(currentUser.sub || currentUser.name, currentUser.name, 'sm')}
-                            <div class="comment-box">
-                                <textarea rows="1" data-field="comment" placeholder="Write a reply…" aria-label="Write a reply">${esc(draft)}</textarea>
-                                <div class="comment-box-actions">
-                                    <button type="button" class="btn ghost" data-action="cancel-comment">Cancel</button>
-                                    <button type="button" class="btn primary" data-action="submit-comment" ${draft.trim() ? '' : 'disabled'}>Reply</button>
-                                </div>
-                            </div>
-                        </div>` : editing ? '' : `
-                        <button type="button" class="comment-input reply-prompt" data-action="reply">
-                            ${avatarHTML(currentUser.sub || currentUser.name, currentUser.name, 'sm')}
-                            <span class="reply-prompt-box">Reply to this thread…</span>
-                        </button>`}
-                    </div>` : ''}
+        const thread = comments.length || replying ? `
+            ${comments.map(c => commentHTML(note, c)).join('')}
+            ${replying ? `
+            <div class="comment-input">
+                ${avatarHTML(currentUser.sub || currentUser.name, currentUser.name, 'sm')}
+                <div class="comment-box">
+                    <textarea rows="1" data-field="comment" placeholder="Write a reply…" aria-label="Write a reply">${esc(draft)}</textarea>
+                    <div class="comment-box-actions">
+                        <button type="button" class="btn ghost" data-action="cancel-comment">Cancel</button>
+                        <button type="button" class="btn primary" data-action="submit-comment" ${draft.trim() ? '' : 'disabled'}>Reply</button>
+                    </div>
                 </div>
-            </article>`;
+            </div>` : editing ? '' : `
+            <button type="button" class="reply-more" data-action="reply"><i data-icon="reply"></i>Reply</button>`}` : '';
+
+        return NoteView.noteHTML(note, {
+            attrs: `data-note-id="${esc(note.id)}"`,
+            side: actions, body, thread,
+            foot: tagTriggerHTML(note)
+        });
     }
 
     function createNoteElement(note) {
@@ -827,11 +704,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function groupHeadElement(act) {
-        const head = document.createElement('div');
-        head.className = 'group-head';
-        head.dataset.act = act;
-        setHtml(head, `<span>${esc(act)}</span><span class="muted group-count"></span>`);
-        return head;
+        const wrapper = document.createElement('div');
+        setHtml(wrapper, NoteView.groupHeadHTML(act));
+        return wrapper.firstChild;
     }
 
     // Puts focus and caret back where they were if the focused field was re-rendered.
@@ -844,7 +719,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const comment = active.dataset.commentId ? `[data-comment-id="${CSS.escape(active.dataset.commentId)}"]` : '';
             target = active.dataset.field
                 ? `[data-field="${active.dataset.field}"]${comment}`
-                : `[data-action="${active.dataset.action}"]${comment}${active.classList.contains('reply-prompt') ? '.reply-prompt' : ''}`;
+                : `[data-action="${active.dataset.action}"]${comment}${active.classList.contains('reply-more') ? '.reply-more' : ''}`;
             if (active.dataset.field) caret = active.selectionStart;
         }
         newEl.hidden = oldEl.hidden;
@@ -881,21 +756,42 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Drawing a note costs about half a millisecond (mostly DOMPurify), so a
+    // long list is drawn top first: enough to fill the screen at once, then the
+    // rest a batch per task so the page never stalls. Batches look each note up
+    // again, so one changed or deleted meanwhile is drawn as it is now.
+    const FIRST_BATCH = 30;
+    const LATER_BATCH = 60;
+    let rebuildTimer = null;
+
     function rebuildFullNotesList() {
+        clearTimeout(rebuildTimer);
         notesList.replaceChildren();
         noteElements.clear();
         for (const { element } of [...pendingNotes.values()].reverse()) notesList.appendChild(element);
+        const order = NoteOrder.newestFirst(allNotes).map(note => note.id);
+        let next = 0;
         let lastAct = null;
-        for (const note of NoteOrder.newestFirst(allNotes)) {
-            const act = note.act || 'Preshow';
-            if (act !== lastAct) {
-                notesList.appendChild(groupHeadElement(act));
-                lastAct = act;
+        const drawBatch = (size) => {
+            const notesById = new Map(allNotes.map(n => [n.id, n]));
+            const batch = document.createDocumentFragment();
+            for (let drawn = 0; drawn < size && next < order.length; next++) {
+                const note = notesById.get(order[next]);
+                if (!note || noteElements.has(note.id)) continue;
+                const act = note.act || 'Preshow';
+                if (act !== lastAct) {
+                    batch.appendChild(groupHeadElement(act));
+                    lastAct = act;
+                }
+                batch.appendChild(createNoteElement(note));
+                drawn++;
             }
-            notesList.appendChild(createNoteElement(note));
-        }
+            notesList.appendChild(batch);
+            filterNotes();
+            if (next < order.length) rebuildTimer = setTimeout(() => drawBatch(LATER_BATCH), 0);
+        };
+        drawBatch(FIRST_BATCH);
         updateActFilter();
-        filterNotes();
         if (tagPickerNoteId) renderTagPicker();
     }
 
@@ -950,16 +846,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function createPendingNoteElement(note) {
         const wrapper = document.createElement('div');
-        setHtml(wrapper, `
-            <article class="note pending" data-client-id="${esc(note.clientId)}">
-                ${avatarHTML(currentUser.sub || currentUser.name, currentUser.name)}
-                <div class="note-main">
-                    ${noteHeadHTML(note, currentUser.name, `<span class="pending-badge">${pendingBadgeText()}</span>`)}
-                    <div class="note-text">${esc(note.text)}</div>
-                    ${note.tags.length ? `<div class="note-foot">${tagChipsHTML(note)}</div>` : ''}
-                </div>
-            </article>
-        `.trim());
+        setHtml(wrapper, NoteView.noteHTML(note, {
+            className: 'pending',
+            attrs: `data-client-id="${esc(note.clientId)}"`,
+            author: { key: currentUser.sub || currentUser.name, name: currentUser.name },
+            side: `<span class="pending-badge">${esc(pendingBadgeText())}</span>`,
+            foot: tagChipsHTML(note)
+        }).trim());
         return wrapper.firstChild;
     }
 
@@ -1003,6 +896,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function showPendingNote(note, writtenAt) {
         const element = createPendingNoteElement(note);
         pendingNotes.set(note.clientId, { note, element, writtenAt });
+        notesLoading.finish({ immediate: true });
         // The newest pending note goes above the older ones.
         notesList.insertBefore(element, notesList.firstChild);
         filterNotes();
@@ -1042,6 +936,56 @@ document.addEventListener('DOMContentLoaded', function() {
         try { sessionStorage.removeItem(DRAFT_KEY); } catch (e) { /* storage unavailable */ }
     }
 
+    // --- Notes snapshot ---
+    // What this tab last showed, drawn at start-up so the notes are there at
+    // once rather than after the socket connects (public/notes-snapshot.js).
+    const notesSnapshot = createNotesSnapshot({
+        // reached inside notesSnapshot's try/catch, as merely touching sessionStorage can throw
+        getItem: (key) => sessionStorage.getItem(key),
+        setItem: (key, value) => sessionStorage.setItem(key, value),
+        removeItem: (key) => sessionStorage.removeItem(key)
+    });
+
+    function saveNotesSnapshot() {
+        notesSnapshot.save({
+            sub: currentUser.sub,
+            name: currentUser.name,
+            notes: allNotes.filter(n => !deletedNotes.has(n.id)),
+            live: { users: lastUsers, act: currentAct, cue: currentGlobalLxCue, timeMode, oscAvailable,
+                timecodes: latestTimecodes, liveSources, unreadChat }
+        });
+    }
+
+    function showNotesSnapshot() {
+        const snapshot = notesSnapshot.load();
+        if (!snapshot) return;
+        currentUser.sub = snapshot.sub;
+        currentUser.name = snapshot.name;
+        currentUserName.textContent = snapshot.name;
+        currentUserName.classList.remove('awaiting-data');
+        allNotes = snapshot.notes.map(withLists);
+        rebuildFullNotesList();
+        notesLoading.finish({ immediate: true });
+        const live = snapshot.live;
+        if (!live) return false;
+        lastUsers = live.users;
+        renderUsers(lastUsers);
+        currentAct = live.act;
+        currentActDisplay.textContent = live.act;
+        currentGlobalLxCue = live.cue;
+        lxCueInput.value = live.cue;
+        oscAvailable = live.oscAvailable;
+        updateCueMode();
+        Object.assign(latestTimecodes.midi, live.timecodes.midi);
+        Object.assign(latestTimecodes.network, live.timecodes.network);
+        Object.assign(liveSources, live.liveSources);
+        timeMode = live.timeMode;
+        unreadChat = live.unreadChat;
+        updateUnread();
+        liveHeader.classList.remove('awaiting-data');
+        return true;
+    }
+
     function restoreDraft() {
         let draft = null;
         try { draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY)); } catch (e) { /* none */ }
@@ -1072,6 +1016,14 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- Socket.io setup ---
     // `page` tells the server which page this is (see pageOf() in server.js).
     window.socket = io({ auth: { page: 'main' } });
+    let pageInCache = false;
+    let connectionBannerTimer = null;
+    function showConnectionProblem() {
+        clearTimeout(connectionBannerTimer);
+        connectionBannerTimer = setTimeout(() => {
+            if (!pageInCache && !loggingOut) connectionBanner.hidden = false;
+        }, 1000);
+    }
 
     // The server refuses the socket handshake when the session is missing or
     // expired (e.g. the login sat idle for 12 hours, or local-sessions.json was
@@ -1083,7 +1035,7 @@ document.addEventListener('DOMContentLoaded', function() {
             goToLogin();
             return;
         }
-        connectionBanner.hidden = false;
+        showConnectionProblem();
     });
 
     // Logged out on purpose, here or in another tab: the note being written is
@@ -1097,11 +1049,13 @@ document.addEventListener('DOMContentLoaded', function() {
         if (loggingOut) return;
         loggingOut = true;
         clearDraft();
+        notesSnapshot.clear();
         window.location.href = loggedOutUrl();
     }
     document.querySelector('form[action="/logout"]').addEventListener('submit', () => {
         loggingOut = true;
         clearDraft();
+        notesSnapshot.clear();
     });
     window.socket.on('logged-out', loggedOut);
 
@@ -1110,35 +1064,53 @@ document.addEventListener('DOMContentLoaded', function() {
     // A page kept in the back/forward cache (e.g. after visiting the recall
     // page) must not keep its socket, or the server would count it as open.
     window.addEventListener('pagehide', (e) => {
-        if (!loggingOut) saveDraft();
-        if (e.persisted) window.socket.disconnect();
+        if (!loggingOut) {
+            saveDraft();
+            saveNotesSnapshot();
+        }
+        if (e.persisted) {
+            pageInCache = true;
+            clearTimeout(connectionBannerTimer);
+            connectionBanner.hidden = true;
+            window.socket.disconnect();
+        }
+    });
+    // A phone may discard a tab in the background without a pagehide.
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden' && !loggingOut) saveNotesSnapshot();
     });
     window.addEventListener('pageshow', (e) => {
-        if (e.persisted) window.socket.connect();
+        if (e.persisted) {
+            pageInCache = false;
+            window.socket.connect();
+            showConnectionProblem();
+        }
     });
 
     window.socket.on('disconnect', () => {
-        if (!loggingOut) connectionBanner.hidden = false;
+        if (!loggingOut && !pageInCache) showConnectionProblem();
         updatePendingBadges();
     });
 
     // The server sends full state on every connect, so only the banner and
     // any unacknowledged notes need attention here.
     window.socket.on('connect', () => {
+        clearTimeout(connectionBannerTimer);
         connectionBanner.hidden = true;
         updatePendingBadges();
         for (const { note, writtenAt } of pendingNotes.values()) sendPendingNote(note, writtenAt);
     });
 
-    let lastUsers = [];
     window.socket.on('current-user', (data) => {
         const changed = currentUser.sub !== data.sub;
         currentUser.name = data.name;
         currentUser.sub = data.sub;
         currentUserName.textContent = data.name;
+        currentUserName.classList.remove('awaiting-data');
         if (changed) {
             rebuildFullNotesList(); // edit buttons depend on who we are, which may arrive after the notes
-            renderUsers(lastUsers);
+            if (!usersButton.classList.contains('awaiting-data')) renderUsers(lastUsers);
+            updateChatMessages();
         }
         restorePendingNotes();
     });
@@ -1151,11 +1123,13 @@ document.addEventListener('DOMContentLoaded', function() {
     window.socket.on('act-update', (act) => {
         currentAct = act;
         currentActDisplay.textContent = act;
+        receivedLive('act');
     });
 
     window.socket.on('time-mode-update', (newMode) => {
         timeMode = newMode;
         updateTimeModeDisplay();
+        receivedLive('mode');
     });
 
     window.socket.on('lx-cue-update', (cue) => {
@@ -1163,9 +1137,12 @@ document.addEventListener('DOMContentLoaded', function() {
         updateGlobalLxCueDisplay(cue);
         if (document.activeElement !== lxCueInput) lxCueInput.value = cue;
         if (!currentUser.isTyping) updatePersonalLxCueDisplay(cue);
+        receivedLive('cue');
     });
 
     window.socket.on('tags-update', (tags) => {
+        // Sent on every connect, usually the same tags the page already has.
+        if (JSON.stringify(tags) === JSON.stringify(availableTags)) return;
         availableTags = tags;
         saveTagsToStorage();
         updateTagsDisplay();
@@ -1180,9 +1157,9 @@ document.addEventListener('DOMContentLoaded', function() {
             updateTimeModeDisplay();
             window.socket.emit('time-mode-change', 'realtime');
         }
-        // Without a cue feed from the desk the cue is typed in by hand.
-        lxCueInput.hidden = !!data.oscAvailable;
-        globalLxCueElement.hidden = !data.oscAvailable;
+        oscAvailable = !!data.oscAvailable;
+        updateCueMode();
+        receivedLive('system');
     });
 
     window.socket.on('network-timecode-status', (status) => {
@@ -1206,15 +1183,26 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // Sent on every connect, so it also catches up a page drawn from the
+    // snapshot or back from the back/forward cache: notes edited, tagged or
+    // replied to meanwhile are redrawn one by one (keeping any open edit box
+    // and its focus), and only a changed set of notes rebuilds the list.
     window.socket.on('notes-update', (notes) => {
-        // Only rebuild if the notes array has changed (e.g., import)
-        if (allNotes.length === notes.length && allNotes.every((n, i) => n.id === notes[i].id)) {
-            return;
-        }
-        allNotes = notes.map(withLists);
-        for (const note of notes) {
+        notesLoading.finish();
+        const incoming = notes.map(withLists);
+        for (const note of incoming) {
             if (note.clientId) clearPendingNote(note.clientId);
         }
+        if (allNotes.length === incoming.length && allNotes.every((n, i) => n.id === incoming[i].id)) {
+            incoming.forEach((note, i) => {
+                if (JSON.stringify(note) === JSON.stringify(allNotes[i])) return;
+                allNotes[i] = note;
+                updateNoteElement(note);
+            });
+            filterNotes();
+            return;
+        }
+        allNotes = incoming;
         rebuildFullNotesList();
     });
 
@@ -1297,6 +1285,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // The server sends each new message on its own, and the whole log only on
     // connecting and after a restore.
     window.socket.on('chat-message-added', (msg) => {
+        chatLoading.finish({ immediate: true });
         if (chatMessagesList.some((m) => m.id === msg.id)) return;
         chatMessagesList.push(msg);
         chatCopy.onMessageAdded(chatMessagesList);
@@ -1328,6 +1317,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (offer) window.socket.emit('chat-restore-offer', offer);
         chatMessagesList = msgs;
         updateChatMessages();
+        chatLoading.finish();
     });
 
     // The server was reset from the config page: forget the saved chat copy
@@ -1397,6 +1387,18 @@ document.addEventListener('DOMContentLoaded', function() {
     noteInput.addEventListener('blur', () => {
         startAutoResumeTimer();
         updateComposer();
+    });
+    // Clicking or tabbing away from an empty note closes it (see type-to-note.js).
+    // Checked once focus has landed, so a move to the note's own tags doesn't count.
+    composer.addEventListener('focusout', () => {
+        setTimeout(() => {
+            const action = typeToNote.leaveAction({
+                noteValue: noteInput.value,
+                focusInComposer: composer.contains(document.activeElement),
+                pageFocused: document.hasFocus()
+            });
+            if (action === 'cancel' && (currentUser.isTyping || selectedTags.length)) cancelNote();
+        }, 0);
     });
 
     // Picking a tag keeps the cursor in the note box.
@@ -1476,28 +1478,6 @@ document.addEventListener('DOMContentLoaded', function() {
         filters.search = searchInput.value.trim().toLowerCase();
         filterNotes();
     });
-    for (const [button, popover, key, update] of [[actFilter, actFilterPopover, 'act', updateActFilter], [tagFilter, tagFilterPopover, 'tag', updateFilterTags]]) {
-        button.addEventListener('click', (e) => {
-            e.stopPropagation();
-            if (togglePopover(popover, button, 'left')) popover.querySelector('[aria-selected="true"]')?.focus();
-        });
-        popover.addEventListener('click', (e) => {
-            const option = e.target.closest('[role="option"]');
-            if (!option) return;
-            filters[key] = option.dataset.value;
-            closePopovers();
-            update();
-            filterNotes();
-        });
-        popover.addEventListener('keydown', (e) => {
-            const options = [...popover.querySelectorAll('[role="option"]')];
-            const i = options.indexOf(document.activeElement);
-            const next = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: options.length - 1 }[e.key];
-            if (next === undefined) return;
-            e.preventDefault();
-            options[Math.max(0, Math.min(next, options.length - 1))].focus();
-        });
-    }
     clearFiltersBtn.addEventListener('click', clearFilters);
     notesNoMatch.addEventListener('click', (e) => {
         if (e.target.closest('[data-action="clear-filters"]')) clearFilters();
@@ -1545,12 +1525,12 @@ document.addEventListener('DOMContentLoaded', function() {
         closeReplyBox(note);
     }
 
-    // Closes the reply box and focuses the "Reply…" prompt under the thread if there is one, else the reply icon.
+    // Closes the reply box and focuses the "Reply" link under the thread if there is one, else the reply icon.
     function closeReplyBox(note) {
         openReplies.delete(note.id);
         updateNoteElement(note);
         const el = noteElements.get(note.id);
-        (el?.querySelector('.reply-prompt') || el?.querySelector('[data-action="reply"]'))?.focus();
+        (el?.querySelector('.reply-more') || el?.querySelector('[data-action="reply"]'))?.focus();
     }
 
     // Throws the reply draft away and closes the reply box.
@@ -1702,7 +1682,8 @@ document.addEventListener('DOMContentLoaded', function() {
         clearTimeout(scrollTimeout);
         scrollTimeout = setTimeout(toggleScrollButton, 50);
         if (!tagPicker.hidden && !tagPicker.contains(document.activeElement)) closeTagPicker();
-        if (!actFilterPopover.hidden || !tagFilterPopover.hidden) closePopovers();
+        actDropdown.close();
+        tagDropdown.close();
     }, { passive: true });
 
     // --- Initialization ---
@@ -1710,9 +1691,15 @@ document.addEventListener('DOMContentLoaded', function() {
     updateTagsDisplay();
     updateFilterTags();
     updateActFilter();
-    try { if (localStorage.getItem('chat-open') === '1') setChatOpen(true); } catch (e) { /* storage unavailable */ }
-    updateGlobalTimecodeDisplay(currentGlobalTimecode);
-    updatePersonalTimecodeDisplay(currentGlobalTimecode);
+    // Restore identity before chat so its own messages have the right alignment.
+    showNotesSnapshot();
+    chatMessagesList = chatCopy.saved();
+    if (chatMessagesList.length) {
+        updateChatMessages();
+        chatLoading.finish({ immediate: true });
+    }
+    setChatOpen(document.documentElement.classList.contains('chat-open'));
+    updateTimeModeDisplay();
     updateGlobalLxCueDisplay(currentGlobalLxCue);
     updatePersonalLxCueDisplay(currentGlobalLxCue);
     updateComposer();

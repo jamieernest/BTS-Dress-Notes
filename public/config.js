@@ -34,11 +34,6 @@ document.addEventListener('DOMContentLoaded', function() {
         row.dataset.state = state;
     }
 
-    function formatTimecode(tc) {
-        const pad = n => (n || 0).toString().padStart(2, '0');
-        return `${pad(tc.hours)}:${pad(tc.minutes)}:${pad(tc.seconds)}:${pad(tc.frames)}`;
-    }
-
     function updateTimeModeDisplay() {
         timeModeStatus.textContent = timeModeNames[timeMode] || timeMode;
         timeModeButtons.forEach(button => button.setAttribute('aria-pressed', button.dataset.mode === timeMode));
@@ -85,7 +80,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     socket.on('timecode-update', (data) => {
         if (data.source !== 'midi' && data.source !== 'network') return;
-        byId(`${data.source}Timecode`).textContent = formatTimecode(data);
+        byId(`${data.source}Timecode`).textContent = TimecodeFormat.formatTimecode(data);
         byId(`${data.source}FrameRate`).textContent = `${data.frameRate} fps`;
     });
 
@@ -200,6 +195,58 @@ document.addEventListener('DOMContentLoaded', function() {
         resetResult.textContent = `All notes and chat were reset at ${new Date().toLocaleTimeString()}.`;
         resetResult.hidden = false;
     });
+
+    // Save notes under a name, optionally followed by the reset (two steps, like the reset).
+    const saveShowForm = byId('saveShowForm');
+    const showNameInput = byId('showNameInput');
+    const saveResetButton = byId('saveResetButton');
+    const saveResetConfirm = byId('saveResetConfirm');
+    const saveResult = byId('saveResult');
+    const saveButtons = [byId('saveShowButton'), saveResetButton, byId('saveResetConfirmButton')];
+
+    function showSaveResult(...parts) {
+        saveResult.replaceChildren(...parts);
+        saveResult.hidden = false;
+    }
+    function closeSaveReset() {
+        saveResetConfirm.hidden = true;
+        saveResetButton.hidden = false;
+    }
+    function saveShow(reset) {
+        saveButtons.forEach(button => { button.disabled = true; });
+        socket.timeout(10000).emit('save-show', { name: showNameInput.value, reset }, (err, reply) => {
+            saveButtons.forEach(button => { button.disabled = false; });
+            closeSaveReset();
+            if (err || !reply || reply.error) {
+                showSaveResult(err || !reply ? "The notes couldn't be saved. Try again." : reply.error);
+                return;
+            }
+            const link = document.createElement('a');
+            link.href = `/recall.html?show=${encodeURIComponent(reply.show.id)}`;
+            link.textContent = 'Open in Past notes';
+            const notes = `${reply.show.totalNotes} note${reply.show.totalNotes === 1 ? '' : 's'}`;
+            showSaveResult(`Saved “${reply.show.name}” (${notes})${reset ? ' and reset everything' : ''}. `, link);
+            showNameInput.value = '';
+        });
+    }
+    // The form's `required` asks for a name before either kind of save.
+    saveShowForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        saveShow(false);
+    });
+    saveResetButton.addEventListener('click', () => {
+        if (!showNameInput.value.trim()) {
+            showNameInput.value = '';
+            showNameInput.reportValidity();
+            return;
+        }
+        saveResult.hidden = true;
+        saveResetConfirm.hidden = false;
+        saveResetButton.hidden = true;
+        byId('saveResetCancelButton').focus();
+    });
+    byId('saveResetCancelButton').addEventListener('click', closeSaveReset);
+    byId('saveResetConfirmButton').addEventListener('click', () => saveShow(true));
 
     timeModeButtons.forEach(button => button.addEventListener('click', () => {
         if (!button.disabled && button.dataset.mode !== timeMode) {

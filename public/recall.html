@@ -7,18 +7,60 @@
     <link rel="stylesheet" href="base.css">
     <link rel="stylesheet" href="index-style.css">
     <link rel="stylesheet" href="recall-style.css">
+    <script src="recall-boot.js"></script>
 </head>
 <body>
     <header class="topbar">
         <a href="/" class="btn ghost back">&larr; Notes</a>
-        <div class="brand">Past notes</div>
+        <div class="brand">Past notes<span id="showName" class="show-name" hidden></span></div>
         <div class="topbar-actions">
-            <button type="button" id="openAnother" class="btn ghost" hidden>Open another file&hellip;</button>
+            <a href="/recall.html" id="openAnother" class="btn ghost" hidden>Open another&hellip;</a>
         </div>
     </header>
 
     <main class="page">
         <input type="file" id="fileInput" accept=".json,application/json" hidden>
+
+        <div id="showLoading" class="notes loading-region is-loading" aria-busy="true">
+            <div class="toolbar skeleton" data-loading-placeholder aria-hidden="true"><span class="bone search-bone"></span></div>
+            <div id="showLoadingList" class="notes-list skeleton" data-loading-placeholder aria-hidden="true">
+                <div class="group-head"><span class="bone head-bone"></span></div>
+                <div class="note">
+                    <span class="bone avatar-bone"></span>
+                    <div class="note-main">
+                        <div class="note-head"><span class="bone meta-bone"></span></div>
+                        <span class="bone line w-80"></span>
+                        <span class="bone line w-45"></span>
+                        <div class="note-foot"><span class="bone chip-bone"></span></div>
+                    </div>
+                </div>
+                <div class="note">
+                    <span class="bone avatar-bone"></span>
+                    <div class="note-main">
+                        <div class="note-head"><span class="bone meta-bone"></span></div>
+                        <span class="bone line w-60"></span>
+                        <div class="note-foot"><span class="bone chip-bone"></span></div>
+                    </div>
+                </div>
+                <div class="note">
+                    <span class="bone avatar-bone"></span>
+                    <div class="note-main">
+                        <div class="note-head"><span class="bone meta-bone"></span></div>
+                        <span class="bone line w-90"></span>
+                        <span class="bone line w-30"></span>
+                        <div class="note-foot"><span class="bone chip-bone"></span></div>
+                    </div>
+                </div>
+                <div class="note">
+                    <span class="bone avatar-bone"></span>
+                    <div class="note-main">
+                        <div class="note-head"><span class="bone meta-bone"></span></div>
+                        <span class="bone line w-50"></span>
+                        <div class="note-foot"><span class="bone chip-bone"></span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <div id="dropZone" class="empty drop-zone">
             <p class="empty-title">Open a notes file</p>
@@ -27,31 +69,42 @@
             <p id="fileError" class="field-error" role="alert" hidden></p>
         </div>
 
+        <section id="savedShows" class="saved-shows" aria-labelledby="savedShowsTitle" hidden>
+            <h2 id="savedShowsTitle" class="saved-shows-title">Saved on the server</h2>
+            <div id="savedShowsList" class="saved-shows-list"></div>
+        </section>
+
         <section id="notesSection" class="notes" aria-label="Notes" hidden>
-            <p id="fileInfo" class="file-info muted"></p>
             <div class="toolbar">
                 <label class="search">
-                    <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    <svg class="icon"><use href="icons.svg#i-search"/></svg>
                     <input type="search" id="searchInput" placeholder="Search notes, people, cues" aria-label="Search notes">
                 </label>
-                <select id="sceneFilter" class="select" aria-label="Filter by scene"></select>
-                <select id="tagFilter" class="select" aria-label="Filter by tag"></select>
-                <button type="button" id="clearFilters" class="btn outline clear-filters" title="Show all notes again" hidden><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Clear filters</button>
+                <button type="button" id="actFilter" class="select" aria-haspopup="listbox" aria-expanded="false" title="Filter by scene"></button>
+                <button type="button" id="tagFilter" class="select" aria-haspopup="listbox" aria-expanded="false" title="Filter by tag"></button>
+                <button type="button" id="clearFilters" class="btn outline clear-filters" title="Show all notes again" hidden><svg class="icon" aria-hidden="true"><use href="icons.svg#i-close"/></svg>Clear filters</button>
                 <div class="toolbar-end">
-                    <span id="notesCount" class="muted">0 notes</span>
+                    <span id="notesCount" class="muted"></span>
                 </div>
             </div>
             <div id="notesList" class="notes-list"></div>
             <div id="notesNoMatch" class="empty" hidden>
                 <p class="empty-title">No notes match these filters</p>
-                <button type="button" class="btn outline" data-action="clear-filters"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Clear filters</button>
+                <button type="button" class="btn outline" data-action="clear-filters"><svg class="icon" aria-hidden="true"><use href="icons.svg#i-close"/></svg>Clear filters</button>
             </div>
         </section>
     </main>
 
+    <div id="actFilterPopover" class="popover filter-popover" role="listbox" aria-label="Filter by scene" hidden></div>
+    <div id="tagFilterPopover" class="popover filter-popover" role="listbox" aria-label="Filter by tag" hidden></div>
+
+    <script src="keepalive.js"></script>
     <script src="note-order.js"></script>
     <script src="vendor/purify.min.js"></script>
     <script src="safe-html.js"></script>
+    <script src="timecode-format.js"></script>
+    <script src="note-view.js"></script>
+    <script src="loading-state.js"></script>
     <script src="recall.js"></script>
 </body>
 </html>

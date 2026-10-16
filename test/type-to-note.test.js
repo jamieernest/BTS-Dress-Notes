@@ -83,3 +83,12 @@ test('an empty note box lets go of the frozen timecode, keeping the note if the 
     assert.equal(emptyBoxAction({ isTyping: true, noteValue: 'half a thought', focused: true }), null);
     assert.equal(emptyBoxAction({ isTyping: false, noteValue: '', focused: true }), null);
 });
+
+test('leaving an empty note box for elsewhere on the page closes it; text, its own tags and other windows keep it', () => {
+    const { leaveAction } = require('../public/type-to-note.js');
+    assert.equal(leaveAction({ noteValue: '', focusInComposer: false, pageFocused: true }), 'cancel');
+    assert.equal(leaveAction({ noteValue: '  ', focusInComposer: false, pageFocused: true }), 'cancel');
+    assert.equal(leaveAction({ noteValue: 'half a thought', focusInComposer: false, pageFocused: true }), null);
+    assert.equal(leaveAction({ noteValue: '', focusInComposer: true, pageFocused: true }), null, 'tabbed to a tag');
+    assert.equal(leaveAction({ noteValue: '', focusInComposer: false, pageFocused: false }), null, 'switched window');
+});
