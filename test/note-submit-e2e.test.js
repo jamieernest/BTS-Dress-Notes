@@ -39,18 +39,28 @@ test('malformed notes are refused without taking the server down', async (t) => 
     alice.page.socket.emit('comment-submit', null);
     alice.page.socket.emit('note-edit-text', null);
     alice.page.socket.emit('create-tag', null);
-    assert.deepStrictEqual(await ack(alice, 'note-submit', { clientId: 'c1', text: '   ' }), { error: 'A note needs some text.' });
-    const stored = await ack(alice, 'note-submit', { clientId: 'c2', text: 'focus the gobo', tags: 'lx', timecode: { hours: '<b>' } });
+    assert.deepStrictEqual(await ack(alice, 'note-submit', { clientId: 'c1', text: '   ', tags: ['lx'] }), { error: 'A note needs some text.' });
+    assert.deepStrictEqual(await ack(alice, 'note-submit', { clientId: 'c3', text: 'no tag', tags: 'lx' }), { error: 'A note needs at least one tag.' });
+    const stored = await ack(alice, 'note-submit', { clientId: 'c2', text: 'focus the gobo', tags: ['lx', {}], timecode: { hours: '<b>' } });
     assert.strictEqual(stored.text, 'focus the gobo');
-    assert.deepStrictEqual(stored.tags, []);
+    assert.deepStrictEqual(stored.tags, ['lx']);
     assert.strictEqual(typeof stored.timecode.hours, 'number');
     await until(() => bob.noteTexts().includes('focus the gobo'), 'bob to get the note');
     assert.strictEqual(bob.page.socket.connected, true);
 });
 
+test('two people using the same clientId each keep their own note', async (t) => {
+    const { alice, bob } = await setup(t);
+    const mine = await ack(alice, 'note-submit', { clientId: 'same', text: 'alice note', tags: ['lx'] });
+    const theirs = await ack(bob, 'note-submit', { clientId: 'same', text: 'bob note', tags: ['lx'] });
+    assert.notStrictEqual(mine.id, theirs.id);
+    assert.strictEqual(theirs.text, 'bob note');
+    await until(() => alice.noteTexts().length === 2, 'both notes to arrive');
+});
+
 test('a note is backed up within seconds, so killing the server straight after keeps it', async (t) => {
     const { app, alice } = await setup(t);
-    await ack(alice, 'note-submit', { clientId: 'c1', text: 'cue 12 late' });
+    await ack(alice, 'note-submit', { clientId: 'c1', text: 'cue 12 late', tags: ['lx'] });
     await sleep(2000);
     await app.kill();
     await app.start();
@@ -62,7 +72,7 @@ test('a note is backed up within seconds, so killing the server straight after k
 test('backups written in the same minute replace each other', async (t) => {
     const { app, alice } = await setup(t);
     for (let i = 0; i < 3; i++) {
-        await ack(alice, 'note-submit', { clientId: `c${i}`, text: `note ${i}` });
+        await ack(alice, 'note-submit', { clientId: `c${i}`, text: `note ${i}`, tags: ['lx'] });
         await sleep(1300);
     }
     const files = fs.readdirSync(app.backupsDir).filter((f) => f.startsWith('backup-'));
@@ -71,7 +81,7 @@ test('backups written in the same minute replace each other', async (t) => {
 
 test('only a comment\'s author can edit or delete it', async (t) => {
     const { alice, bob } = await setup(t);
-    const note = await ack(alice, 'note-submit', { clientId: 'c1', text: 'mic 4 crackles' });
+    const note = await ack(alice, 'note-submit', { clientId: 'c1', text: 'mic 4 crackles', tags: ['lx'] });
     const comments = () => (alice.page.notes.find((n) => n.id === note.id) || {}).comments || [];
     const edited = [];
     alice.page.socket.on('comment-submit', ({ comment }) => comments().push(comment));
@@ -95,8 +105,8 @@ test('only a comment\'s author can edit or delete it', async (t) => {
 
 test('only a note\'s author can delete it, and the deletion survives a restart', async (t) => {
     const { app, alice, bob } = await setup(t);
-    const note = await ack(alice, 'note-submit', { clientId: 'c1', text: 'haze too thick' });
-    await ack(alice, 'note-submit', { clientId: 'c2', text: 'keep this one' });
+    const note = await ack(alice, 'note-submit', { clientId: 'c1', text: 'haze too thick', tags: ['lx'] });
+    await ack(alice, 'note-submit', { clientId: 'c2', text: 'keep this one', tags: ['lx'] });
     const deleted = [];
     alice.page.socket.on('note-delete', ({ noteId }) => deleted.push(noteId));
 

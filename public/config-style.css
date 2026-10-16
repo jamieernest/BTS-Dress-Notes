@@ -1,6 +1,3 @@
-.topbar { gap: 12px; padding-left: 8px; }
-.back { color: var(--text-2); text-decoration: none; }
-
 .btn.danger-outline { border-color: color-mix(in srgb, var(--danger) 45%, var(--border-strong)); color: var(--danger); }
 .btn.danger-outline:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
 .btn.danger { background: var(--danger); color: #fff; }
@@ -120,7 +117,6 @@
 
 @media (max-width: 640px) {
     .topbar .brand { display: block; }
-    .topbar-user .muted { display: none; }
     .settings { padding: 20px 12px 60px; }
     .row { flex-wrap: wrap; }
     .row-label, .row .state-dot + .row-label { width: auto; }

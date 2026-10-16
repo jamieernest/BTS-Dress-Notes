@@ -1,6 +1,4 @@
 /* Past notes: the notes list itself is styled by index-style.css. */
-.topbar { gap: 12px; padding-left: 8px; }
-.back { color: var(--text-2); text-decoration: none; }
 
 /* Until a file is open: a roomy drop zone near the top (a file dropped
    anywhere on the page opens, recall.js). */
@@ -52,7 +50,7 @@
 .notes { margin-top: 8px; }
 
 @media (max-width: 640px) {
-    .topbar { height: auto; min-height: var(--topbar-h); flex-wrap: wrap; gap: 4px 8px; padding: 8px 12px; }
+    .topbar { height: auto; min-height: var(--topbar-h); flex-wrap: wrap; gap: 4px 8px; padding: 8px max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left)); }
     .topbar .brand { display: block; flex: 1; font-size: 14px; overflow-wrap: anywhere; }
     .show-name { display: block; font-size: 12px; }
     .show-name::before { content: none; }

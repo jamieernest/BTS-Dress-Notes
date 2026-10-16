@@ -7,7 +7,7 @@ const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');
 const { io } = require('socket.io-client');
-const { until, freePort, startOidc, createApp, login } = require('./e2e-harness');
+const { until, freePort, startOidc, createApp, login, cookiesOf } = require('./e2e-harness');
 
 async function setup(t) {
     const oidc = await startOidc();
@@ -48,10 +48,12 @@ test('two logins started at once both succeed', async (t) => {
     // Both trips to Keycloak start before either comes back, as two tabs bounced to /login at once do.
     const starts = await Promise.all(['alice', 'alice'].map(() => fetch(`${base}/login`, { redirect: 'manual' })));
     oidc.state.nextUser = 'alice';
+    // One browser: both login cookies are in its jar.
+    const jar = starts.map(cookiesOf).join('; ');
     const callbacks = [];
     for (const start of starts) callbacks.push((await fetch(start.headers.get('location'), { redirect: 'manual' })).headers.get('location'));
     for (const url of callbacks.reverse()) {
-        const res = await fetch(url, { redirect: 'manual' });
+        const res = await fetch(url, { redirect: 'manual', headers: { cookie: jar } });
         assert.strictEqual(res.status, 302);
         assert.strictEqual(res.headers.get('location'), '/');
         const cookie = res.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
@@ -66,11 +68,27 @@ test('a callback URL used twice does not log in again', async (t) => {
     const base = `http://127.0.0.1:${app.port}`;
     oidc.state.nextUser = 'alice';
     const start = await fetch(`${base}/login`, { redirect: 'manual' });
+    const headers = { cookie: cookiesOf(start) };
     const callback = (await fetch(start.headers.get('location'), { redirect: 'manual' })).headers.get('location');
-    assert.strictEqual((await fetch(callback, { redirect: 'manual' })).headers.get('location'), '/');
-    const again = await fetch(callback, { redirect: 'manual' });
+    assert.strictEqual((await fetch(callback, { redirect: 'manual', headers })).headers.get('location'), '/');
+    const again = await fetch(callback, { redirect: 'manual', headers });
     assert.strictEqual(again.headers.get('location'), '/login');
     assert.deepStrictEqual(again.headers.getSetCookie(), []);
+});
+
+test('a callback URL from a login started in another browser does not log in', async (t) => {
+    const { app, oidc } = await setup(t);
+    const base = `http://127.0.0.1:${app.port}`;
+    oidc.state.nextUser = 'mallory';
+    const start = await fetch(`${base}/login`, { redirect: 'manual' });
+    const callback = (await fetch(start.headers.get('location'), { redirect: 'manual' })).headers.get('location');
+    // Opened by someone else, whose browser never started that login.
+    const res = await fetch(callback, { redirect: 'manual' });
+    assert.strictEqual(res.headers.get('location'), '/login');
+    assert.deepStrictEqual(res.headers.getSetCookie(), []);
+    // Nor does it work afterwards for the browser that did.
+    const late = await fetch(callback, { redirect: 'manual', headers: { cookie: cookiesOf(start) } });
+    assert.strictEqual(late.headers.get('location'), '/login');
 });
 
 test('each request pushes the session expiry out (rolling login)', async (t) => {

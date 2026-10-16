@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const timeModeNames = {
         midi: 'MIDI timecode',
         network: 'Network timecode (MIDI gateway)',
-        realtime: 'Time of day (server clock)'
+        realtime: 'Time of day'
     };
     let timeMode = null;
     const midiInputSelect = byId('midiInputSelect');

@@ -135,14 +135,20 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
 
 // Logs in through the real /login -> OIDC -> /callback flow; returns the session
 // cookie, which the server only sets once the login has succeeded.
+// The cookies a response sets, as a Cookie header.
+function cookiesOf(res) {
+    return res.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+}
+
 async function login(app, oidc, who, returnTo) {
     oidc.state.nextUser = who;
     const base = `http://127.0.0.1:${app.port}`;
     let res = await fetch(`${base}/login${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`, { redirect: 'manual' });
+    const loginCookie = cookiesOf(res); // ties the callback to this "browser"
     res = await fetch(res.headers.get('location'), { redirect: 'manual' });
-    res = await fetch(res.headers.get('location'), { redirect: 'manual' });
+    res = await fetch(res.headers.get('location'), { redirect: 'manual', headers: { cookie: loginCookie } });
     assert.strictEqual(res.status, 302, 'login callback should redirect');
-    const cookie = res.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+    const cookie = cookiesOf(res).split('; ').filter((c) => !c.startsWith('bts-notes.login.')).join('; ');
     assert.ok(cookie, 'login callback should set the session cookie');
     if (returnTo !== undefined) login.lastRedirect = res.headers.get('location');
     return cookie;
@@ -189,7 +195,7 @@ class Browser {
         return page;
     }
 
-    note(text, extra = {}) { this.page.socket.emit('note-submit', { text, clientId: `c-${Math.random().toString(36).slice(2)}`, ...extra }); }
+    note(text, extra = {}) { this.page.socket.emit('note-submit', { text, clientId: `c-${Math.random().toString(36).slice(2)}`, tags: ['lx'], ...extra }); }
     noteTexts() { return this.page.notes.map((n) => n.text); }
     say(text) { this.page.socket.emit('chat-message', { text }); }
     texts() { return this.page.log ? this.page.log.map((m) => m.text) : null; }
@@ -214,4 +220,4 @@ function serverLog(app, cookie) {
 }
 
 
-module.exports = { ROOT, sleep, until, freePort, startOidc, createApp, login, Browser, serverLog };
+module.exports = { ROOT, sleep, until, freePort, startOidc, createApp, login, cookiesOf, Browser, serverLog };

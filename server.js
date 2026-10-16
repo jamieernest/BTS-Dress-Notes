@@ -213,7 +213,19 @@ function safeReturnTo(value) {
 // logged in. Lost on restart, which only means that login starts again.
 const LOGIN_TTL_MS = 10 * 60 * 1000;
 const MAX_PENDING_LOGINS = 1000;
-const pendingLogins = new Map(); // state -> { codeVerifier, returnTo, createdAt }
+const pendingLogins = new Map(); // state -> { codeVerifier, returnTo, browserKey, createdAt }
+
+// Each login is also tied to the browser that started it, by a cookie named
+// for its state (one per login, so parallel tabs don't overwrite each other).
+// Without it, someone could start a login, sign in as themselves and hand
+// their /callback URL to someone else, whose browser would then be signed in
+// as them, and what they wrote would be stored under the wrong name.
+const loginCookieName = (state) => `bts-notes.login.${PORT}.${state}`;
+function loginCookieOf(req, state) {
+    const prefix = `${loginCookieName(state)}=`;
+    const found = (req.headers.cookie || '').split(/;\s*/).find((c) => c.startsWith(prefix));
+    return found ? found.slice(prefix.length) : '';
+}
 
 function prunePendingLogins(now = Date.now()) {
     for (const [state, pending] of pendingLogins) {
@@ -237,7 +249,9 @@ app.get('/login', async (req, res, next) => {
         const codeChallenge = await oidc.calculatePKCECodeChallenge(codeVerifier);
         const state = oidc.randomState();
         prunePendingLogins();
-        pendingLogins.set(state, { codeVerifier, returnTo, createdAt: Date.now() });
+        const browserKey = crypto.randomBytes(18).toString('base64url');
+        pendingLogins.set(state, { codeVerifier, returnTo, browserKey, createdAt: Date.now() });
+        res.cookie(loginCookieName(state), browserKey, { httpOnly: true, sameSite: 'lax', secure: req.secure, path: '/callback', maxAge: LOGIN_TTL_MS });
         const redirectUri = `${req.protocol}://${req.get('host')}/callback`;
         const authUrl = oidc.buildAuthorizationUrl(oidcConfig, {
             redirect_uri: redirectUri,
@@ -260,12 +274,14 @@ app.get('/callback', async (req, res) => {
     }
     const state = typeof req.query.state === 'string' ? req.query.state : '';
     const pending = pendingLogins.get(state);
-    if (!pending || Date.now() - pending.createdAt > LOGIN_TTL_MS) {
+    if (!pending || Date.now() - pending.createdAt > LOGIN_TTL_MS || loginCookieOf(req, state) !== pending.browserKey) {
         pendingLogins.delete(state);
-        // A reused or expired callback URL (back button, server restart mid-login).
+        // A reused or expired callback URL (back button, server restart mid-login),
+        // or one from a login started in another browser.
         return res.redirect(isLoggedIn(req) ? '/' : '/login');
     }
     pendingLogins.delete(state); // single use
+    res.clearCookie(loginCookieName(state), { httpOnly: true, sameSite: 'lax', secure: req.secure, path: '/callback' });
     try {
         const tokens = await oidc.authorizationCodeGrant(oidcConfig, currentUrlFor(req), {
             pkceCodeVerifier: pending.codeVerifier,
@@ -1271,11 +1287,16 @@ io.on('connection', (socket) => {
         if (!data || typeof data !== 'object') return respond({ error: 'Something went wrong. Write it again.' });
         const clientId = input.cleanId(data.clientId) || undefined;
         if (clientId) {
-            const existing = globalState.notes.find(n => n.clientId === clientId);
+            // Only the sender's own notes: another person's note with the same clientId is not this one.
+            const existing = globalState.notes.find(n => n.clientId === clientId && n.userId === user.id);
             if (existing) return respond(existing);
         }
         const text = input.cleanText(data.text, input.MAX_NOTE_LENGTH);
         if (!text) return respond({ error: 'A note needs some text.' });
+
+        // The composer requires a tag, and note-update-tags refuses an empty list.
+        const tags = input.cleanTags(data.tags);
+        if (!tags.length) return respond({ error: 'A note needs at least one tag.' });
 
         const noteTimecode = input.cleanTimecode(data.timecode) || {...currentModeTimecode()};
 
@@ -1288,7 +1309,7 @@ io.on('connection', (socket) => {
             lxCue: input.cleanCue(data.lxCue) || globalState.currentLxCue,
             timestamp: new Date(Date.now() - sanitizeAge(data.ageMs)).toISOString(),
             frameRate: input.cleanFrameRate(data.frameRate) || currentModeTimecode().frameRate,
-            tags: input.cleanTags(data.tags),
+            tags,
             act: globalState.currentAct, // Use current act from OSC
             comments: []
         };
@@ -1462,6 +1483,9 @@ io.on('connection', (socket) => {
         }
         console.log(`Backup with ${data.notes.length} notes imported by ${user.name}`);
         globalState.notes = applyAuthors(input.cleanStoredNotes(data.notes), data.authors);
+        // Notes that fail the per-note checks are dropped; say so rather than report a clean import.
+        const skipped = data.notes.length - globalState.notes.length;
+        if (skipped) console.warn(`Import skipped ${skipped} of ${data.notes.length} notes that could not be read`);
 
         // Restore tags if present in backup
         if (data.tags) {
@@ -1475,7 +1499,9 @@ io.on('connection', (socket) => {
         scheduleBackup();
 
         // Notify the importer of success
-        socket.emit('import-success', 'Backup imported successfully.');
+        socket.emit('import-success', skipped
+            ? `Backup imported, but ${skipped} of ${data.notes.length} notes could not be read and were skipped.`
+            : 'Backup imported successfully.');
     });
 
     // Handle export requests (only for non-overlay users)

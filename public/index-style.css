@@ -264,7 +264,7 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
     border-radius: var(--radius);
     color: var(--text-3);
 }
-.search:focus-within { border-color: var(--border-strong); color: var(--text-2); }
+.search:focus-within { border-color: var(--accent); color: var(--text-2); }
 .search input { flex: 1; min-width: 0; background: none; border: 0; outline: none; font-size: 13px; color: var(--text); }
 .search input::placeholder { color: var(--text-3); }
 
@@ -335,7 +335,7 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
     border-bottom: 1px solid var(--border);
 }
 .notes-list > :last-child { border-bottom: 0; }
-.note:hover { background: #121316; }
+.note:hover { background: color-mix(in srgb, var(--surface) 50%, var(--bg)); }
 .note.flash { animation: flash 1.6s ease-out; }
 @keyframes flash { from { background: var(--accent-soft); } to { background: transparent; } }
 
@@ -429,7 +429,7 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
 .edit-actions { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-top: 6px; }
 
 /* Pending (not yet stored by the server) */
-.note.pending { background: rgba(224, 168, 74, 0.05); }
+.note.pending { background: color-mix(in srgb, var(--warn) 5%, transparent); }
 .pending-badge { color: var(--warn); font-size: 12px; margin-left: auto; }
 .note.pending.failed { background: color-mix(in srgb, var(--danger) 7%, transparent); }
 .note.failed .pending-badge { color: var(--danger); }
@@ -545,6 +545,10 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
     border-left: 1px solid var(--border);
     box-shadow: -12px 0 32px rgba(0, 0, 0, 0.35);
 }
+/* The connection banner pushes the top bar down; the panel starts below both. */
+@media (min-width: 861px) {
+    .connection-banner:not([hidden]) ~ .drawer { top: calc(var(--topbar-h) + var(--connection-banner-h, 37px)); }
+}
 /* Wide screens: the page makes room for the chat instead of hiding under it. */
 @media (min-width: 1100px) {
     .chat-open .page { margin-right: 360px; }
@@ -604,7 +608,7 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
 
 /* --- Small screens --- */
 @media (max-width: 860px) {
-    .brand { display: none; }
+    .notes-page .brand { display: none; }
     .live { gap: 12px; }
     .avatars-count { display: none; }
     /* Hidden visually but still read out, so the icon-only button keeps its name. */

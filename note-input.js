@@ -32,10 +32,11 @@ const textSchema = (max) => z.string().refine((s) => s.trim() !== '').transform(
 // A short identifier string (note, comment, tag or client id); numbers are accepted as strings.
 const idSchema = z.union([z.string(), z.number()]).transform(String).pipe(z.string().min(1).max(MAX_ID_LENGTH));
 
-// A list of distinct tag ids; entries that are not ids are skipped.
-const tagsSchema = z.array(z.unknown()).transform((list) => {
+// A list of distinct tag ids; entries that are not ids are skipped. Only the
+// first few entries are looked at, so a huge list costs no more than a short one.
+const tagsSchema = z.custom((value) => Array.isArray(value)).transform((list) => {
     const ids = [];
-    for (const v of list) {
+    for (const v of list.slice(0, MAX_TAGS * 2)) {
         const id = parse(idSchema, v);
         if (id && !ids.includes(id)) ids.push(id);
         if (ids.length >= MAX_TAGS) break;

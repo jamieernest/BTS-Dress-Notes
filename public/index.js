@@ -116,7 +116,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- Helper functions ---
     // Templates and helpers shared with past notes: public/note-view.js.
-    const { esc, safeColor, setHtml, clockTime, relativeTime, plural, avatarHTML, dotHTML } = NoteView;
+    const { esc, safeColor, setHtml, clockTime, fullTime, relativeTime, plural, avatarHTML, dotHTML } = NoteView;
     const { formatTimecode } = TimecodeFormat;
 
     function isMine(item) {
@@ -162,15 +162,11 @@ document.addEventListener('DOMContentLoaded', function() {
         try { localStorage.setItem('midi-timecode-notes-tags', JSON.stringify(availableTags)); } catch (e) { /* ignore */ }
     }
 
-    function chipHTML(tag, attrs) {
-        return `<button type="button" class="chip" style="--tag: ${safeColor(tag.color)}" ${attrs}><span class="dot"></span>${esc(tag.name)}</button>`;
-    }
-
     // Tags for the note being written: toggles under the note box.
     function updateTagsDisplay() {
         selectedTags = selectedTags.filter(id => availableTags.some(t => t.id === id));
         setHtml(tagsContainer, availableTags.map(tag =>
-            chipHTML(tag, `data-tag="${esc(tag.id)}" aria-pressed="${selectedTags.includes(tag.id)}"`)
+            NoteView.tagChipHTML(tag, `type="button" data-tag="${esc(tag.id)}" aria-pressed="${selectedTags.includes(tag.id)}"`)
         ).join(''));
         updateComposerTagsLabel();
     }
@@ -527,6 +523,7 @@ document.addEventListener('DOMContentLoaded', function() {
         tagPickerNoteId = noteId;
         renderTagPicker();
         placePopover(tagPicker, anchor, 'left');
+        anchor.setAttribute('aria-expanded', 'true');
         const first = tagPickerList.querySelector('.tag-option');
         if (first) first.focus();
     }
@@ -536,6 +533,7 @@ document.addEventListener('DOMContentLoaded', function() {
         tagPicker.hidden = true;
         tagPickerNoteId = null;
         const el = noteId && noteElements.get(noteId);
+        el?.querySelector('[data-action="edit-tags"]')?.setAttribute('aria-expanded', 'false');
         if (el && tagPicker.contains(document.activeElement)) el.querySelector('[data-action="edit-tags"]')?.focus();
     }
 
@@ -584,7 +582,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <div class="chat-msg${mine ? ' mine' : ''}${cont ? ' cont' : ''}">
                 ${face}
                 <div class="chat-msg-main">${head}
-                    <div class="bubble" title="${esc(new Date(msg.timestamp).toLocaleString())}">${esc(msg.text)}</div>
+                    <div class="bubble" title="${esc(fullTime(msg.timestamp))}">${esc(msg.text)}</div>
                 </div>
             </div>`;
     }
@@ -683,7 +681,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function tagTriggerHTML(note) {
         const names = note.tags.map(id => tagById(id).name).join(', ');
         const label = note.tags.length ? `Tags: ${names}. Change tags` : 'Add a tag';
-        return `<button type="button" class="tag-trigger" data-action="edit-tags" aria-haspopup="dialog" aria-label="${esc(label)}" title="Change tags">
+        return `<button type="button" class="tag-trigger" data-action="edit-tags" aria-haspopup="dialog" aria-expanded="${tagPickerNoteId === note.id}" aria-label="${esc(label)}" title="Change tags">
             ${tagChipsHTML(note) || '<span class="chip add-tag">Add a tag</span>'}<i data-icon="chevron"></i></button>`;
     }
 
@@ -796,13 +794,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function updateNoteElement(note) {
+    // `refilter: false` when the caller filters once after a batch of updates.
+    function updateNoteElement(note, { refilter = true } = {}) {
         const oldElement = noteElements.get(note.id);
         if (!oldElement) return;
         const newElement = createNoteElement(note);
         rerenderPreservingFocus(oldElement, newElement);
         if (tagPickerNoteId === note.id) renderTagPicker();
-        filterNotes();
+        if (refilter) filterNotes();
     }
 
     // Only for a note that is the newest; addNote rebuilds the list for one that isn't.
@@ -858,8 +857,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (tagPickerNoteId) renderTagPicker();
     }
 
+    // Rows are drawn in batches after a rebuild, so check the notes, not the drawn rows.
     function addNote(note) {
-        if (noteElements.has(note.id)) return;
+        if (allNotes.some(n => n.id === note.id)) return;
         const index = NoteOrder.insertionIndex(allNotes, note);
         allNotes.splice(index, 0, note);
         if (index < allNotes.length - 1) {
@@ -889,18 +889,13 @@ document.addEventListener('DOMContentLoaded', function() {
         removeItem: (key) => localStorage.removeItem(key)
     });
 
-    function savePendingNotes() {
-        pendingStore.save(currentUser.sub, [...pendingNotes.values()]);
-    }
-
     // The notes this browser had not got stored before it was last closed.
     function restorePendingNotes() {
         for (const { note, writtenAt } of pendingStore.load(currentUser.sub)) {
-            if (pendingNotes.has(note.clientId) || allNotes.some(n => n.clientId === note.clientId)) continue;
+            if (pendingNotes.has(note.clientId) || allNotes.some(n => isMyStoredNote(n, note.clientId))) continue;
             showPendingNote(note, writtenAt);
             sendPendingNote(note, writtenAt);
         }
-        savePendingNotes();
     }
 
     function pendingBadgeText() {
@@ -936,7 +931,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 const pending = pendingNotes.get(note.clientId);
                 if (!pending) return;
                 pendingNotes.delete(note.clientId);
-                savePendingNotes();
+                pendingStore.remove(currentUser.sub, note.clientId);
                 pending.element.querySelector('.pending-badge').textContent =
                     `Not added. ${(stored && stored.error) || 'Something went wrong. Write it again.'}`;
                 pending.element.classList.add('failed');
@@ -947,12 +942,17 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // The server keeps clientIds per person, so someone else's note with the same one is not ours.
+    function isMyStoredNote(note, clientId) {
+        return !!clientId && note.clientId === clientId && note.userId === currentUser.sub;
+    }
+
     function clearPendingNote(clientId) {
         const pending = pendingNotes.get(clientId);
         if (!pending) return;
         pending.element.remove();
         pendingNotes.delete(clientId);
-        savePendingNotes();
+        pendingStore.remove(currentUser.sub, clientId);
         filterNotes();
     }
 
@@ -974,7 +974,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const note = { ...data, clientId: newClientId() };
         const writtenAt = Date.now();
         showPendingNote(note, writtenAt);
-        savePendingNotes();
+        pendingStore.add(currentUser.sub, { note, writtenAt });
         sendPendingNote(note, writtenAt);
     }
 
@@ -1254,13 +1254,13 @@ document.addEventListener('DOMContentLoaded', function() {
         notesLoading.finish();
         const incoming = notes.map(withLists);
         for (const note of incoming) {
-            if (note.clientId) clearPendingNote(note.clientId);
+            if (isMyStoredNote(note, note.clientId)) clearPendingNote(note.clientId);
         }
         if (allNotes.length === incoming.length && allNotes.every((n, i) => n.id === incoming[i].id)) {
             incoming.forEach((note, i) => {
                 if (JSON.stringify(note) === JSON.stringify(allNotes[i])) return;
                 allNotes[i] = note;
-                updateNoteElement(note);
+                updateNoteElement(note, { refilter: false });
             });
             filterNotes();
             return;
@@ -1270,7 +1270,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     window.socket.on('note-added', (note) => {
-        if (note.clientId) clearPendingNote(note.clientId);
+        if (isMyStoredNote(note, note.clientId)) clearPendingNote(note.clientId);
         addNote(withLists(note));
     });
 
@@ -1360,7 +1360,9 @@ document.addEventListener('DOMContentLoaded', function() {
         } else {
             const stick = mine || chatNearBottom();
             if (chatMessagesList.length === 1) setHtml(chatMessages, '');
-            chatMessages.insertAdjacentHTML('beforeend', renderChatMessage(msg, chatMessagesList[chatMessagesList.length - 2]));
+            const holder = document.createElement('div');
+            setHtml(holder, renderChatMessage(msg, chatMessagesList[chatMessagesList.length - 2]));
+            chatMessages.append(...holder.childNodes);
             chatCount.textContent = plural(chatMessagesList.length, 'message');
             if (stick) chatMessages.scrollTop = chatMessages.scrollHeight;
         }
@@ -1389,7 +1391,7 @@ document.addEventListener('DOMContentLoaded', function() {
         chatCopy.onReset();
         for (const { element } of pendingNotes.values()) element.remove();
         pendingNotes.clear();
-        savePendingNotes();
+        pendingStore.clear(currentUser.sub);
         filterNotes();
     });
 

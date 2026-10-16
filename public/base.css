@@ -102,6 +102,9 @@ kbd {
     background: var(--bg);
     border-bottom: 1px solid var(--border);
 }
+/* Settings and Past notes: a back link to the notes leads the bar. */
+.topbar.sub { gap: 12px; padding-left: max(8px, env(safe-area-inset-left)); }
+.back { color: var(--text-2); text-decoration: none; }
 
 .brand { font-weight: 600; font-size: 14px; white-space: nowrap; }
 

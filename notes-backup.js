@@ -47,7 +47,8 @@ function checkBackup(data) {
         }
         if (note.userId !== undefined && typeof note.userId !== 'string') return `note ${note.id} userId is not a string`;
         if (note.tags !== undefined && !Array.isArray(note.tags)) return `note ${note.id} tags are not a list`;
-        if (note.timecode !== undefined && (!note.timecode || typeof note.timecode !== 'object')) {
+        // null is how a note with no readable timecode is stored (note-input.js).
+        if (note.timecode != null && typeof note.timecode !== 'object') {
             return `note ${note.id} timecode is not an object`;
         }
         if (note.comments !== undefined) {

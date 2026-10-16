@@ -71,8 +71,10 @@
         return { id, name: id, color: NEUTRAL };
     }
 
-    function tagChipHTML(tag) {
-        return `<span class="chip" style="--tag: ${safeColor(tag.color)}"><span class="dot"></span>${esc(tag.name)}</span>`;
+    // A tag chip; with `attrs` (already escaped) it is a toggle button instead of a label.
+    function tagChipHTML(tag, attrs) {
+        const el = attrs ? 'button' : 'span';
+        return `<${el} class="chip" style="--tag: ${safeColor(tag.color)}"${attrs ? ` ${attrs}` : ''}><span class="dot"></span>${esc(tag.name)}</${el}>`;
     }
 
     function tagChipsHTML(ids, tagById) {

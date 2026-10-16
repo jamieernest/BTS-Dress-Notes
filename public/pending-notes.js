@@ -6,6 +6,8 @@
 //
 // Each person's notes are kept under their own key (Keycloak sub), so someone
 // else logging in on the same browser never sends them under their name.
+// Every tab of theirs shares that key, so notes are added and removed one at a
+// time: a tab writing its own list would wipe out another tab's unsent notes.
 // A note older than MAX_AGE_MS is dropped: the server would date it no further
 // back than that anyway (see note-order.js).
 (function (root, factory) {
@@ -35,16 +37,31 @@
                 typeof p.note.text === 'string' && typeof p.writtenAt === 'number' && p.writtenAt > cutoff);
         }
 
-        // Replaces what is saved for `sub` with `entries` ([{ note, writtenAt }]).
-        function save(sub, entries) {
-            if (!sub) return;
+        function write(sub, entries) {
             try {
                 if (entries.length === 0) storage.removeItem(PREFIX + sub);
-                else storage.setItem(PREFIX + sub, JSON.stringify(entries.filter(Boolean).map(({ note, writtenAt }) => ({ note, writtenAt }))));
+                else storage.setItem(PREFIX + sub, JSON.stringify(entries.map(({ note, writtenAt }) => ({ note, writtenAt }))));
             } catch (e) { /* storage full or unavailable */ }
         }
 
-        return { load, save };
+        // Saves one pending note ({ note, writtenAt }) for `sub`.
+        function add(sub, entry) {
+            if (!sub || !entry || !entry.note) return;
+            write(sub, [...load(sub).filter((p) => p.note.clientId !== entry.note.clientId), entry]);
+        }
+
+        // Forgets the pending note with `clientId` (stored or refused).
+        function remove(sub, clientId) {
+            if (!sub) return;
+            write(sub, load(sub).filter((p) => p.note.clientId !== clientId));
+        }
+
+        // Forgets every pending note for `sub` (the notes were reset).
+        function clear(sub) {
+            if (sub) write(sub, []);
+        }
+
+        return { load, add, remove, clear };
     }
 
     return { createPendingNotes, MAX_AGE_MS };

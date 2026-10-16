@@ -218,11 +218,21 @@ test('importing a file without authors leaves its notes editable by anyone', asy
     assert.strictEqual((await edit).newText, 'bob edited');
 });
 
+test('an import that has to skip unreadable notes says how many', async (t) => {
+    const { connect } = await importSetup(t);
+    const bob = await connect('bob');
+    const note = (id) => ({ id, text: 'n', user: 'x', timestamp: new Date().toISOString(), tags: [], comments: [] });
+    const done = new Promise((resolve) => bob.once('import-success', resolve));
+    bob.emit('import-backup', { notes: [note('ok1'), note('x'.repeat(200))] });
+    assert.strictEqual(await done, 'Backup imported, but 1 of 2 notes could not be read and were skipped.');
+    await until(() => bob.notes.length === 1, 'the readable note to arrive');
+});
+
 test('an exported file keeps authorship by Keycloak identity when imported again', async (t) => {
     const { connect } = await importSetup(t);
     const alice = await connect('alice');
     const bob = await connect('bob');
-    alice.emit('note-submit', { id: 'rt1', clientId: 'c1', text: 'alice note', timestamp: new Date().toISOString(), tags: [], comments: [] });
+    alice.emit('note-submit', { id: 'rt1', clientId: 'c1', text: 'alice note', timestamp: new Date().toISOString(), tags: ['lx'], comments: [] });
     await until(() => alice.notes.length === 1, 'the note to arrive');
     const exported = new Promise((resolve) => alice.once('export-data', resolve));
     alice.emit('export-request', 'json');
