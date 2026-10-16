@@ -2,24 +2,16 @@
 .topbar { gap: 12px; padding-left: 8px; }
 .back { color: var(--text-2); text-decoration: none; }
 
-/* Until a file is open a large drop zone sits in the middle of the window
-   (a file dropped anywhere on the page opens, recall.js). */
-.page:has(> .drop-zone:not([hidden])) {
-    min-height: calc(100dvh - var(--topbar-h));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 40px 24px;
-}
+/* Until a file is open: a roomy drop zone near the top (a file dropped
+   anywhere on the page opens, recall.js). */
 .drop-zone {
-    width: 100%;
-    max-width: 720px;
-    min-height: min(440px, 60dvh);
+    margin-top: 48px;
+    min-height: 320px;
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 48px 24px;
+    padding: 56px 24px;
     border: 1px dashed var(--border-strong);
     border-radius: 8px;
     transition: border-color 0.15s, background 0.15s;
@@ -36,6 +28,5 @@
 
 @media (max-width: 640px) {
     .topbar .brand { display: none; }
-    .page:has(> .drop-zone:not([hidden])) { padding: 24px 16px; }
-    .drop-zone { padding: 32px 16px; }
+    .drop-zone { margin-top: 24px; min-height: 260px; padding: 32px 16px; }
 }
