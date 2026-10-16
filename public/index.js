@@ -777,11 +777,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const edited = note.lastEdited
             ? `<div class="note-edited">Edited by ${esc(note.lastEditedBy || 'unknown')} at ${clockTime(note.lastEdited)}</div>` : '';
 
-        const actions = `
+        // While the note is being edited, Save and Cancel are its only actions.
+        const actions = editing ? '' : `
             <span class="row-actions">
                 ${iconButton('reply', 'reply', 'Reply')}
-                ${canEdit && !editing ? iconButton('edit-note', 'edit', 'Edit note') : ''}
-                ${canDelete && !editing ? iconButton('delete-note', 'trash', 'Delete note') : ''}
+                ${canEdit ? iconButton('edit-note', 'edit', 'Edit note') : ''}
+                ${canDelete ? iconButton('delete-note', 'trash', 'Delete note') : ''}
             </span>`;
 
         const foot = `<div class="note-foot">${tagTriggerHTML(note)}</div>`;
@@ -807,7 +808,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <button type="button" class="btn primary" data-action="submit-comment" ${draft.trim() ? '' : 'disabled'}>Reply</button>
                                 </div>
                             </div>
-                        </div>` : `
+                        </div>` : editing ? '' : `
                         <button type="button" class="comment-input reply-prompt" data-action="reply">
                             ${avatarHTML(currentUser.sub || currentUser.name, currentUser.name, 'sm')}
                             <span class="reply-prompt-box">Reply to this thread…</span>
