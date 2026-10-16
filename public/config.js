@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const networkInterfaceSelect = byId('networkInterfaceSelect');
 
     function fillSelect(select, options, value) {
-        select.innerHTML = '';
+        select.replaceChildren();
         options.forEach(([optionValue, label]) => {
             const option = document.createElement('option');
             option.value = optionValue;
@@ -38,7 +38,8 @@ document.addEventListener('DOMContentLoaded', function() {
         timeModeButtons.forEach(button => button.classList.toggle('active', button.dataset.mode === timeMode));
     }
 
-    const socket = io();
+    // `page` tells the server which page this is (see pageOf() in server.js).
+    const socket = io({ auth: { page: 'config' } });
 
     socket.on('connect', () => {
         connectionStatus.textContent = 'Connected to Server';
@@ -53,9 +54,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // A refused handshake means the session is gone; retrying can't succeed.
     socket.on('connect_error', (err) => {
         if (err && err.message === 'unauthorized') {
-            window.location.href = '/login';
+            window.location.href = loginUrl();
         }
     });
+    socket.on('logged-out', () => { window.location.href = loginUrl(); });
+    keepLoginAlive(() => { window.location.href = loginUrl(); });
 
     socket.on('current-user', (data) => {
         byId('currentUserName').textContent = data.name;

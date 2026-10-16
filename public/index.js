@@ -94,12 +94,25 @@ document.addEventListener('DOMContentLoaded', function() {
     let tagPickerNoteId = null;
 
     // --- Helper functions ---
-    function esc(str) {
-        return String(str ?? '').replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
-    }
+    // See public/safe-html.js: escape every value, set HTML only through setHtml().
+    const { escapeHtml: esc } = SafeHtml;
+    const safeColor = (color) => SafeHtml.safeColour(color, '#8a8f98');
+    const SVG_NS = 'http://www.w3.org/2000/svg';
 
-    function safeColor(color) {
-        return /^#[0-9a-f]{3,8}$/i.test(color || '') ? color : '#8a8f98';
+    // Like SafeHtml.setHtml, then swaps each <i data-icon="name"> placeholder
+    // for the matching icon from the page's sprite. DOMPurify strips <svg><use>,
+    // so icons are made here with DOM calls instead of in the markup.
+    function setHtml(element, html) {
+        SafeHtml.setHtml(element, html);
+        for (const placeholder of element.querySelectorAll('i[data-icon]')) {
+            const svg = document.createElementNS(SVG_NS, 'svg');
+            svg.setAttribute('class', `icon ${placeholder.dataset.class || ''}`.trim());
+            svg.setAttribute('aria-hidden', 'true');
+            const use = document.createElementNS(SVG_NS, 'use');
+            use.setAttribute('href', `#i-${placeholder.dataset.icon}`);
+            svg.appendChild(use);
+            placeholder.replaceWith(svg);
+        }
     }
 
     const pad = (n) => String(n || 0).padStart(2, '0');
@@ -111,6 +124,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function formatNoteTimecode(note) {
+        if (!note.timecode) return formatTimecode(null);
         if (note.frameRate === 'ms') return formatTimecode({ ...note.timecode, displayMode: 'realtime' });
         return formatTimecode(note.timecode);
     }
@@ -146,6 +160,11 @@ document.addEventListener('DOMContentLoaded', function() {
         return `hsl(${h % 360}, 45%, 42%)`;
     }
 
+    // Older backups may lack a note's tags or comments; the page assumes lists.
+    function withLists(note) {
+        return { ...note, tags: Array.isArray(note.tags) ? note.tags : [], comments: Array.isArray(note.comments) ? note.comments : [] };
+    }
+
     function tagById(id) {
         return availableTags.find(t => t.id === id) || { id, name: id, color: '#8a8f98' };
     }
@@ -158,7 +177,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const toast = document.createElement('div');
         toast.className = 'toast';
         toast.setAttribute('role', 'status');
-        toast.innerHTML = `<span>${esc(message)}</span>${actionLabel ? `<button type="button" class="link-btn">${esc(actionLabel)}</button>` : ''}`;
+        setHtml(toast, `<span>${esc(message)}</span>${actionLabel ? `<button type="button" class="link-btn">${esc(actionLabel)}</button>` : ''}`);
         if (actionLabel) {
             toast.querySelector('button').addEventListener('click', () => { toast.remove(); action(); });
         }
@@ -185,9 +204,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Tags for the note being written: toggles under the note box.
     function updateTagsDisplay() {
         selectedTags = selectedTags.filter(id => availableTags.some(t => t.id === id));
-        tagsContainer.innerHTML = availableTags.map(tag =>
+        setHtml(tagsContainer, availableTags.map(tag =>
             chipHTML(tag, `data-tag="${esc(tag.id)}" aria-pressed="${selectedTags.includes(tag.id)}"`)
-        ).join('');
+        ).join(''));
     }
 
     // A filter is a button opening a list of choices rather than a <select>,
@@ -200,12 +219,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function renderDropdown(button, popover, options, value) {
         const current = options.find(o => o.value === value) || options[0];
-        button.innerHTML = `${dotHTML(current.color)}<span>${esc(current.label)}</span>`;
+        setHtml(button, `${dotHTML(current.color)}<span>${esc(current.label)}</span>`);
         button.classList.toggle('active', value !== 'all');
-        popover.innerHTML = options.map(o => `
+        setHtml(popover, options.map(o => `
             <button type="button" class="tag-option" role="option" data-value="${esc(o.value)}" aria-selected="${o.value === value}">
-                ${dotHTML(o.color)}${esc(o.label)}<svg class="icon check"><use href="#i-check"/></svg>
-            </button>`).join('');
+                ${dotHTML(o.color)}${esc(o.label)}<i data-icon="check" data-class="check"></i>
+            </button>`).join(''));
     }
 
     function updateFilterTags() {
@@ -388,22 +407,29 @@ document.addEventListener('DOMContentLoaded', function() {
             timecode: currentUser.frozenTimecode,
             lxCue: currentUser.frozenLxCue
         });
+        startAutoResumeTimer();
     }
 
-    function resetComposer() {
-        noteInput.value = '';
-        sendNoteBtn.disabled = true;
+    // Unfreezes the stamp so it follows the show again.
+    function releaseFreeze() {
         currentUser.isTyping = false;
         currentUser.frozenTimecode = null;
         currentUser.frozenLxCue = null;
-        selectedTags = [];
-        updateTagsDisplay();
-        showTagError(false);
         if (timeMode !== 'realtime') updatePersonalTimecodeDisplay(currentGlobalTimecode);
         updatePersonalLxCueDisplay(currentGlobalLxCue);
         window.socket.emit('typing-stop');
         clearAutoResumeTimer();
         updateComposer();
+    }
+
+    function resetComposer() {
+        noteInput.value = '';
+        sendNoteBtn.disabled = true;
+        selectedTags = [];
+        updateTagsDisplay();
+        showTagError(false);
+        releaseFreeze();
+        clearDraft();
     }
 
     // A note needs a tag (unless none are set up) so it reaches the right department.
@@ -438,14 +464,24 @@ document.addEventListener('DOMContentLoaded', function() {
             updatePersonalLxCueDisplay(saved.lxCue);
             sendNoteBtn.disabled = false;
             updateComposer();
+            saveDraft();
         });
     }
 
+    // Restarted by every focus, keystroke and blur: once the box has been
+    // empty that long the stamp follows the show again (see type-to-note.js).
     function startAutoResumeTimer() {
         clearAutoResumeTimer();
         autoResumeTimer = setTimeout(function() {
-            if (noteInput.value.trim() === '' && document.activeElement !== noteInput) cancelNote();
-        }, 15000);
+            autoResumeTimer = null;
+            const action = typeToNote.emptyBoxAction({
+                isTyping: currentUser.isTyping,
+                noteValue: noteInput.value,
+                focused: document.activeElement === noteInput
+            });
+            if (action === 'release') releaseFreeze();
+            else if (action === 'cancel') cancelNote();
+        }, typeToNote.EMPTY_RELEASE_MS);
     }
 
     function clearAutoResumeTimer() {
@@ -469,16 +505,16 @@ document.addEventListener('DOMContentLoaded', function() {
         userCount.textContent = `${list.length} online`;
 
         const MAX = 4;
-        avatarStack.innerHTML = list.slice(0, MAX).map(p =>
+        setHtml(avatarStack, list.slice(0, MAX).map(p =>
             `<span class="avatar${p.isTyping ? ' typing' : ''}" style="background:${personColor(p.key)}">${esc(initials(p.name))}</span>`
-        ).join('') + (list.length > MAX ? `<span class="avatar more">+${list.length - MAX}</span>` : '');
+        ).join('') + (list.length > MAX ? `<span class="avatar more">+${list.length - MAX}</span>` : ''));
 
-        usersList.innerHTML = list.map(p => `
+        setHtml(usersList, list.map(p => `
             <li>
                 <span class="avatar" style="background:${personColor(p.key)}">${esc(initials(p.name))}</span>
                 <span>${esc(p.name)}</span>${p.me ? '<span class="you">you</span>' : ''}
                 ${p.isTyping ? '<span class="writing">writing…</span>' : ''}
-            </li>`).join('');
+            </li>`).join(''));
     }
 
     // --- Popovers (online list, menu, tag picker) ---
@@ -524,10 +560,10 @@ document.addEventListener('DOMContentLoaded', function() {
     function renderTagPicker() {
         const note = allNotes.find(n => n.id === tagPickerNoteId);
         if (!note) return closeTagPicker();
-        tagPickerList.innerHTML = availableTags.map(tag => `
+        setHtml(tagPickerList, availableTags.map(tag => `
             <button type="button" class="tag-option" role="menuitemcheckbox" data-tag="${esc(tag.id)}" aria-checked="${note.tags.includes(tag.id)}" style="--tag: ${safeColor(tag.color)}">
-                <span class="dot"></span>${esc(tag.name)}<svg class="icon check"><use href="#i-check"/></svg>
-            </button>`).join('') || '<div class="popover-title">No tags set up</div>';
+                <span class="dot"></span>${esc(tag.name)}<i data-icon="check" data-class="check"></i>
+            </button>`).join('') || '<div class="popover-title">No tags set up</div>');
     }
 
     function openTagPicker(noteId, anchor) {
@@ -603,11 +639,11 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateChatMessages() {
         chatCount.textContent = plural(chatMessagesList.length, 'message');
         if (chatMessagesList.length === 0) {
-            chatMessages.innerHTML = '<div class="chat-empty">No messages yet. Chat here is for everyone online and isn\'t part of the notes.</div>';
+            setHtml(chatMessages, '<div class="chat-empty">No messages yet. Chat here is for everyone online and isn\'t part of the notes.</div>');
             return;
         }
         const sorted = [...chatMessagesList].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-        chatMessages.innerHTML = sorted.map((m, i) => renderChatMessage(m, sorted[i - 1])).join('');
+        setHtml(chatMessages, sorted.map((m, i) => renderChatMessage(m, sorted[i - 1])).join(''));
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 
@@ -660,7 +696,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function iconButton(action, icon, label, extra) {
-        return `<button type="button" class="icon-btn" data-action="${action}" aria-label="${label}" title="${label}"${extra || ''}><svg class="icon"><use href="#i-${icon}"/></svg></button>`;
+        return `<button type="button" class="icon-btn" data-action="${action}" aria-label="${label}" title="${label}"${extra || ''}><i data-icon="${icon}"></i></button>`;
     }
 
     // Who wrote it, then where in the show (cue and timecode), then when.
@@ -766,7 +802,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function createNoteElement(note) {
         const wrapper = document.createElement('div');
-        wrapper.innerHTML = noteHTML(note).trim();
+        setHtml(wrapper, noteHTML(note).trim());
         const element = wrapper.firstChild;
         noteElements.set(note.id, element);
         return element;
@@ -776,7 +812,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const head = document.createElement('div');
         head.className = 'group-head';
         head.dataset.act = act;
-        head.innerHTML = `<span>${esc(act)}</span><span class="muted group-count"></span>`;
+        setHtml(head, `<span>${esc(act)}</span><span class="muted group-count"></span>`);
         return head;
     }
 
@@ -824,7 +860,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function rebuildFullNotesList() {
-        notesList.innerHTML = '';
+        notesList.replaceChildren();
         noteElements.clear();
         for (const { element } of [...pendingNotes.values()].reverse()) notesList.appendChild(element);
         let lastAct = null;
@@ -862,14 +898,37 @@ document.addEventListener('DOMContentLoaded', function() {
     // has stored it. While disconnected it is held here rather than in
     // socket.io's send buffer, and every pending note is (re)sent on connect:
     // one sent just before a drop may or may not have arrived, and the server
-    // ignores a resend with a clientId it already has.
+    // ignores a resend with a clientId it already has. They are also saved to
+    // localStorage (pending-notes.js), so a reload or a trip through /login
+    // while the server is unreachable does not lose them.
+    const pendingStore = createPendingNotes({
+        // reached inside pendingStore's try/catch, as merely touching localStorage can throw
+        getItem: (key) => localStorage.getItem(key),
+        setItem: (key, value) => localStorage.setItem(key, value),
+        removeItem: (key) => localStorage.removeItem(key)
+    });
+
+    function savePendingNotes() {
+        pendingStore.save(currentUser.sub, [...pendingNotes.values()]);
+    }
+
+    // The notes this browser had not got stored before it was last closed.
+    function restorePendingNotes() {
+        for (const { note, writtenAt } of pendingStore.load(currentUser.sub)) {
+            if (pendingNotes.has(note.clientId) || allNotes.some(n => n.clientId === note.clientId)) continue;
+            showPendingNote(note, writtenAt);
+            sendPendingNote(note, writtenAt);
+        }
+        savePendingNotes();
+    }
+
     function pendingBadgeText() {
         return window.socket.connected ? 'Sending…' : 'Not sent yet · goes out when the connection is back';
     }
 
     function createPendingNoteElement(note) {
         const wrapper = document.createElement('div');
-        wrapper.innerHTML = `
+        setHtml(wrapper, `
             <article class="note pending" data-client-id="${esc(note.clientId)}">
                 ${avatarHTML(currentUser.sub || currentUser.name, currentUser.name)}
                 <div class="note-main">
@@ -878,7 +937,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     ${note.tags.length ? `<div class="note-foot">${tagChipsHTML(note, false)}</div>` : ''}
                 </div>
             </article>
-        `.trim();
+        `.trim());
         return wrapper.firstChild;
     }
 
@@ -894,8 +953,19 @@ document.addEventListener('DOMContentLoaded', function() {
     function sendPendingNote(note, writtenAt) {
         if (!window.socket.connected) return;
         window.socket.emit('note-submit', { ...note, ageMs: Math.max(0, Date.now() - writtenAt) }, (stored) => {
+            if (!stored || stored.error) {
+                // Refused, so resending cannot help: say so on the note and stop trying.
+                const pending = pendingNotes.get(note.clientId);
+                if (!pending) return;
+                pendingNotes.delete(note.clientId);
+                savePendingNotes();
+                pending.element.querySelector('.pending-badge').textContent =
+                    `Not saved: ${(stored && stored.error) || 'refused by the server'}`;
+                pending.element.classList.add('failed');
+                return;
+            }
             clearPendingNote(stored.clientId);
-            addNote(stored);
+            addNote(withLists(stored));
         });
     }
 
@@ -904,35 +974,109 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!pending) return;
         pending.element.remove();
         pendingNotes.delete(clientId);
+        savePendingNotes();
         filterNotes();
     }
 
-    function submitNote(data) {
-        const clientId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-        const note = { ...data, clientId };
-        const writtenAt = Date.now();
+    function showPendingNote(note, writtenAt) {
         const element = createPendingNoteElement(note);
-        pendingNotes.set(clientId, { note, element, writtenAt });
+        pendingNotes.set(note.clientId, { note, element, writtenAt });
         // The newest pending note goes above the older ones.
         notesList.insertBefore(element, notesList.firstChild);
         filterNotes();
+    }
+
+    function newClientId() {
+        if (window.crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+        return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+    }
+
+    function submitNote(data) {
+        const note = { ...data, clientId: newClientId() };
+        const writtenAt = Date.now();
+        showPendingNote(note, writtenAt);
+        savePendingNotes();
         sendPendingNote(note, writtenAt);
     }
 
+    // --- Draft note ---
+    // The note being written is kept in sessionStorage (this tab only), with
+    // its frozen stamp, so a reload or a bounce through /login gives it back.
+    const DRAFT_KEY = 'note-draft';
+
+    function saveDraft() {
+        try {
+            if (noteInput.value.trim() === '') return clearDraft();
+            sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+                text: noteInput.value,
+                tags: selectedTags,
+                timecode: currentUser.frozenTimecode,
+                lxCue: currentUser.frozenLxCue
+            }));
+        } catch (e) { /* storage unavailable */ }
+    }
+
+    function clearDraft() {
+        try { sessionStorage.removeItem(DRAFT_KEY); } catch (e) { /* storage unavailable */ }
+    }
+
+    function restoreDraft() {
+        let draft = null;
+        try { draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY)); } catch (e) { /* none */ }
+        if (!draft || typeof draft.text !== 'string' || !draft.timecode) return;
+        noteInput.value = draft.text;
+        sendNoteBtn.disabled = draft.text.trim().length === 0;
+        selectedTags = Array.isArray(draft.tags) ? draft.tags : [];
+        updateTagsDisplay();
+        currentUser.isTyping = true;
+        currentUser.frozenTimecode = draft.timecode;
+        currentUser.frozenLxCue = draft.lxCue;
+        updatePersonalTimecodeDisplay(draft.timecode);
+        updatePersonalLxCueDisplay(draft.lxCue);
+        updateComposer();
+        startAutoResumeTimer();
+    }
+
+    // --- Login ---
+    // Back through Keycloak to this same page, keeping the note being written.
+    let goingToLogin = false;
+    function goToLogin() {
+        if (goingToLogin) return;
+        goingToLogin = true;
+        saveDraft();
+        window.location.href = loginUrl();
+    }
+
     // --- Socket.io setup ---
-    window.socket = io();
+    // `page` tells the server which page this is (see pageOf() in server.js).
+    window.socket = io({ auth: { page: 'main' } });
 
     // The server refuses the socket handshake when the session is missing or
-    // expired (e.g. the 12-hour login ran out, or local-sessions.json was deleted).
-    // That's distinct from an ordinary network blip - socket.io's normal
+    // expired (e.g. the login sat idle for 12 hours, or local-sessions.json was
+    // deleted). That's distinct from an ordinary network blip - socket.io's normal
     // auto-reconnect can never succeed here, so send the user back through
     // the login flow instead of retrying forever.
     window.socket.on('connect_error', (err) => {
         if (err && err.message === 'unauthorized') {
-            window.location.href = '/login';
+            goToLogin();
             return;
         }
         connectionBanner.hidden = false;
+    });
+
+    // Logged out in another tab: this page's login is gone too.
+    window.socket.on('logged-out', goToLogin);
+
+    keepLoginAlive(goToLogin);
+
+    // A page kept in the back/forward cache (e.g. after visiting the recall
+    // page) must not keep its socket, or the server would count it as open.
+    window.addEventListener('pagehide', (e) => {
+        saveDraft();
+        if (e.persisted) window.socket.disconnect();
+    });
+    window.addEventListener('pageshow', (e) => {
+        if (e.persisted) window.socket.connect();
     });
 
     window.socket.on('disconnect', () => {
@@ -958,6 +1102,7 @@ document.addEventListener('DOMContentLoaded', function() {
             rebuildFullNotesList(); // edit buttons depend on who we are, which may arrive after the notes
             renderUsers(lastUsers);
         }
+        restorePendingNotes();
     });
 
     window.socket.on('users-update', (users) => {
@@ -1028,7 +1173,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (allNotes.length === notes.length && allNotes.every((n, i) => n.id === notes[i].id)) {
             return;
         }
-        allNotes = notes;
+        allNotes = notes.map(withLists);
         for (const note of notes) {
             if (note.clientId) clearPendingNote(note.clientId);
         }
@@ -1037,7 +1182,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     window.socket.on('note-added', (note) => {
         if (note.clientId) clearPendingNote(note.clientId);
-        addNote(note);
+        addNote(withLists(note));
     });
 
     window.socket.on('note-edit-text', ({ noteId, newText, lastEditedBy, lastEdited }) => {
@@ -1124,7 +1269,7 @@ document.addEventListener('DOMContentLoaded', function() {
             updateChatMessages();
         } else {
             const stick = mine || chatNearBottom();
-            if (chatMessagesList.length === 1) chatMessages.innerHTML = '';
+            if (chatMessagesList.length === 1) setHtml(chatMessages, '');
             chatMessages.insertAdjacentHTML('beforeend', renderChatMessage(msg, chatMessagesList[chatMessagesList.length - 2]));
             chatCount.textContent = plural(chatMessagesList.length, 'message');
             if (stick) chatMessages.scrollTop = chatMessages.scrollHeight;
@@ -1153,6 +1298,7 @@ document.addEventListener('DOMContentLoaded', function() {
         chatCopy.onReset();
         for (const { element } of pendingNotes.values()) element.remove();
         pendingNotes.clear();
+        savePendingNotes();
         filterNotes();
     });
 
@@ -1198,9 +1344,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     noteInput.addEventListener('input', () => {
         sendNoteBtn.disabled = noteInput.value.trim().length === 0;
-        startAutoResumeTimer();
+        // After a release, the next key freezes the stamp at that moment.
         if (!currentUser.isTyping && noteInput.value.length > 0) startTyping();
+        else startAutoResumeTimer();
         updateComposer();
+        saveDraft();
     });
     noteInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
@@ -1224,6 +1372,7 @@ document.addEventListener('DOMContentLoaded', function() {
         selectedTags = selectedTags.includes(id) ? selectedTags.filter(t => t !== id) : [...selectedTags, id];
         chip.setAttribute('aria-pressed', String(selectedTags.includes(id)));
         if (!needsTag()) showTagError(false);
+        saveDraft();
     });
 
     sendNoteBtn.addEventListener('click', () => {
@@ -1525,4 +1674,5 @@ document.addEventListener('DOMContentLoaded', function() {
     updatePersonalLxCueDisplay(currentGlobalLxCue);
     updateComposer();
     filterNotes();
+    restoreDraft();
 });

@@ -58,7 +58,7 @@
         <button type="button" id="exportJson" class="menu-item">Download notes (JSON)</button>
         <a href="/config.html" class="menu-item">Settings &amp; status</a>
         <div class="menu-sep"></div>
-        <a href="/logout" id="logoutLink" class="menu-item">Log out</a>
+        <form method="post" action="/logout" class="menu-form"><button type="submit" class="menu-item">Log out</button></form>
     </div>
 
     <main class="page">
@@ -133,10 +133,14 @@
     </aside>
 
     <script src="/socket.io/socket.io.js"></script>
+    <script src="keepalive.js"></script>
     <script src="chat-copy.js"></script>
     <script src="note-order.js"></script>
     <script src="note-author.js"></script>
     <script src="type-to-note.js"></script>
+    <script src="pending-notes.js"></script>
+    <script src="vendor/purify.min.js"></script>
+    <script src="safe-html.js"></script>
     <script src="index.js"></script>
 </body>
 </html>

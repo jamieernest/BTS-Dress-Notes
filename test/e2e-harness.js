@@ -85,6 +85,9 @@ async function startOidc() {
 function createApp({ issuer, sessionsFile, port, env = {} }) {
     let child = null;
     const backupsDir = path.join(path.dirname(sessionsFile), 'backups');
+    // A copy of the tags, so a test that changes them leaves the tracked tags.json alone.
+    const tagsFile = path.join(path.dirname(sessionsFile), 'tags.json');
+    if (!fs.existsSync(tagsFile)) fs.copyFileSync(path.join(ROOT, 'tags.json'), tagsFile);
     return {
         port,
         backupsDir,
@@ -100,7 +103,7 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
                 cwd: ROOT,
                 env: {
                     ...process.env, PORT: String(port), OSC_PORT: String(oscPort), SESSIONS_FILE: sessionsFile,
-                    BACKUPS_DIR: backupsDir,
+                    BACKUPS_DIR: backupsDir, TAGS_FILE: tagsFile,
                     SESSION_SECRET: 'test', KEYCLOAK_ISSUER: issuer, KEYCLOAK_CLIENT_ID: 'bts',
                     KEYCLOAK_CLIENT_SECRET: 'x', EOS_HOST: '127.0.0.1', EOS_PORT: String(await freePort()), ...env
                 },
@@ -119,15 +122,18 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
     };
 }
 
-// Logs in through the real /login -> OIDC -> /callback flow; returns the session cookie.
-async function login(app, oidc, who) {
+// Logs in through the real /login -> OIDC -> /callback flow; returns the session
+// cookie, which the server only sets once the login has succeeded.
+async function login(app, oidc, who, returnTo) {
     oidc.state.nextUser = who;
     const base = `http://127.0.0.1:${app.port}`;
-    let res = await fetch(`${base}/login`, { redirect: 'manual' });
-    const cookie = res.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+    let res = await fetch(`${base}/login${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`, { redirect: 'manual' });
     res = await fetch(res.headers.get('location'), { redirect: 'manual' });
-    res = await fetch(res.headers.get('location'), { redirect: 'manual', headers: { cookie } });
+    res = await fetch(res.headers.get('location'), { redirect: 'manual' });
     assert.strictEqual(res.status, 302, 'login callback should redirect');
+    const cookie = res.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+    assert.ok(cookie, 'login callback should set the session cookie');
+    if (returnTo !== undefined) login.lastRedirect = res.headers.get('location');
     return cookie;
 }
 

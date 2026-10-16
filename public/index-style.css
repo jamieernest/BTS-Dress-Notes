@@ -233,6 +233,7 @@ kbd {
     text-decoration: none;
 }
 .menu-item:hover { background: var(--hover); }
+.menu-form { margin: 0; }
 .menu-sep { height: 1px; background: var(--border); margin: 4px 0; }
 
 .tag-picker-list { max-height: 300px; overflow-y: auto; }
@@ -474,7 +475,6 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
 }
 .icon-btn .icon { width: 15px; height: 15px; }
 .icon-btn:hover { background: var(--hover); color: var(--text); }
-.icon-btn[data-armed] { background: color-mix(in srgb, var(--danger) 18%, transparent); color: var(--danger); }
 @media (hover: hover) {
     .note .row-actions { opacity: 0.35; transition: opacity 0.12s; }
     .note:hover .note-head .row-actions, .note-head .row-actions:focus-within,
@@ -513,6 +513,8 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
 /* Pending (not yet stored by the server) */
 .note.pending { background: rgba(224, 168, 74, 0.05); }
 .pending-badge { color: var(--warn); font-size: 12px; margin-left: auto; }
+.note.pending.failed { background: color-mix(in srgb, var(--danger) 7%, transparent); }
+.note.failed .pending-badge { color: var(--danger); }
 
 /* Replies */
 .comments {
