@@ -94,8 +94,10 @@
         return `
             <div class="note-head">
                 <span class="note-author">${esc(name)}</span>
-                <span class="note-cue">Cue ${esc(note.lxCue || '–')}</span>
-                <span class="note-tc mono" title="${esc(title)}">${esc(TimecodeFormat.formatNoteTimecode(note))}</span>
+                <span class="note-meta">
+                    <span class="note-cue">Cue ${esc(note.lxCue || '–')}</span>
+                    <span class="note-tc mono" title="${esc(title)}">${esc(TimecodeFormat.formatNoteTimecode(note))}</span>
+                </span>
                 ${side}
             </div>`;
     }

@@ -1,4 +1,5 @@
 /* Shared tokens, buttons, top bar, chips and selects are in base.css. */
+.mobile-only, .menu-item.mobile-only { display: none; }
 
 .count-badge {
     min-width: 18px;
@@ -25,7 +26,7 @@
     text-align: center;
 }
 
-.connection-banner:not([hidden]) + .topbar { top: 37px; }
+.connection-banner:not([hidden]) + .topbar { top: var(--connection-banner-h, 37px); }
 
 .live {
     display: flex;
@@ -175,7 +176,7 @@
     box-shadow: 0 0 0 12px var(--bg);
     transition: border-color 0.15s;
 }
-.connection-banner:not([hidden]) ~ .page .composer { top: calc(var(--topbar-h) + 49px); }
+.connection-banner:not([hidden]) ~ .page .composer { top: calc(var(--topbar-h) + var(--connection-banner-h, 37px) + 12px); }
 .composer:focus-within, .composer.open { border-color: var(--border-strong); }
 
 #noteInput {
@@ -348,15 +349,17 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
 .note-head {
     display: flex;
     align-items: center;
+    flex-wrap: wrap;
     gap: 10px;
-    height: 28px;
+    min-height: 28px;
     font-size: 12px;
     color: var(--text-3);
 }
-.note-author { font-size: 13px; font-weight: 500; color: var(--text); }
-.note-cue { color: var(--text-2); }
-.note-tc { color: var(--text-3); }
-.note-head .row-actions { margin-left: auto; }
+.note-author { font-size: 13px; font-weight: 500; color: var(--text); overflow-wrap: anywhere; }
+.note-meta { display: contents; }
+.note-cue { color: var(--text-2); overflow-wrap: anywhere; }
+.note-tc { color: var(--text-3); white-space: nowrap; }
+.note-head .row-actions { margin-left: auto; flex: none; }
 
 .note-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.5; }
 .note-edited { color: var(--text-3); font-size: 12px; margin-top: 4px; }
@@ -398,7 +401,9 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
     border: 1px solid transparent;
     border-radius: var(--radius);
     color: var(--text-3);
+    max-width: 100%;
 }
+.note-foot .chip { height: auto; min-height: 24px; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 .tag-trigger:hover, .tag-trigger[aria-expanded="true"] { border-color: var(--border); background: var(--hover); color: var(--text-2); }
 .tag-trigger:hover .chip { color: var(--text); }
 .tag-trigger .icon { width: 14px; height: 14px; }
@@ -557,7 +562,7 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
 .drawer-head .btn { margin-left: auto; }
 .drawer-head .muted { font-size: 12px; }
 
-.chat-log { flex: 1; overflow-y: auto; padding: 12px 16px 16px; display: flex; flex-direction: column; }
+.chat-log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 16px 16px; display: flex; flex-direction: column; }
 .chat-msg { display: flex; gap: 8px; align-items: flex-end; margin-top: 12px; max-width: 85%; }
 .chat-msg.cont { margin-top: 3px; }
 .chat-msg.mine { align-self: flex-end; }
@@ -605,15 +610,111 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
     /* Hidden visually but still read out, so the icon-only button keeps its name. */
     #chatToggle span:not(.count-badge) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
     .page { padding: 12px 12px 80px; }
+    /* A draft must scroll away, even in a phone's short landscape viewport. */
+    .composer { position: relative; top: auto !important; box-shadow: none; }
     .search { width: 100%; }
     .note { padding: 14px; gap: 10px; }
     .note-head { gap: 8px; }
     .comments { margin-left: -38px; padding: 2px 10px 10px; }
-    .drawer { width: 100vw; }
+    .drawer {
+        width: 100%;
+        top: var(--visible-top, 0px);
+        height: var(--visible-height, 100dvh);
+        bottom: auto;
+        z-index: 65;
+        border: 0;
+        box-shadow: none;
+    }
+    html.chat-open, .chat-open body { overflow: hidden; }
+    .drawer-head { flex: none; padding-top: max(8px, env(safe-area-inset-top)); }
+    .chat-compose { flex: none; padding-bottom: max(12px, env(safe-area-inset-bottom)); }
 }
-@media (max-width: 520px) {
-    .live-item:nth-child(2) { display: none; }
-    /* "4 online" takes less room than the avatars, leaving space for the clock. */
-    .avatar-stack { display: none; }
-    .avatars-count { display: inline; }
+
+@media (max-width: 640px), (pointer: coarse) {
+    #noteInput, .search input, .note-edit textarea, .comment-edit textarea,
+    .comment-box textarea, .chat-compose textarea, .cue-input { font-size: 16px; }
+    .search { min-height: 44px; height: auto; }
+    .icon-btn, .comment .row-actions .icon-btn { width: 44px; height: 44px; flex: none; }
+    .note .row-actions { opacity: 1; }
+    .tag-option, .menu-item { min-height: 44px; padding: 11px 12px; font-size: 15px; }
+    .reply-more { min-height: 44px; height: auto; font-size: 14px; }
+    .comment-box-actions .btn { min-height: 44px; height: auto; }
+    .to-top { min-height: 44px; border-radius: 22px; }
+    .avatars { min-height: 44px; height: auto; }
+    #chatToggle { min-width: 44px; }
+}
+
+@media (max-width: 640px) {
+    .mobile-only { display: inline-flex; }
+    .menu-item.mobile-only { display: block; }
+    .notes-page .topbar { gap: 8px; }
+    .notes-page .topbar-actions { gap: 0; flex: none; }
+    .notes-page:has(.composer:focus-within) .topbar .live { display: none; }
+    .notes-page:has(.composer:focus-within) .topbar .brand { display: block; }
+    .notes-page .live { flex: 1; gap: 12px; font-size: 15px; }
+    .live-item { min-width: 0; }
+    .live-item:first-child { flex: none; }
+    .live-item:nth-child(2), #usersButton, .avatar-stack { display: none; }
+    .live-item:last-child .live-label { display: none; }
+    .live-value { overflow: hidden; text-overflow: ellipsis; }
+    .signal { display: none; }
+    .cue-input { width: 62px; height: 44px; }
+    .page { padding: 16px max(12px, env(safe-area-inset-right)) max(80px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+
+    #noteInput { min-height: 56px; max-height: 35dvh; padding: 14px; }
+    .composer-details { padding: 0 12px 12px; }
+    .composer.open .composer-details { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+    #composerTagsToggle { min-width: 0; max-width: calc(100% - 170px); order: 3; }
+    #composerTagsLabel { overflow: hidden; text-overflow: ellipsis; }
+    .tag-toggles { display: none; flex-basis: 100%; order: 1; gap: 8px; padding: 4px 0; }
+    .tags-expanded .tag-toggles { display: flex; }
+    #tagError { flex-basis: 100%; order: 2; }
+    .composer-footer { display: contents; }
+    .stamp { font-size: 12px; flex-basis: 100%; order: 0; }
+    .stamp:not(.frozen) { display: none; }
+    .stamp-label { display: none; }
+    .composer-actions { order: 4; }
+    #cancelNote { width: 44px; padding: 0; }
+    #cancelNote > span { display: none; }
+    .composer-actions .primary { min-width: 112px; }
+
+    .notes { margin-top: 20px; }
+    .notes-page .notes:not(.has-notes) .toolbar,
+    .composer:focus-within ~ .notes .toolbar,
+    .composer.open ~ .notes #notesEmpty { display: none; }
+    .toolbar .select { flex: 1; min-width: 0; max-width: calc(50% - 4px); }
+    .toolbar-end { height: auto; min-height: 24px; font-size: 13px; }
+    .toolbar-end:has(#notesCount:empty) { display: none; }
+    .notes-page .empty { border: 0; padding-top: 24px; }
+    .empty .muted { font-size: 14px; }
+
+    .note { display: block; padding: 14px; }
+    .note > .avatar { display: none; }
+    .note-head { height: auto; flex-wrap: wrap; gap: 2px 8px; margin-bottom: 8px; }
+    .note-author { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 14px; }
+    .note-meta { display: flex; flex-basis: 100%; order: 2; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; }
+    .note-cue { overflow-wrap: anywhere; }
+    .note-text { font-size: 16px; line-height: 1.6; }
+    .note-foot .chip { height: auto; min-height: 28px; white-space: normal; overflow-wrap: anywhere; }
+    .note .tag-trigger { min-height: 44px; max-width: 100%; }
+    .pending-badge { flex: none; font-size: 12px; }
+    .group-head { flex-wrap: wrap; overflow-wrap: anywhere; }
+    .comments { margin-left: 0; padding: 0 10px 10px; }
+    .comment { gap: 8px; }
+    .comment-head { flex-wrap: wrap; gap: 2px 8px; }
+    .comment-user { overflow-wrap: anywhere; }
+    .comment-head > .muted { font-size: 12px; }
+    .comment-input { gap: 8px; }
+    .comment-input > .avatar { display: none; }
+    .edit-actions { flex-wrap: wrap; }
+
+    .popover { min-width: min(220px, calc(100vw - 16px)); max-width: calc(100vw - 16px); max-height: min(420px, calc(100dvh - 16px)); overflow-y: auto; overscroll-behavior: contain; }
+    .tag-picker-list, .users-list { max-height: 50dvh; }
+    .tag-option { overflow-wrap: anywhere; }
+    .tag-option .check { flex: none; }
+    .toast { width: max-content; max-width: calc(100vw - 24px); bottom: max(72px, env(safe-area-inset-bottom)); }
+    .to-top { bottom: max(16px, env(safe-area-inset-bottom)); }
+    .chat-msg { max-width: 94%; }
+    .chat-msg-head { flex-wrap: wrap; gap: 2px 8px; }
+    .chat-compose textarea { max-height: 25dvh; }
 }

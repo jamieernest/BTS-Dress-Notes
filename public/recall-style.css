@@ -52,7 +52,15 @@
 .notes { margin-top: 8px; }
 
 @media (max-width: 640px) {
-    .topbar .brand { display: none; }
+    .topbar { height: auto; min-height: var(--topbar-h); flex-wrap: wrap; gap: 4px 8px; padding: 8px 12px; }
+    .topbar .brand { display: block; flex: 1; font-size: 14px; overflow-wrap: anywhere; }
+    .show-name { display: block; font-size: 12px; }
+    .show-name::before { content: none; }
+    .topbar-actions:has(#openAnother[hidden]) { display: none; }
+    .saved-show { min-height: 64px; font-size: 14px; }
+    .saved-show-name { min-width: 0; flex-basis: 100%; }
+    .page { display: flex; flex-direction: column; }
+    .saved-shows { order: -1; margin: 0 0 24px; }
     .drop-zone { margin-top: 24px; min-height: 260px; padding: 32px 16px; }
 }
 

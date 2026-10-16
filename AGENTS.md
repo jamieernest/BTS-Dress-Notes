@@ -34,6 +34,10 @@ Shared UI lives in `public/note-view.js` (note, reply, tag chip, avatar and scen
 
 `public/base.css` (tokens, buttons, topbar, chips, selects) is loaded by every page; each page's own CSS only adds its layout. A note always keeps at least one tag: the composer requires one, the tag picker (opened from the note's tag chips) won't untick the last, and the server's `note-update-tags` refuses an empty list. Keep backend detail (saving, servers, sockets) out of user-facing text.
 
+Button and menu labels use plain action text without trailing ellipses.
+
+Phone composition (`public/index-style.css`, `public/index.js`) folds tags behind a button and keeps the composer in the page's scroll flow. Enter adds a line on phones/touch devices; use Send to submit. Chat fills the screen below 860px; its height and offset follow `visualViewport` so the keyboard does not cover Send, and the underlying page is inert. Only wide screens restore an open chat on reload (`index-boot.js`).
+
 The main page draws this tab's last notes and header state (`public/notes-snapshot.js`, sessionStorage, saved on `pagehide`/hidden, cleared on logout) before the socket connects; server updates always replace them. `public/index-boot.js` restores the chat layout before paint. `public/loading-state.js` shares delayed skeletons and their minimum visible time across notes, chat and saved shows; cached content bypasses the delay. Keep the initial loading classes in HTML so neither defaults nor empty states flash before scripts run. `rebuildFullNotesList()` draws progressively (first 30, then batches via `setTimeout`), so code that needs every row drawn can't assume it right after a rebuild. `notes-update` with the same ids updates changed notes in place (`updateNoteElement`) rather than rebuilding; avoid adding full rebuilds to connect-time handlers, since each costs about 0.5 ms per note in DOMPurify.
 
 ## Eos OSC input

@@ -32,6 +32,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const exportJsonBtn = $('exportJson');
     const currentUserName = $('currentUserName');
     const tagsContainer = $('tagsContainer');
+    const composerTagsToggle = $('composerTagsToggle');
+    const composerTagsLabel = $('composerTagsLabel');
+    const menuUsersButton = $('menuUsersButton');
     const tagFilter = $('tagFilter');
     const tagError = $('tagError');
     const currentActDisplay = $('currentActDisplay');
@@ -51,6 +54,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const chatCount = $('chatCount');
     const scrollToTopBtn = $('scrollToTopBtn');
     const connectionBanner = $('connectionBanner');
+    const phoneLayout = matchMedia('(max-width: 640px)');
+    const touchInput = matchMedia('(pointer: coarse)');
+    const modalChatLayout = matchMedia('(max-width: 860px)');
 
     // --- State variables ---
     let currentUser = {
@@ -166,6 +172,19 @@ document.addEventListener('DOMContentLoaded', function() {
         setHtml(tagsContainer, availableTags.map(tag =>
             chipHTML(tag, `data-tag="${esc(tag.id)}" aria-pressed="${selectedTags.includes(tag.id)}"`)
         ).join(''));
+        updateComposerTagsLabel();
+    }
+
+    function updateComposerTagsLabel() {
+        const names = selectedTags.map(id => tagById(id).name);
+        composerTagsLabel.textContent = names.length === 1 ? names[0] : names.length ? `${names.length} tags` : 'Choose tags';
+        composerTagsToggle.title = names.join(', ') || 'Choose tags for this note';
+        composerTagsToggle.hidden = availableTags.length === 0;
+    }
+
+    function setComposerTagsExpanded(open) {
+        composer.classList.toggle('tags-expanded', open);
+        composerTagsToggle.setAttribute('aria-expanded', String(open));
     }
 
     function updateFilterTags() {
@@ -211,6 +230,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const total = allNotes.length - deletedNotes.size;
+        notesSection.classList.toggle('has-notes', total > 0 || pendingNotes.size > 0);
         notesCount.textContent = filtersActive() ? `${shown} of ${plural(total, 'note')}` : '';
         clearFiltersBtn.hidden = !filtersActive();
         notesEmpty.hidden = total > 0 || pendingNotes.size > 0;
@@ -360,6 +380,7 @@ document.addEventListener('DOMContentLoaded', function() {
         noteInput.value = '';
         sendNoteBtn.disabled = true;
         selectedTags = [];
+        setComposerTagsExpanded(false);
         updateTagsDisplay();
         showTagError(false);
         releaseFreeze();
@@ -374,6 +395,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function showTagError(show) {
         tagError.hidden = !show;
         tagsContainer.classList.toggle('invalid', show);
+        if (show) setComposerTagsExpanded(true);
     }
 
     function cancelNote() {
@@ -383,7 +405,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // Discarding typed text can be undone for a few seconds (stamp included).
     function discardNote() {
         const text = noteInput.value;
-        if (!text.trim()) return cancelNote();
+        if (!text.trim()) {
+            cancelNote();
+            if (phoneLayout.matches) { noteInput.blur(); cancelNoteBtn.blur(); updateComposer(); }
+            return;
+        }
         const saved = { text, tags: [...selectedTags], timecode: currentUser.frozenTimecode, lxCue: currentUser.frozenLxCue };
         cancelNote();
         noteInput.blur();
@@ -587,13 +613,50 @@ document.addEventListener('DOMContentLoaded', function() {
         chatDrawer.hidden = !open;
         document.documentElement.classList.toggle('chat-open', open);
         chatToggle.setAttribute('aria-expanded', String(open));
+        updateChatLayout();
         if (open) {
+            closePopovers();
             unreadChat = 0;
             updateUnread();
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
         try { localStorage.setItem('chat-open', open ? '1' : '0'); } catch (e) { /* ignore */ }
     }
+
+    // On phones chat occupies the visible viewport, including while the
+    // software keyboard is open. The page underneath is not interactive.
+    function updateChatLayout() {
+        const modal = modalChatLayout.matches && !chatDrawer.hidden;
+        document.querySelector('.page').inert = modal;
+        document.querySelector('.topbar').inert = modal;
+        scrollToTopBtn.inert = modal;
+        if (modal) {
+            chatDrawer.setAttribute('role', 'dialog');
+            chatDrawer.setAttribute('aria-modal', 'true');
+            chatDrawer.setAttribute('aria-labelledby', 'chatTitle');
+        } else {
+            chatDrawer.removeAttribute('role');
+            chatDrawer.removeAttribute('aria-modal');
+            chatDrawer.removeAttribute('aria-labelledby');
+        }
+    }
+
+    function updateVisibleViewport() {
+        const viewport = window.visualViewport;
+        document.documentElement.style.setProperty('--visible-height', `${viewport?.height ?? window.innerHeight}px`);
+        document.documentElement.style.setProperty('--visible-top', `${viewport?.offsetTop ?? 0}px`);
+    }
+    window.visualViewport?.addEventListener('resize', updateVisibleViewport);
+    window.visualViewport?.addEventListener('scroll', updateVisibleViewport);
+    window.addEventListener('resize', updateVisibleViewport);
+    modalChatLayout.addEventListener('change', () => {
+        updateChatLayout();
+        if (!chatDrawer.hidden && modalChatLayout.matches && !chatDrawer.contains(document.activeElement)) chatClose.focus();
+    });
+    updateVisibleViewport();
+    new ResizeObserver(() => {
+        document.documentElement.style.setProperty('--connection-banner-h', `${connectionBanner.offsetHeight}px`);
+    }).observe(connectionBanner);
 
     function sendChatMessage() {
         const text = chatInput.value.trim();
@@ -1348,6 +1411,7 @@ document.addEventListener('DOMContentLoaded', function() {
     lxCueInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') lxCueInput.blur(); });
 
     usersButton.addEventListener('click', (e) => { e.stopPropagation(); togglePopover(usersPopover, usersButton); });
+    menuUsersButton.addEventListener('click', (e) => { e.stopPropagation(); togglePopover(usersPopover, menuButton); });
     menuButton.addEventListener('click', (e) => { e.stopPropagation(); togglePopover(menuPopover, menuButton); });
     exportJsonBtn.addEventListener('click', () => {
         closePopovers();
@@ -1356,9 +1420,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
     chatToggle.addEventListener('click', () => {
         setChatOpen(chatDrawer.hidden);
-        if (!chatDrawer.hidden) chatInput.focus();
+        if (!chatDrawer.hidden) (modalChatLayout.matches ? chatClose : chatInput).focus();
     });
-    chatClose.addEventListener('click', () => setChatOpen(false));
+    chatClose.addEventListener('click', () => { setChatOpen(false); chatToggle.focus(); });
+
+    chatDrawer.addEventListener('keydown', (e) => {
+        if (!modalChatLayout.matches || e.key !== 'Tab') return;
+        const controls = [...chatDrawer.querySelectorAll('button:not(:disabled), textarea')];
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
 
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.popover') && !e.target.closest('[data-action="edit-tags"]')) closePopovers();
@@ -1379,7 +1452,7 @@ document.addEventListener('DOMContentLoaded', function() {
         saveDraft();
     });
     noteInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !phoneLayout.matches && !touchInput.matches) {
             e.preventDefault();
             if (!sendNoteBtn.disabled) sendNoteBtn.click();
         }
@@ -1411,15 +1484,18 @@ document.addEventListener('DOMContentLoaded', function() {
         const id = chip.dataset.tag;
         selectedTags = selectedTags.includes(id) ? selectedTags.filter(t => t !== id) : [...selectedTags, id];
         chip.setAttribute('aria-pressed', String(selectedTags.includes(id)));
+        updateComposerTagsLabel();
         if (!needsTag()) showTagError(false);
         saveDraft();
     });
+    composerTagsToggle.addEventListener('click', () => setComposerTagsExpanded(!composer.classList.contains('tags-expanded')));
 
     sendNoteBtn.addEventListener('click', () => {
         const text = noteInput.value.trim();
         if (text && needsTag()) {
             showTagError(true);
-            noteInput.focus();
+            if (phoneLayout.matches) tagsContainer.querySelector('button')?.focus();
+            else noteInput.focus();
             return;
         }
         if (text && currentUser.frozenTimecode) {
@@ -1431,8 +1507,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 tags: selectedTags,
             });
             resetComposer();
-            noteInput.focus(); // ready for the next one; the stamp locks again on the next key
+            // Dismiss the phone keyboard after sending; desktop stays ready to type.
+            if (phoneLayout.matches || touchInput.matches) {
+                noteInput.blur();
+                sendNoteBtn.blur();
+            } else noteInput.focus();
             currentUser.isTyping = false;
+            updateComposer();
             window.scrollTo({ top: 0 });
         }
     });
@@ -1452,7 +1533,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         const ctx = {
-            modalOpen: !tagPicker.hidden,
+            modalOpen: !tagPicker.hidden || (modalChatLayout.matches && !chatDrawer.hidden),
             noteHasText: noteInput.value.length > 0,
             body: document.body
         };
@@ -1486,7 +1567,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- Event listeners: chat ---
     chatInput.addEventListener('input', () => { sendChatBtn.disabled = chatInput.value.trim().length === 0; });
     chatInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !phoneLayout.matches && !touchInput.matches) {
             e.preventDefault();
             sendChatMessage();
         }

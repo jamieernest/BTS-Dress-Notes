@@ -119,7 +119,7 @@
 .debug-grid dd { color: var(--text-2); overflow-wrap: anywhere; }
 
 @media (max-width: 640px) {
-    .topbar .brand { display: none; }
+    .topbar .brand { display: block; }
     .topbar-user .muted { display: none; }
     .settings { padding: 20px 12px 60px; }
     .row { flex-wrap: wrap; }
@@ -128,7 +128,14 @@
     .row:not(:has(.state-dot)) .row-value { padding-left: 0; }
     .row .input { flex-basis: 100%; }
     .row .select { margin-left: 0; min-width: 0; width: 100%; max-width: none; }
-    .segmented { margin-left: 0; }
+    .segmented { margin-left: 0; width: 100%; display: flex; flex-wrap: wrap; }
+    .segmented button { min-height: 44px; height: auto; flex: 1; padding: 8px; font-size: 14px; }
+    .row { font-size: 15px; padding: 12px; }
+    .row .input { min-width: 0; width: 100%; }
+    .row-text, .reset-confirm span { min-width: 0; flex-basis: 100%; }
+    .section h2 { font-size: 16px; }
+    .section-note { font-size: 14px; }
+    .debug summary { min-height: 44px; padding: 10px 0; font-size: 14px; }
     .debug-grid { grid-template-columns: 1fr; gap: 2px; }
     .debug-grid dd { margin-bottom: 6px; }
 }

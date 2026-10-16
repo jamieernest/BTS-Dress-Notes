@@ -25,7 +25,7 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
-html { background: var(--bg); }
+html { background: var(--bg); -webkit-text-size-adjust: 100%; }
 
 /* Shared symbols are included in the HTML by server.js, before any icon use. */
 .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; pointer-events: none; }
@@ -169,3 +169,22 @@ kbd {
 }
 .empty-title { font-weight: 500; margin-bottom: 4px; }
 .empty .muted { max-width: 420px; margin: 0 auto; }
+
+/* Comfortable touch targets and 16px text fields prevent phone browsers from
+   zooming the page when a field receives focus. */
+@media (max-width: 640px), (pointer: coarse) {
+    .btn { min-height: 44px; height: auto; font-size: 14px; justify-content: center; }
+    .btn.icon-only { width: 44px; min-width: 44px; }
+    .select, .input { min-height: 44px; height: auto; font-size: 16px; }
+    input, select, textarea { font-size: 16px; }
+    button.chip { min-height: 44px; height: auto; max-width: 100%; padding: 8px 12px; border-radius: 22px; font-size: 14px; white-space: normal; overflow-wrap: anywhere; text-align: left; }
+    .link-btn { min-height: 44px; padding: 8px 4px; font-size: 14px; }
+}
+
+@media (max-width: 640px) {
+    :root { --topbar-h: 60px; --text-3: #969ba5; }
+    body { font-size: 16px; }
+    .topbar { gap: 8px; padding-left: max(12px, env(safe-area-inset-left)); padding-right: max(12px, env(safe-area-inset-right)); }
+    .brand { min-width: 0; white-space: normal; }
+    .empty { padding: 32px 20px; }
+}
