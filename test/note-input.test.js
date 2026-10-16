@@ -50,3 +50,19 @@ test('cue labels and ids', () => {
     assert.strictEqual(input.cleanId(''), null);
     assert.strictEqual(input.cleanId({}), null);
 });
+
+test('an imported or restored note is rebuilt from the known fields only', () => {
+    const [note] = input.cleanStoredNotes([{
+        id: 'n1', user: 'Alice', userId: 'sub-a', text: 'hi', timestamp: '2026-10-16T10:00:00.000Z',
+        timecode: { hours: 1, minutes: 2, seconds: 3, onclick: 'x' }, tags: ['lx', {}], act: 'Act 1',
+        lxCue: '<img src=x>', frameRate: 'fast', extra: '<script>',
+        comments: [{ id: 'c1', user: 'Bob', text: 'ok', style: 'x' }, { text: 'no id' }]
+    }, { id: 'n2', text: 'no timestamp' }]);
+    assert.deepStrictEqual(note, {
+        id: 'n1', user: 'Alice', userId: 'sub-a', text: 'hi', timestamp: '2026-10-16T10:00:00.000Z',
+        timecode: { hours: 1, minutes: 2, seconds: 3, frames: 0 }, lxCue: '<img src=x>', frameRate: null,
+        tags: ['lx'], act: 'Act 1', comments: [{ id: 'c1', user: 'Bob', text: 'ok' }]
+    });
+    assert.deepStrictEqual(input.cleanStoredTags([{ id: 'lx', name: 'LX', color: 'red"><b>' }, { name: 'no id' }]),
+        [{ id: 'lx', name: 'LX', color: null }]);
+});

@@ -102,7 +102,10 @@ test('logging out closes that login\'s open pages but not anyone else\'s', async
     t.after(() => { alicePage.socket.close(); bobPage.socket.close(); });
     await until(() => alicePage.socket.connected && bobPage.socket.connected, 'both pages to connect');
 
+    // A plain link (GET) does not log out: only the page's form (POST) does.
     await fetch(`${base}/logout`, { redirect: 'manual', headers: { cookie: alice } });
+    assert.strictEqual((await fetch(`${base}/session`, { headers: { cookie: alice } })).status, 200);
+    await fetch(`${base}/logout`, { method: 'POST', redirect: 'manual', headers: { cookie: alice } });
     await until(() => alicePage.loggedOut && !alicePage.socket.connected, 'alice\'s page to be logged out');
     assert.strictEqual(bobPage.socket.connected, true);
     assert.strictEqual(bobPage.loggedOut, false);

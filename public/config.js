@@ -18,7 +18,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const networkInterfaceSelect = byId('networkInterfaceSelect');
 
     function fillSelect(select, options, value) {
-        select.innerHTML = '';
+        select.replaceChildren();
         options.forEach(([optionValue, label]) => {
             const option = document.createElement('option');
             option.value = optionValue;

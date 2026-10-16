@@ -38,7 +38,7 @@
                 <div class="user-info">
                     <span>You are: </span>
                     <span class="user-name-display" id="currentUserName">Guest</span>
-                    <a href="/logout" id="logoutLink" class="logout-link">Log out</a>
+                    <form method="post" action="/logout" class="logout-form"><button type="submit" class="logout-link">Log out</button></form>
                 </div>
                 <details class="users-panel" id="usersPanel" open>
                     <summary>Online users</summary>
@@ -185,6 +185,8 @@
     <script src="note-author.js"></script>
     <script src="type-to-note.js"></script>
     <script src="pending-notes.js"></script>
+    <script src="vendor/purify.min.js"></script>
+    <script src="safe-html.js"></script>
     <script src="index.js"></script>
 </body>
 </html>

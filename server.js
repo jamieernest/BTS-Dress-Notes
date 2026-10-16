@@ -18,13 +18,31 @@ const { sanitizeAge, insertionIndex } = require('./public/note-order');
 const { canEditNote } = require('./public/note-author');
 const input = require('./note-input');
 const crypto = require('crypto');
+const helmet = require('helmet');
 const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
 
 const app = express();
 const server = http.createServer(app);
 // A restarted server is offered chat copies of up to ~5 MB (the browser's
 // localStorage quota), well above the 1 MB default for one incoming message.
-const io = socketIo(server, { maxHttpBufferSize: 16e6 });
+// A socket is only accepted from this app's own pages: a browser sends its
+// page's Origin on the handshake, and one from another site is refused (on top
+// of the SameSite=Lax login cookie, which such a handshake does not carry).
+// Clients that send no Origin (scripts, the tests) are not browsers on another site.
+function sameOrigin(req) {
+    const origin = req.headers.origin;
+    if (!origin) return true;
+    const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    try {
+        return new URL(origin).host === host;
+    } catch (error) {
+        return false;
+    }
+}
+const io = socketIo(server, {
+    maxHttpBufferSize: 16e6,
+    allowRequest: (req, callback) => callback(null, sameOrigin(req))
+});
 
 const eosHost = process.env.EOS_HOST || '10.10.160.143';
 const eosPort = process.env.EOS_PORT || 3037;
@@ -74,9 +92,10 @@ io.engine.trustProxy = true;
 
 const PORT = process.env.PORT || 80;
 
-// Session cookie is signed by this app; secure:false is intentional - the
-// venue LAN serves this app over plain HTTP, and the goal is to minimize
-// dependence on anything outside the venue LAN (see captain's decision).
+// Session cookie is signed by this app. The venue LAN serves this app over
+// plain HTTP, and the goal is to minimize dependence on anything outside the
+// venue LAN (see captain's decision), so the cookie is only marked Secure when
+// the request itself came over HTTPS.
 // Sessions are kept in git-ignored local-sessions.json so logins survive a
 // server restart.
 // The login lasts SESSION_IDLE_MS since the browser last talked to the server
@@ -95,12 +114,45 @@ const sessionMiddleware = session({
     saveUninitialized: false,
     rolling: true,
     cookie: {
-        secure: false,
+        secure: 'auto', // only when the request came over HTTPS (directly or via a trusted proxy)
         httpOnly: true,
         sameSite: 'lax',
         maxAge: SESSION_IDLE_MS
     }
 });
+app.disable('x-powered-by');
+
+function originOf(url) {
+    try {
+        return url ? [new URL(url).origin] : [];
+    } catch (error) {
+        return [];
+    }
+}
+
+// Security headers. The Content-Security-Policy only lets the pages run
+// scripts served from this app (no inline scripts or event handlers, which is
+// what an injected note would need), so keep all JavaScript in .js files.
+// Inline style attributes are still allowed: the templates use them, and tag
+// colours are checked before they go into one (public/safe-html.js).
+// The app is served over plain HTTP on the venue LAN, so nothing may push
+// browsers to HTTPS: no HSTS and no upgrade-insecure-requests.
+// form-action also lists Keycloak, where /logout redirects the logout form.
+app.use(helmet({
+    contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+            'script-src': ["'self'"],
+            'style-src': ["'self'", "'unsafe-inline'"],
+            'img-src': ["'self'", 'data:'],
+            'connect-src': ["'self'"],
+            'form-action': ["'self'", ...originOf(KEYCLOAK_ISSUER)],
+            'upgrade-insecure-requests': null
+        }
+    },
+    strictTransportSecurity: false
+}));
+
 app.use(sessionMiddleware);
 
 // openid-client v6 is ESM-only; loaded once via dynamic import at startup.
@@ -239,7 +291,10 @@ app.get('/callback', async (req, res) => {
 });
 
 // Destroys the local session and redirects to Keycloak's end-session endpoint.
-app.get('/logout', (req, res) => {
+// POST only (the pages use a form), so a link or image on another site cannot
+// log anyone out; the SameSite=Lax cookie is not sent on a cross-site POST.
+app.get('/logout', (req, res) => res.redirect('/'));
+app.post('/logout', (req, res) => {
     const idToken = req.session && req.session.user && req.session.user.idToken;
     const finish = () => {
         if (oidcConfig) {
@@ -293,6 +348,10 @@ app.get('/session', (req, res) => {
 
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
+// Browser libraries, served from node_modules so they are pinned by package-lock.json.
+app.get('/vendor/purify.min.js', (req, res) => {
+    res.sendFile(require.resolve('dompurify/dist/purify.min.js'));
+});
 
 // Add explicit route for root
 app.get('/', (req, res) => {
@@ -320,10 +379,11 @@ app.get('/favicon.ico', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'favicon.ico'));
 });
 
-// Load tags from JSON file
+// Load tags from JSON file (TAGS_FILE is for the tests, which must not change the tracked one)
+const TAGS_FILE = process.env.TAGS_FILE || path.join(__dirname, 'tags.json');
 let tags = [];
 try {
-    const tagsData = fs.readFileSync(path.join(__dirname, 'tags.json'), 'utf8');
+    const tagsData = fs.readFileSync(TAGS_FILE, 'utf8');
     const tagsConfig = JSON.parse(tagsData);
     tags = tagsConfig.tags;
     console.log(`Loaded ${tags.length} tags from tags.json`);
@@ -339,10 +399,11 @@ try {
     ];
 }
 
-// Function to save tags to file
+// Saves the current tags. globalState.tags, not the list loaded at start:
+// deleting a tag or importing a backup replaces the array.
 function saveTagsToFile() {
     try {
-        fs.writeFileSync(path.join(__dirname, 'tags.json'), JSON.stringify({ tags: tags }, null, 2));
+        fs.writeFileSync(TAGS_FILE, JSON.stringify({ tags: globalState.tags }, null, 2));
     } catch (error) {
         console.log('Error saving tags to file:', error.message);
     }
@@ -864,6 +925,12 @@ function backup(sync = false) {
 // hours old and passes the check (see notes-backup.js), so a crash does not
 // lose the dress notes while a restart days later starts clean. A bad backup
 // is skipped, never fatal.
+// A backup's tags, rebuilt like a tag from the tag editor; one without a
+// valid colour gets a random one, as a new tag does.
+function storedTags(list) {
+    return input.cleanStoredTags(list).map(t => ({ ...t, color: t.color || getRandomColor() }));
+}
+
 function restoreNotes() {
     try {
         const found = findRestorableBackup(BACKUPS_DIR);
@@ -871,8 +938,8 @@ function restoreNotes() {
             console.log(`Notes restore: skipped backups/${file}: ${reason}`);
         }
         if (found.file) {
-            globalState.notes = applyAuthors(found.data.notes, found.data.authors);
-            if (found.data.tags) globalState.tags = found.data.tags;
+            globalState.notes = applyAuthors(input.cleanStoredNotes(found.data.notes), found.data.authors);
+            if (found.data.tags) globalState.tags = storedTags(found.data.tags);
             console.log(`Notes restore: loaded ${found.data.notes.length} notes from backups/${found.file}`);
         } else {
             console.log(`Notes restore: starting empty (${found.reason})`);
@@ -1321,15 +1388,11 @@ io.on('connection', (socket) => {
             return;
         }
         console.log(`Backup with ${data.notes.length} notes imported by ${user.name}`);
-        globalState.notes = applyAuthors(data.notes, data.authors);
-        for (const note of globalState.notes) {
-            if (!Array.isArray(note.tags)) note.tags = [];
-            if (!Array.isArray(note.comments)) note.comments = [];
-        }
+        globalState.notes = applyAuthors(input.cleanStoredNotes(data.notes), data.authors);
 
         // Restore tags if present in backup
         if (data.tags) {
-            globalState.tags = data.tags;
+            globalState.tags = storedTags(data.tags);
             saveTagsToFile(); // Save to tags.json
         }
 

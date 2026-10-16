@@ -122,11 +122,8 @@ document.addEventListener('DOMContentLoaded', function() {
         return date.toLocaleDateString();
     }
 
-    // Also used inside attribute values, so quotes are escaped too.
-    const htmlEscapes = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-    function escapeHtml(str) {
-        return String(str == null ? '' : str).replace(/[&<>"']/g, (m) => htmlEscapes[m]);
-    }
+    // See public/safe-html.js: escape every value, set HTML only through setHtml().
+    const { escapeHtml, safeColour, setHtml } = SafeHtml;
 
     // --- Tag persistence ---
     function loadTagsFromStorage() {
@@ -148,17 +145,15 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeTags();
 
     function updateTagsDisplay() {
-        tagsContainer.innerHTML = '';
-        availableTags.forEach(tag => {
+        setHtml(tagsContainer, availableTags.map(tag => {
             const tagId = `tag-${tag.id}`;
-            const tagElement = `
+            return `
                 <input type="checkbox" id="${escapeHtml(tagId)}" class="tag-checkbox" value="${escapeHtml(tag.id)}" ${selectedTags.includes(tag.id) ? 'checked' : ''}>
-                <label for="${escapeHtml(tagId)}" class="tag-label" style="background-color: ${escapeHtml(tag.color)}; color: #000;">
+                <label for="${escapeHtml(tagId)}" class="tag-label" style="background-color: ${safeColour(tag.color)}; color: #000;">
                     ${escapeHtml(tag.name)}
                 </label>
             `;
-            tagsContainer.innerHTML += tagElement;
-        });
+        }).join(''));
         availableTags.forEach(tag => {
             const checkbox = document.getElementById(`tag-${tag.id}`);
             if (checkbox) {
@@ -171,15 +166,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateFilterTags() {
-        filterTagsContainer.innerHTML = '<div class="filter-tag active" data-tag="all">All Notes</div>';
-        availableTags.forEach(tag => {
-            const filterTagElement = `
-                <div class="filter-tag" data-tag="${escapeHtml(tag.id)}" style="background-color: ${escapeHtml(tag.color)}; color: #000;">
+        setHtml(filterTagsContainer, '<div class="filter-tag active" data-tag="all">All Notes</div>' + availableTags.map(tag => `
+                <div class="filter-tag" data-tag="${escapeHtml(tag.id)}" style="background-color: ${safeColour(tag.color)}; color: #000;">
                     ${escapeHtml(tag.name)}
                 </div>
-            `;
-            filterTagsContainer.innerHTML += filterTagElement;
-        });
+            `).join(''));
         document.querySelectorAll('.filter-tag').forEach(tag => {
             tag.addEventListener('click', function() {
                 filterTag = this.getAttribute('data-tag');
@@ -192,20 +183,18 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateEditTagsDisplay(noteTags) {
-        editTagsContainer.innerHTML = '';
         noteTags = noteTags || [];
         editTagsSelected = [...noteTags];
-        availableTags.forEach(tag => {
+        setHtml(editTagsContainer, availableTags.map(tag => {
             const tagId = `edit-tag-${tag.id}`;
             const isChecked = noteTags.includes(tag.id);
-            const tagElement = `
+            return `
                 <input type="checkbox" id="${escapeHtml(tagId)}" class="tag-checkbox" value="${escapeHtml(tag.id)}" ${isChecked ? 'checked' : ''}>
-                <label for="${escapeHtml(tagId)}" class="tag-label" style="background-color: ${escapeHtml(tag.color)}; color: #000;">
+                <label for="${escapeHtml(tagId)}" class="tag-label" style="background-color: ${safeColour(tag.color)}; color: #000;">
                     ${escapeHtml(tag.name)}
                 </label>
             `;
-            editTagsContainer.innerHTML += tagElement;
-        });
+        }).join(''));
         availableTags.forEach(tag => {
             const checkbox = document.getElementById(`edit-tag-${tag.id}`);
             if (checkbox) {
@@ -235,11 +224,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function updateActFilter() {
         const uniqueActs = [...new Set(allNotes.map(note => note.act || 'Preshow'))];
-        actFilter.innerHTML = '<div class="filter-tag active" data-act="all">All Acts</div>';
-        uniqueActs.forEach(act => {
-            const actElement = `<div class="filter-tag" data-act="${escapeHtml(act)}">${escapeHtml(act)}</div>`;
-            actFilter.innerHTML += actElement;
-        });
+        setHtml(actFilter, '<div class="filter-tag active" data-act="all">All Acts</div>' +
+            uniqueActs.map(act => `<div class="filter-tag" data-act="${escapeHtml(act)}">${escapeHtml(act)}</div>`).join(''));
         document.querySelectorAll('.act-filter .filter-tag').forEach(tag => {
             tag.addEventListener('click', function() {
                 filterAct = this.getAttribute('data-act');
@@ -412,22 +398,22 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateChatMessages() {
         chatCount.textContent = `${chatMessagesList.length} shitpost${chatMessagesList.length !== 1 ? 's' : ''}`;
         if (chatMessagesList.length === 0) {
-            chatMessages.innerHTML = '<div style="text-align: center; opacity: 0.7; padding: 2rem;">No chat messages yet. Start the conversation!</div>';
+            setHtml(chatMessages, '<div style="text-align: center; opacity: 0.7; padding: 2rem;">No chat messages yet. Start the conversation!</div>');
             return;
         }
         const sorted = [...chatMessagesList].sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
-        chatMessages.innerHTML = sorted.map(msg => {
+        setHtml(chatMessages, sorted.map(msg => {
             const time = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             return `
                 <div class="chat-message">
                     <div class="chat-message-header">
                         <span class="chat-message-user">${escapeHtml(msg.user)}</span>
-                        <span class="chat-message-time">${time}</span>
+                        <span class="chat-message-time">${escapeHtml(time)}</span>
                     </div>
                     <div class="chat-message-text">${escapeHtml(msg.text)}</div>
                 </div>
             `;
-        }).join('');
+        }).join(''));
         setTimeout(() => chatMessages.scrollTop = chatMessages.scrollHeight, 100);
     }
 
@@ -467,7 +453,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function getTagElements(tags) {
         return (tags || []).map(tagId => {
             const tag = availableTags.find(t => t.id === tagId);
-            return tag ? `<span class="note-tag" style="background-color: ${escapeHtml(tag.color)}; color: #000;">${escapeHtml(tag.name)}</span>`
+            return tag ? `<span class="note-tag" style="background-color: ${safeColour(tag.color)}; color: #000;">${escapeHtml(tag.name)}</span>`
                        : `<span class="note-tag" style="background-color: #cccccc; color: #000;">${escapeHtml(tagId)}</span>`;
         }).join('');
     }
@@ -486,22 +472,22 @@ document.addEventListener('DOMContentLoaded', function() {
         const act = escapeHtml(note.act || 'Preshow');
         const timecodeDisplay = formatNoteTimecode(note);
         const tagElements = getTagElements(tags);
-        const editButton = `<button class="small edit-tags-btn" data-action="edit-tags" data-note-id="${note.id}">Edit Tags</button>`;
-        const editNoteButton = !NoteAuthor.canEditNote(note, currentUser.sub) ? '' : `<button class="small edit-note-btn" data-action="edit-note" data-note-id="${note.id}">Edit Note</button>`;
+        const editButton = `<button class="small edit-tags-btn" data-action="edit-tags" data-note-id="${escapeHtml(note.id)}">Edit Tags</button>`;
+        const editNoteButton = !NoteAuthor.canEditNote(note, currentUser.sub) ? '' : `<button class="small edit-note-btn" data-action="edit-note" data-note-id="${escapeHtml(note.id)}">Edit Note</button>`;
         const editedIndicator = note.lastEdited ? `<div class="note-edited">Last edited by ${escapeHtml(note.lastEditedBy || 'unknown')} at ${new Date(note.lastEdited).toLocaleTimeString()}</div>` : '';
         const isCommentsExpanded = expandedCommentSections.has(note.id);
         const commentCount = note.comments ? note.comments.length : 0;
 
         const commentsSection = `
             <div class="comments-section">
-                <button class="comments-toggle ${isCommentsExpanded ? 'expanded' : ''}" data-action="toggle-comments" data-note-id="${note.id}">
+                <button class="comments-toggle ${isCommentsExpanded ? 'expanded' : ''}" data-action="toggle-comments" data-note-id="${escapeHtml(note.id)}">
                     <span>Comments</span>
                     <span class="count">${commentCount}</span>
                     <span class="arrow">▼</span>
                 </button>
-                <div class="comments-container ${isCommentsExpanded ? 'expanded' : ''}" id="comments-${note.id}">
+                <div class="comments-container ${isCommentsExpanded ? 'expanded' : ''}" id="comments-${escapeHtml(note.id)}">
                     ${note.comments ? note.comments.map(comment => `
-                        <div class="comment-item" data-comment-id="${comment.id}">
+                        <div class="comment-item" data-comment-id="${escapeHtml(comment.id)}">
                             <div class="comment-header">
                                 <span class="comment-user">${escapeHtml(comment.user)}</span>
                                 <span class="comment-time">
@@ -514,31 +500,31 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <textarea class="comment-text-edit" style="display: none">${escapeHtml(comment.text)}</textarea>
                             </div>
                             ${!NoteAuthor.canEditNote(comment, currentUser.sub) ? '' : `<div class="comment-actions" style="margin-top: 0.5rem;">
-                                <button class="small edit-comment-btn" data-action="edit-comment" data-note-id="${note.id}" data-comment-id="${comment.id}">Edit</button>
-                                <button class="small delete-comment-btn" data-action="delete-comment" data-note-id="${note.id}" data-comment-id="${comment.id}">Delete</button>
-                                <button class="small save-comment-btn" data-action="save-comment" data-note-id="${note.id}" data-comment-id="${comment.id}" style="display: none">Save</button>
-                                <button class="small cancel-comment-btn" data-action="cancel-comment" data-note-id="${note.id}" data-comment-id="${comment.id}" style="display: none">Cancel</button>
+                                <button class="small edit-comment-btn" data-action="edit-comment" data-note-id="${escapeHtml(note.id)}" data-comment-id="${escapeHtml(comment.id)}">Edit</button>
+                                <button class="small delete-comment-btn" data-action="delete-comment" data-note-id="${escapeHtml(note.id)}" data-comment-id="${escapeHtml(comment.id)}">Delete</button>
+                                <button class="small save-comment-btn" data-action="save-comment" data-note-id="${escapeHtml(note.id)}" data-comment-id="${escapeHtml(comment.id)}" style="display: none">Save</button>
+                                <button class="small cancel-comment-btn" data-action="cancel-comment" data-note-id="${escapeHtml(note.id)}" data-comment-id="${escapeHtml(comment.id)}" style="display: none">Cancel</button>
                             </div>`}
                         </div>
                     `).join('') : ''}
                 </div>
-                <div class="comment-input-area ${isCommentsExpanded ? 'expanded' : ''}" id="comment-input-${note.id}">
-                    <textarea class="comment-input" data-action="comment-input" data-note-id="${note.id}" placeholder="Add a comment..."></textarea>
+                <div class="comment-input-area ${isCommentsExpanded ? 'expanded' : ''}" id="comment-input-${escapeHtml(note.id)}">
+                    <textarea class="comment-input" data-action="comment-input" data-note-id="${escapeHtml(note.id)}" placeholder="Add a comment..."></textarea>
                     <div class="comment-actions">
-                        <button class="small secondary cancel-comment" data-action="cancel-comment-input" data-note-id="${note.id}">Cancel</button>
-                        <button class="small primary submit-comment" data-action="submit-comment" data-note-id="${note.id}" disabled>Submit</button>
+                        <button class="small secondary cancel-comment" data-action="cancel-comment-input" data-note-id="${escapeHtml(note.id)}">Cancel</button>
+                        <button class="small primary submit-comment" data-action="submit-comment" data-note-id="${escapeHtml(note.id)}" disabled>Submit</button>
                     </div>
                 </div>
             </div>
         `;
 
         return `
-            <div class="note-item" data-tags="${escapeHtml(tags.join(','))}" data-act="${act}" data-note-id="${note.id}">
+            <div class="note-item" data-tags="${escapeHtml(tags.join(','))}" data-act="${act}" data-note-id="${escapeHtml(note.id)}">
                 <div class="note-header">
                     <span class="note-act">${act}</span>
                     <span class="note-user">${escapeHtml(note.user)}</span>
                     <span class="note-timecode">
-                        ${timecodeDisplay} 
+                        ${escapeHtml(timecodeDisplay)} 
                         <span class="note-lx-cue">LX: ${escapeHtml(note.lxCue || 'N/A')}</span>
                         @ ${escapeHtml(note.frameRate || '30 fps')}
                     </span>
@@ -560,7 +546,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function createNoteElement(note) {
         const wrapper = document.createElement('div');
-        wrapper.innerHTML = getNoteHTML(note).trim();
+        setHtml(wrapper, getNoteHTML(note).trim());
         const element = wrapper.firstChild;
         noteElements.set(note.id, element);
         return element;
@@ -588,7 +574,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function rebuildFullNotesList() {
         captureCommentInputs();                // Save any in‑progress comments
-        notesList.innerHTML = '';
+        notesList.replaceChildren();
         noteElements.clear();
         for (const { element } of [...pendingNotes.values()].reverse()) notesList.appendChild(element);
         for (const note of NoteOrder.newestFirst(allNotes)) {
@@ -654,13 +640,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function createPendingNoteElement(note) {
         const wrapper = document.createElement('div');
-        wrapper.innerHTML = `
-            <div class="note-item pending" data-client-id="${note.clientId}">
-                <div class="note-pending-badge">${pendingBadgeText()}</div>
+        setHtml(wrapper, `
+            <div class="note-item pending" data-client-id="${escapeHtml(note.clientId)}">
+                <div class="note-pending-badge">${escapeHtml(pendingBadgeText())}</div>
                 <div class="note-header">
                     <span class="note-user">${escapeHtml(currentUser.name)}</span>
                     <span class="note-timecode">
-                        ${formatNoteTimecode(note)}
+                        ${escapeHtml(formatNoteTimecode(note))}
                         <span class="note-lx-cue">LX: ${escapeHtml(note.lxCue || 'N/A')}</span>
                         @ ${escapeHtml(note.frameRate || '30 fps')}
                     </span>
@@ -670,7 +656,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
                 ${(note.tags || []).length > 0 ? `<div class="note-tags">${getTagElements(note.tags)}</div>` : ''}
             </div>
-        `.trim();
+        `.trim());
         return wrapper.firstChild;
     }
 
@@ -853,13 +839,21 @@ document.addEventListener('DOMContentLoaded', function() {
 
     window.socket.on('users-update', (users) => {
         updateUserCount(users.length);
-        usersList.innerHTML = '';
-        users.forEach(user => {
+        // Built from elements, so a name is only ever text.
+        usersList.replaceChildren(...users.map(user => {
             const userItem = document.createElement('li');
             userItem.className = 'user-item';
-            userItem.innerHTML = `${escapeHtml(user.name)}${user.isTyping ? '<span class="user-typing"><span class="typing-indicator"></span>writing note</span>' : ''}`;
-            usersList.appendChild(userItem);
-        });
+            userItem.textContent = user.name;
+            if (user.isTyping) {
+                const typing = document.createElement('span');
+                typing.className = 'user-typing';
+                const indicator = document.createElement('span');
+                indicator.className = 'typing-indicator';
+                typing.append(indicator, 'writing note');
+                userItem.appendChild(typing);
+            }
+            return userItem;
+        }));
     });
 
     window.socket.on('act-update', (act) => {

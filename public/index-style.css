@@ -589,7 +589,14 @@ footer {
     font-size: 0.8rem;
 }
 
+.logout-form {
+    display: inline;
+    margin: 0;
+}
+
 .logout-link {
+    font-family: inherit;
+    line-height: inherit;
     display: inline-block;
     background: rgba(255, 152, 0, 0.3);
     border: 1px solid rgba(255, 152, 0, 0.5);
