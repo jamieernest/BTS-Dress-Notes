@@ -64,10 +64,6 @@ document.addEventListener('DOMContentLoaded', function() {
     socket.on('logged-out', () => { window.location.href = loginUrl(); });
     keepLoginAlive(() => { window.location.href = loginUrl(); });
 
-    socket.on('current-user', (data) => {
-        byId('currentUserName').textContent = data.name;
-    });
-
     socket.on('users-update', (users) => {
         byId('onlineUsers').textContent = users.length
             ? `${users.length}: ${users.map(u => u.name).join(', ')}`

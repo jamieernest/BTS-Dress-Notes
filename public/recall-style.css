@@ -2,8 +2,14 @@
 .topbar { gap: 12px; padding-left: 8px; }
 .back { color: var(--text-2); text-decoration: none; }
 
+/* Until a file is open the drop zone fills the window. */
+.page:has(> .drop-zone:not([hidden])) { padding-bottom: 24px; }
 .drop-zone {
-    margin-top: 48px;
+    min-height: calc(100dvh - var(--topbar-h) - 44px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     padding: 48px 24px;
     border: 1px dashed var(--border-strong);
     border-radius: 8px;
@@ -19,9 +25,8 @@
 .notes { margin-top: 8px; }
 .file-info { font-size: 13px; margin-bottom: 12px; overflow-wrap: anywhere; }
 
-.credit { text-align: center; font-size: 12px; padding: 0 0 24px; }
-
 @media (max-width: 640px) {
     .topbar .brand { display: none; }
-    .drop-zone { margin-top: 20px; padding: 32px 16px; }
+    .page:has(> .drop-zone:not([hidden])) { padding-bottom: 12px; }
+    .drop-zone { min-height: calc(100dvh - var(--topbar-h) - 24px); padding: 32px 16px; }
 }

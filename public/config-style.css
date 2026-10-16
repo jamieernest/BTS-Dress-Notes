@@ -1,8 +1,5 @@
 .topbar { gap: 12px; padding-left: 8px; }
 .back { color: var(--text-2); text-decoration: none; }
-.topbar-user { margin-left: auto; display: flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
-.topbar-user strong { font-weight: 500; }
-.logout-form { margin: 0 0 0 6px; }
 
 .btn.danger-outline { border-color: color-mix(in srgb, var(--danger) 45%, var(--border-strong)); color: var(--danger); }
 .btn.danger-outline:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
