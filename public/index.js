@@ -23,6 +23,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const menuButton = $('menuButton');
     const menuPopover = $('menuPopover');
     const notesList = $('notesList');
+    PlaybackContext.restoreNote(notesList);
+    $('liveSampleBadge').hidden = document.body.dataset.playbackDemo !== 'true';
     const notesEmpty = $('notesEmpty');
     const notesSection = document.querySelector('section.notes');
     const notesNoMatch = $('notesNoMatch');
@@ -65,6 +67,7 @@ document.addEventListener('DOMContentLoaded', function() {
         isTyping: false,
         frozenTimecode: null,
         frozenLxCue: null,
+        typingStartedAt: null, // this browser's clock; sent as an age (see sendPendingNote)
         currentFrameRate: 30
     };
     let currentGlobalTimecode = { hours: 0, minutes: 0, seconds: 0, frames: 0, frameRate: 30 };
@@ -350,6 +353,7 @@ document.addEventListener('DOMContentLoaded', function() {
             currentUser.frozenTimecode = { ...currentGlobalTimecode, displayMode: timeMode };
         }
         currentUser.frozenLxCue = currentGlobalLxCue;
+        currentUser.typingStartedAt = Date.now();
         updatePersonalTimecodeDisplay(currentUser.frozenTimecode);
         updatePersonalLxCueDisplay(currentUser.frozenLxCue);
         updateComposer();
@@ -365,6 +369,7 @@ document.addEventListener('DOMContentLoaded', function() {
         currentUser.isTyping = false;
         currentUser.frozenTimecode = null;
         currentUser.frozenLxCue = null;
+        currentUser.typingStartedAt = null;
         if (timeMode !== 'realtime') updatePersonalTimecodeDisplay(currentGlobalTimecode);
         updatePersonalLxCueDisplay(currentGlobalLxCue);
         window.socket.emit('typing-stop');
@@ -728,6 +733,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // While the note is being edited, Save and Cancel are its only actions.
         const actions = editing ? '' : `
             <span class="row-actions">
+                ${NoteView.playbackLinkHTML(PlaybackContext.playbackUrl({ source: 'live' }, note.id, location.pathname + location.search))}
                 ${iconButton('reply', 'reply', 'Reply')}
                 ${canEdit ? iconButton('edit-note', 'edit', 'Edit note') : ''}
                 ${canDelete ? iconButton('delete-note', 'trash', 'Delete note') : ''}
@@ -921,11 +927,15 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // The age is recomputed on every send: the browser's clock is not the
-    // server's, but how long ago the note was written is the same on both.
+    // The ages are recomputed on every send: the browser's clock is not the
+    // server's, but how long ago the note was written (and started) is the
+    // same on both.
     function sendPendingNote(note, writtenAt) {
         if (!window.socket.connected) return;
-        window.socket.emit('note-submit', { ...note, ageMs: Math.max(0, Date.now() - writtenAt) }, (stored) => {
+        const { typingStartedAt, ...payload } = note;
+        payload.ageMs = Math.max(0, Date.now() - writtenAt);
+        if (typeof typingStartedAt === 'number') payload.startedAgeMs = Math.max(0, Date.now() - typingStartedAt);
+        window.socket.emit('note-submit', payload, (stored) => {
             if (!stored || stored.error) {
                 // Refused, so resending cannot help: say so on the note and stop trying.
                 const pending = pendingNotes.get(note.clientId);
@@ -990,7 +1000,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 text: noteInput.value,
                 tags: selectedTags,
                 timecode: currentUser.frozenTimecode,
-                lxCue: currentUser.frozenLxCue
+                lxCue: currentUser.frozenLxCue,
+                typingStartedAt: currentUser.typingStartedAt
             }));
         } catch (e) { /* storage unavailable */ }
     }
@@ -1060,6 +1071,7 @@ document.addEventListener('DOMContentLoaded', function() {
         currentUser.isTyping = true;
         currentUser.frozenTimecode = draft.timecode;
         currentUser.frozenLxCue = draft.lxCue;
+        currentUser.typingStartedAt = typeof draft.typingStartedAt === 'number' ? draft.typingStartedAt : null;
         updatePersonalTimecodeDisplay(draft.timecode);
         updatePersonalLxCueDisplay(draft.lxCue);
         updateComposer();
@@ -1505,6 +1517,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 text: text,
                 timecode: currentUser.frozenTimecode,
                 lxCue: currentUser.frozenLxCue,
+                typingStartedAt: currentUser.typingStartedAt,
                 frameRate: timeMode === 'realtime' ? 'ms' : currentUser.currentFrameRate,
                 tags: selectedTags,
             });

@@ -14,12 +14,14 @@
         <a href="/" class="btn ghost back">&larr; Notes</a>
         <div class="brand">Past notes<span id="showName" class="show-name" hidden></span></div>
         <div class="topbar-actions">
+            <a id="playbackLink" href="/playback.html" class="btn ghost video-link" aria-label="Open video" title="Open video" hidden><svg class="icon" aria-hidden="true"><use href="icons.svg#i-video"/></svg><span>Video</span></a>
             <a href="/recall.html" id="openAnother" class="btn ghost" hidden>Open another</a>
         </div>
     </header>
 
     <main class="page">
         <input type="file" id="fileInput" accept=".json,application/json" hidden>
+        <p id="fileError" class="field-error" role="alert" hidden></p>
 
         <div id="showLoading" class="notes loading-region is-loading" aria-busy="true">
             <div class="toolbar skeleton" data-loading-placeholder aria-hidden="true"><span class="bone search-bone"></span></div>
@@ -66,7 +68,6 @@
             <p class="empty-title">Open a notes file</p>
             <p class="muted">Choose a <strong>.json</strong> notes file from your device, or drop it here.</p>
             <button type="button" id="chooseFile" class="btn primary">Choose file</button>
-            <p id="fileError" class="field-error" role="alert" hidden></p>
         </div>
 
         <section id="savedShows" class="saved-shows" aria-labelledby="savedShowsTitle" hidden>
@@ -105,6 +106,7 @@
     <script src="timecode-format.js"></script>
     <script src="note-view.js"></script>
     <script src="loading-state.js"></script>
+    <script src="playback-context.js"></script>
     <script src="recall.js"></script>
 </body>
 </html>

@@ -214,7 +214,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     function saveShow(reset) {
         saveButtons.forEach(button => { button.disabled = true; });
-        socket.timeout(10000).emit('save-show', { name: showNameInput.value, reset }, (err, reply) => {
+        // Keeping the videos can mean copying them, so allow longer than the other settings.
+        socket.timeout(120000).emit('save-show', { name: showNameInput.value, reset }, (err, reply) => {
             saveButtons.forEach(button => { button.disabled = false; });
             closeSaveReset();
             if (err || !reply || reply.error) {
@@ -225,7 +226,9 @@ document.addEventListener('DOMContentLoaded', function() {
             link.href = `/recall.html?show=${encodeURIComponent(reply.show.id)}`;
             link.textContent = 'Open in Past notes';
             const notes = `${reply.show.totalNotes} note${reply.show.totalNotes === 1 ? '' : 's'}`;
-            showSaveResult(`Saved “${reply.show.name}” (${notes})${reset ? ' and reset everything' : ''}. `, link);
+            const parts = reply.show.recordingParts;
+            const video = parts ? ` and ${parts === 1 ? 'its video' : `${parts} video parts`}` : '';
+            showSaveResult(`Saved “${reply.show.name}” (${notes}${video})${reset ? ' and reset everything' : ''}. `, link);
             showNameInput.value = '';
         });
     }

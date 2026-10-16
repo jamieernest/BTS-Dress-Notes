@@ -43,6 +43,9 @@ document.addEventListener('DOMContentLoaded', function() {
     let scenes = [];
     let usedTags = [];
     let openShowId = null; // the saved show on screen; null for a file or the chooser
+    let fileKey = null;
+    const source = () => openShowId ? { show: openShowId } : { file: fileKey };
+    const playbackHref = noteId => PlaybackContext.playbackUrl(source(), noteId, location.pathname + location.search);
 
     // --- Opening a file ---
     function showError(message) {
@@ -71,8 +74,16 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             openShowId = null;
-            history.replaceState(null, '', location.pathname);
+            fileKey = PlaybackContext.saveFile(data, file.name, sessionStorage, PlaybackContext.newFileKey());
+            if (!fileKey) {
+                showError('There is not enough space to keep this file open between views. Try a smaller notes file.');
+                return;
+            }
+            history.replaceState(null, '', `?file=${encodeURIComponent(fileKey)}`);
             load(data);
+            showName.textContent = file.name;
+            showName.hidden = false;
+            document.title = `${file.name} · ${pageTitle}`;
         };
         reader.onerror = () => showError(`"${file.name}" couldn't be opened.`);
         reader.readAsText(file);
@@ -106,7 +117,7 @@ document.addEventListener('DOMContentLoaded', function() {
         setHtml($('savedShowsList'), shows.map(show => `
             <a class="saved-show" href="?show=${encodeURIComponent(show.id)}">
                 <span class="saved-show-name">${NoteView.esc(show.name)}</span>
-                <span class="muted">${NoteView.esc(date(show.savedAt))} · ${plural(show.totalNotes, 'note')}</span>
+                <span class="muted">${NoteView.esc(date(show.savedAt))} · ${plural(show.totalNotes, 'note')}${show.recordingParts ? ' · <i data-icon="video" data-class="saved-show-video"></i> Video' : ''}</span>
             </a>`).join(''));
         savedShows.hidden = shows.length === 0;
     }
@@ -155,12 +166,16 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // The open show and its filters, so a reload or a shared link shows the same.
     function keepInUrl() {
-        if (!openShowId) return;
-        const next = new URLSearchParams({ show: openShowId });
+        if (!openShowId && !fileKey) return;
+        const next = new URLSearchParams(source());
         if (filters.act !== 'all') next.set('scene', filters.act);
         if (filters.tag !== 'all') next.set('tag', filters.tag);
         if (searchInput.value.trim()) next.set('q', searchInput.value.trim());
-        history.replaceState(null, '', `?${next}`);
+        history.replaceState(null, '', `?${next}${location.hash}`);
+        $('playbackLink').href = playbackHref();
+        notesList.querySelectorAll('.note-playback').forEach(link => {
+            link.href = playbackHref(link.closest('[data-note-id]').dataset.noteId);
+        });
     }
 
     // --- Loaded notes ---
@@ -194,11 +209,16 @@ document.addEventListener('DOMContentLoaded', function() {
         savedShows.hidden = true;
         notesSection.hidden = false;
         $('openAnother').hidden = false;
+        $('playbackLink').hidden = false;
+        $('playbackLink').href = playbackHref();
         render();
+        PlaybackContext.restoreNote(notesList);
     }
 
     function noteHTML(note) {
         return NoteView.noteHTML(note, {
+            attrs: `data-note-id="${NoteView.esc(note.id)}"`,
+            side: `<span class="row-actions">${NoteView.playbackLinkHTML(playbackHref(note.id))}</span>`,
             foot: NoteView.tagChipsHTML(note.tags, tagById),
             thread: note.comments.map(comment => NoteView.commentHTML(comment)).join('')
         });
@@ -244,5 +264,18 @@ document.addEventListener('DOMContentLoaded', function() {
     notesNoMatch.querySelector('[data-action="clear-filters"]').addEventListener('click', clearFilters);
 
     if (params.get('show')) openShow(params.get('show'));
-    else listShows();
+    else if (params.get('file')) {
+        fileKey = params.get('file');
+        const data = PlaybackContext.readFile(fileKey, sessionStorage);
+        if (data) {
+            load(data, { act: params.get('scene'), tag: params.get('tag'), search: params.get('q') });
+            showName.textContent = data.name || 'Notes file';
+            showName.hidden = false;
+        } else {
+            fileKey = null;
+            showError('That local notes file is no longer open in this tab. Choose it again to continue.');
+            listShows();
+        }
+        document.documentElement.classList.remove('opening-show');
+    } else listShows();
 });

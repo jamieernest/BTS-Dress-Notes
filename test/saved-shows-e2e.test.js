@@ -30,6 +30,28 @@ async function setup(t) {
 const save = (config, data) => config.timeout(5000).emitWithAck('save-show', data);
 const get = (app, url, cookie) => fetch(`http://127.0.0.1:${app.port}${url}`, { headers: { accept: 'application/json', ...(cookie ? { cookie } : {}) } });
 
+test('live playback is authenticated and saved shows keep recording times and the show log', async (t) => {
+    const { app, alice, config } = await setup(t);
+    assert.equal((await get(app, '/playback/live')).status, 401);
+    const startedAt = new Date(Date.now() - 5000).toISOString();
+    const log = [{ type: 'scene', value: 'Opening', at: startedAt }, { type: 'cue', value: '1/5 Front', at: startedAt }];
+    alice.page.socket.emit('import-backup', {
+        notes: [{ id: 'playback-note', user: 'Alice', text: 'Spot arrives early', timestamp: new Date().toISOString(), startedAt, tags: ['lx'], timecode: { hours: 1, minutes: 0, seconds: 5, frames: 0 } }],
+        tags: [{ id: 'lx', name: 'Lighting', color: '#00b4d8' }], showLog: log
+    });
+    await until(() => alice.noteTexts().includes('Spot arrives early'), 'the notes import');
+    const response = await get(app, '/playback/live', alice.cookie);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    const live = await response.json();
+    assert.equal(live.notes[0].startedAt, startedAt);
+    assert.deepEqual(live.showLog, log);
+    const saved = await save(config, { name: 'Playback test' });
+    const show = await (await get(app, `/shows/${saved.show.id}`, alice.cookie)).json();
+    assert.equal(show.notes[0].startedAt, startedAt);
+    assert.deepEqual(show.showLog, log);
+    assert.deepEqual((await (await get(app, '/playback/live', alice.cookie)).json()).notes, live.notes);
+});
+
 test('a show saved with a name is listed and opens with its notes; save and reset then empties the live notes', async (t) => {
     const { app, alice, config } = await setup(t);
     assert.deepStrictEqual(await save(config, { name: 'Tech' }), { error: 'There are no notes to save.' });

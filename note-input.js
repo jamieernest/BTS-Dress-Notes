@@ -103,6 +103,7 @@ const storedNoteSchema = z.object({
     timecode: timecodeSchema.nullable().catch(null).default(null),
     lxCue: cueSchema.nullable().catch(null).default(null),
     timestamp: timestampSchema,
+    startedAt: timestampSchema.optional().catch(undefined),
     frameRate: frameRateSchema.nullable().catch(null).default(null),
     tags: tagsSchema.catch([]).default([]),
     act: cueSchema.nullable().catch(null).default(null),

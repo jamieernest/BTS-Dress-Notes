@@ -16,15 +16,23 @@ const { FileSessionStore } = require('./session-store');
 const { authorsOf, applyAuthors, backupFilename, backupTime, checkBackup, findRestorableBackup, writeBackupFile } = require('./notes-backup');
 const savedShows = require('./saved-shows');
 const SAVED_SHOWS_DIR = process.env.SAVED_SHOWS_DIR || path.join(__dirname, 'saved-shows');
+const PLAYBACK_DEMO = process.env.PLAYBACK_DEMO === '1';
+const recordings = require('./recordings');
+const RECORDINGS_DIR = process.env.RECORDINGS_DIR || path.join(__dirname, 'recordings');
+// One uploaded part at most; a full dress from Vor is a few GB.
+const RECORDING_MAX_BYTES = Number(process.env.RECORDING_MAX_BYTES) || 32 * 1024 ** 3;
 const { sanitizeAge, insertionIndex } = require('./public/note-order');
 const { canEditNote } = require('./public/note-author');
 const input = require('./note-input');
+const showLog = require('./show-log');
 const crypto = require('crypto');
 const helmet = require('helmet');
 const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
 
 const app = express();
 const server = http.createServer(app);
+// Node ends any request after 5 minutes; a video upload over venue Wi-Fi can take far longer.
+server.requestTimeout = 6 * 60 * 60 * 1000;
 // A restarted server is offered chat copies of up to ~5 MB (the browser's
 // localStorage quota), well above the 1 MB default for one incoming message.
 // A socket is only accepted from this app's own pages: a browser sends its
@@ -148,6 +156,8 @@ app.use(helmet({
             'style-src': ["'self'", "'unsafe-inline'"],
             'img-src': ["'self'", 'data:'],
             'connect-src': ["'self'"],
+            // playback.html plays uploaded videos, or one opened locally through a blob: URL.
+            'media-src': ["'self'", 'blob:'],
             'form-action': ["'self'", ...originOf(KEYCLOAK_ISSUER)],
             'upgrade-insecure-requests': null
         }
@@ -387,7 +397,8 @@ app.get('/session', (req, res) => {
 // Saved shows for Past notes (saved from the config page, see saved-shows.js).
 app.get('/shows', async (req, res) => {
     res.set('Cache-Control', 'no-store');
-    res.json(await savedShows.listShows(SAVED_SHOWS_DIR));
+    const counts = recordings.partCounts(RECORDINGS_DIR);
+    res.json((await savedShows.listShows(SAVED_SHOWS_DIR)).map(show => ({ ...show, recordingParts: counts.get(show.id) || 0 })));
 });
 app.get('/shows/:id', async (req, res) => {
     res.set('Cache-Control', 'no-store');
@@ -396,12 +407,94 @@ app.get('/shows/:id', async (req, res) => {
     res.json(show);
 });
 
+// Recordings uploaded for the live notes (`live`) or a saved show (its id),
+// played on playback.html by everyone who opens those notes (recordings.js).
+// Uploads are the raw file as the request body, details in the query; any
+// logged-in person may add, retime or remove a part, like the config page.
+const isCollection = (collection) => collection === 'live' || savedShows.isShowId(collection);
+const collectionExists = async (collection) => collection === 'live'
+    || (isCollection(collection) && !!(await savedShows.readShow(SAVED_SHOWS_DIR, collection)));
+const recordingsOf = (collection) => recordings.listParts(RECORDINGS_DIR, collection).map(part => ({
+    id: part.id, name: part.name, type: part.type, size: part.size, startAt: part.startAt,
+    duration: part.duration, uploadedAt: part.uploadedAt, uploadedBy: part.uploadedBy,
+    url: `/recordings/${collection}/${part.id}`
+}));
+function recordingsChanged(collection) {
+    io.emit('recordings-update', { collection, recordings: recordingsOf(collection) });
+}
+
+app.get('/recordings/:collection', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!isCollection(req.params.collection)) return res.status(404).json({ error: 'not found' });
+    res.json({ recordings: recordingsOf(req.params.collection) });
+});
+
+app.get('/recordings/:collection/:id', (req, res) => {
+    const file = isCollection(req.params.collection) && recordings.partFile(RECORDINGS_DIR, req.params.collection, req.params.id);
+    if (!file) return res.status(404).json({ error: 'not found' });
+    // A part's file never changes under its id. sendFile answers Range requests.
+    res.type(file.type);
+    res.sendFile(file.path, { headers: { 'Cache-Control': 'private, max-age=31536000, immutable' } }, (error) => {
+        if (error && !res.headersSent) res.status(404).json({ error: 'not found' });
+    });
+});
+
+app.post('/recordings/:collection', async (req, res) => {
+    const { collection } = req.params;
+    if (!sameOrigin(req)) return res.status(403).json({ error: 'forbidden' });
+    if (!(await collectionExists(collection))) return res.status(404).json({ error: 'Those notes no longer exist.' });
+    const info = recordings.cleanPartInfo({
+        name: req.query.name, type: req.get('content-type'), startAt: req.query.startAt, duration: req.query.duration
+    });
+    if (info.error) return res.status(400).json({ error: info.error });
+    const tooLarge = () => res.status(413).set('Connection', 'close').json({ error: 'The video is too large to upload.' });
+    if (Number(req.get('content-length')) > RECORDING_MAX_BYTES) return tooLarge();
+    let part;
+    try {
+        part = await recordings.addPart(RECORDINGS_DIR, collection, req, info, {
+            maxBytes: RECORDING_MAX_BYTES, uploadedBy: req.session.user.name
+        });
+    } catch (error) {
+        if (res.headersSent || req.destroyed) return;
+        if (error.status === 413) return tooLarge();
+        if (error.status) return res.status(error.status).json({ error: error.message });
+        console.log('Error saving an uploaded video:', error.message);
+        return res.status(500).json({ error: 'The video couldn\'t be saved.' });
+    }
+    console.log(`Video "${part.name}" (${Math.round(part.size / 1e6)} MB) uploaded to ${collection} by ${req.session.user.name}`);
+    recordingsChanged(collection);
+    res.status(201).json(recordingsOf(collection).find(p => p.id === part.id));
+});
+
+app.patch('/recordings/:collection/:id', express.json({ limit: '1kb' }), (req, res) => {
+    const { collection, id } = req.params;
+    if (!sameOrigin(req)) return res.status(403).json({ error: 'forbidden' });
+    if (!isCollection(collection)) return res.status(404).json({ error: 'not found' });
+    const part = recordings.setPartStart(RECORDINGS_DIR, collection, id, req.body && req.body.startAt);
+    if (part === undefined) return res.status(400).json({ error: 'That is not a time.' });
+    if (!part) return res.status(404).json({ error: 'not found' });
+    recordingsChanged(collection);
+    res.json(recordingsOf(collection).find(p => p.id === id));
+});
+
+app.delete('/recordings/:collection/:id', (req, res) => {
+    const { collection, id } = req.params;
+    if (!sameOrigin(req)) return res.status(403).json({ error: 'forbidden' });
+    if (!isCollection(collection) || !recordings.removePart(RECORDINGS_DIR, collection, id)) {
+        return res.status(404).json({ error: 'not found' });
+    }
+    console.log(`Video part ${id} removed from ${collection} by ${req.session.user.name}`);
+    recordingsChanged(collection);
+    res.status(204).end();
+});
+
 // Render the shared icon sprite with each page: an external <use> would
 // otherwise leave icons blank until another request finishes. Read the source
 // files per request so frontend edits still work without a dev-server restart.
 const htmlPages = {
     '/': 'index.html', '/index.html': 'index.html', '/recall.html': 'recall.html',
-    '/config.html': 'config.html', '/overlay.html': 'overlay.html', '/overlay-cast.html': 'overlay-cast.html'
+    '/config.html': 'config.html', '/overlay.html': 'overlay.html', '/overlay-cast.html': 'overlay-cast.html',
+    '/playback.html': 'playback.html'
 };
 app.get(Object.keys(htmlPages), async (req, res, next) => {
     try {
@@ -411,7 +504,8 @@ app.get(Object.keys(htmlPages), async (req, res, next) => {
             fs.promises.readFile(path.join(__dirname, 'public', 'icons.svg'), 'utf8')
         ]);
         const sprite = icons.replace('<svg ', '<svg id="app-icons" class="icon-sprite" aria-hidden="true" ');
-        const rendered = html.replaceAll('icons.svg#', '#').replace(/<body\b[^>]*>/, body => `${body}\n${sprite}`);
+        const rendered = html.replaceAll('icons.svg#', '#').replace(/<body\b[^>]*>/,
+            body => `${PLAYBACK_DEMO ? body.replace('>', ' data-playback-demo="true">') : body}\n${sprite}`);
         res.set('Cache-Control', 'private, no-cache');
         res.type('html').send(rendered);
     } catch (error) {
@@ -484,7 +578,8 @@ const globalState = {
     timeMode: 'midi',
     tags: tags,
     currentLxCue: '1',
-    currentAct: 'Preshow'
+    currentAct: 'Preshow',
+    showLog: [] // every scene change and LX cue, with the time (show-log.js)
 };
 
 // After a restart the chat is restored from client offers, but only while this
@@ -584,6 +679,10 @@ function handleOscMessage(address, value) {
             
             // Update global state
             globalState.currentLxCue = cueName;
+            if (showLog.record(globalState.showLog, 'cue', cueName)) {
+                scheduleBackup();
+                io.emit('show-log-update', globalState.showLog);
+            }
             
             // Notify all clients
             io.emit('lx-cue-update', cueName);
@@ -602,6 +701,10 @@ function handleOscMessage(address, value) {
         const act = value;
         if (act && act !== globalState.currentAct) {
             globalState.currentAct = act;
+            if (showLog.record(globalState.showLog, 'scene', act)) {
+                scheduleBackup();
+                io.emit('show-log-update', globalState.showLog);
+            }
             console.log(`Updated current act to: ${act}`);
             io.emit('act-update', act);
         }
@@ -916,7 +1019,9 @@ function notesExport() {
             name: u.name,
             joinedAt: u.joinedAt
         })),
-        tags: globalState.tags
+        tags: globalState.tags,
+        showLog: globalState.showLog,
+        ...(PLAYBACK_DEMO ? { demo: true } : {})
     };
 }
 
@@ -995,6 +1100,7 @@ function restoreNotes() {
         if (found.file) {
             globalState.notes = applyAuthors(input.cleanStoredNotes(found.data.notes), found.data.authors);
             if (found.data.tags) globalState.tags = storedTags(found.data.tags);
+            globalState.showLog = showLog.cleanShowLog(found.data.showLog);
             console.log(`Notes restore: loaded ${found.data.notes.length} notes from backups/${found.file}`);
         } else {
             console.log(`Notes restore: starting empty (${found.reason})`);
@@ -1005,6 +1111,35 @@ function restoreNotes() {
     notesRestored = true;
 }
 restoreNotes();
+
+// Opt-in examples for the separate playback development instance only.
+// Refuse to seed over existing notes; other instances use their normal data.
+if (PLAYBACK_DEMO) {
+    const sample = JSON.parse(fs.readFileSync(path.join(__dirname, 'public/playback-demo/show.json'), 'utf8'));
+    if (!globalState.notes.length) {
+        globalState.notes = input.cleanStoredNotes(sample.notes);
+        globalState.tags = storedTags(sample.tags);
+        globalState.showLog = showLog.cleanShowLog(sample.showLog);
+        backup(true);
+    }
+    const sampleId = savedShows.showId('Sample dress rehearsal', new Date('2026-10-07T19:00:00Z'));
+    if (!fs.existsSync(path.join(SAVED_SHOWS_DIR, `${sampleId}.json`))) {
+        savedShows.saveShow(SAVED_SHOWS_DIR, 'Sample dress rehearsal', { ...sample, totalNotes: sample.notes.length }, new Date('2026-10-07T19:00:00Z'));
+    }
+    // The saved sample plays its recording from the server, as an uploaded one would.
+    if (!recordings.listParts(RECORDINGS_DIR, sampleId).length) {
+        const info = recordings.cleanPartInfo({
+            name: 'Sample Show.2026-10-07 19-30-00.mp4', startAt: Date.parse(sample.showLog[0].at), duration: 720
+        });
+        recordings.addPart(RECORDINGS_DIR, sampleId, fs.createReadStream(path.join(__dirname, 'public/playback-demo/recording.mp4')), info)
+            .catch(error => console.log('Sample recording not added:', error.message));
+    }
+}
+
+app.get('/playback/live', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ ...notesExport(), name: PLAYBACK_DEMO ? 'Sample live session' : 'Live notes' });
+});
 
 // Safety net: a backup every minute even if nothing called scheduleBackup().
 setInterval(backup, Number(process.env.BACKUP_INTERVAL_MS) || 1 * 60 * 1000);
@@ -1124,6 +1259,7 @@ io.on('connection', (socket) => {
     socket.emit('timecode-update', globalState.networkTimecode);
     socket.emit('notes-update', globalState.notes);
     socket.emit('tags-update', globalState.tags);
+    socket.emit('show-log-update', globalState.showLog);
     socket.emit('time-mode-update', globalState.timeMode);
     socket.emit('lx-cue-update', globalState.currentLxCue);
     socket.emit('system-status', systemStatus());
@@ -1281,6 +1417,9 @@ io.on('connection', (socket) => {
     // resending it.
     // A late note carries ageMs (how long ago it was written); it is stamped
     // and placed by that rather than by its arrival (see public/note-order.js).
+    // startedAgeMs, how long ago its author started typing it, becomes
+    // startedAt on the server's clock whatever the timecode mode, which is what
+    // lines a note up with a recording (playback.html).
     on('note-submit', (data, ack) => {
         const respond = typeof ack === 'function' ? ack : () => {};
         if (user.isOverlay) return respond({ error: 'Overlays cannot add notes.' });
@@ -1299,6 +1438,8 @@ io.on('connection', (socket) => {
         if (!tags.length) return respond({ error: 'A note needs at least one tag.' });
 
         const noteTimecode = input.cleanTimecode(data.timecode) || {...currentModeTimecode()};
+        const now = Date.now();
+        const ageMs = sanitizeAge(data.ageMs);
 
         const note = {
             id: newId(),
@@ -1307,13 +1448,17 @@ io.on('connection', (socket) => {
             text,
             timecode: noteTimecode,
             lxCue: input.cleanCue(data.lxCue) || globalState.currentLxCue,
-            timestamp: new Date(Date.now() - sanitizeAge(data.ageMs)).toISOString(),
+            timestamp: new Date(now - ageMs).toISOString(),
             frameRate: input.cleanFrameRate(data.frameRate) || currentModeTimecode().frameRate,
             tags,
             act: globalState.currentAct, // Use current act from OSC
             comments: []
         };
         if (clientId) note.clientId = clientId;
+        // Older tabs don't send it; their notes have no startedAt.
+        if (typeof data.startedAgeMs === 'number') {
+            note.startedAt = new Date(now - Math.max(ageMs, sanitizeAge(data.startedAgeMs))).toISOString();
+        }
 
         globalState.notes.splice(insertionIndex(globalState.notes, note), 0, note);
 
@@ -1466,9 +1611,16 @@ io.on('connection', (socket) => {
             console.log('Error saving show:', error.message);
             return respond({ error: "The notes couldn't be saved. Nothing was reset." });
         }
-        console.log(`Show "${name}" (${show.totalNotes} notes) saved by ${user.name}${data.reset ? ', then reset' : ''}`);
-        respond({ show });
-        if (data.reset) resetNotesAndChat();
+        // The live videos go with it; the reset (which removes them) waits for that.
+        recordings.copyCollection(RECORDINGS_DIR, 'live', show.id).then((parts) => {
+            if (parts) recordingsChanged(show.id);
+            console.log(`Show "${name}" (${show.totalNotes} notes, ${parts} video parts) saved by ${user.name}${data.reset ? ', then reset' : ''}`);
+            respond({ show: { ...show, recordingParts: parts } });
+            if (data.reset) resetNotesAndChat();
+        }, (error) => {
+            console.log(`Error keeping the videos with show "${name}":`, error.message);
+            respond({ error: `The notes were saved, but the videos couldn't be kept with them.${data.reset ? ' Nothing was reset.' : ''}` });
+        });
     });
 
     // Handle backup import (only for non-overlay users). The file gets the same
@@ -1486,6 +1638,7 @@ io.on('connection', (socket) => {
         // Notes that fail the per-note checks are dropped; say so rather than report a clean import.
         const skipped = data.notes.length - globalState.notes.length;
         if (skipped) console.warn(`Import skipped ${skipped} of ${data.notes.length} notes that could not be read`);
+        globalState.showLog = showLog.cleanShowLog(data.showLog);
 
         // Restore tags if present in backup
         if (data.tags) {
@@ -1496,6 +1649,7 @@ io.on('connection', (socket) => {
         // Broadcast updates to all clients
         io.emit('notes-update', globalState.notes);
         io.emit('tags-update', globalState.tags);
+        io.emit('show-log-update', globalState.showLog);
         scheduleBackup();
 
         // Notify the importer of success
@@ -1549,9 +1703,13 @@ io.on('connection', (socket) => {
 function resetNotesAndChat() {
     globalState.notes = [];
     globalState.chatMessages = [];
+    globalState.showLog = [];
+    recordings.removeCollection(RECORDINGS_DIR, 'live');
+    recordingsChanged('live');
     chatRestore.close();
     io.emit('all-reset'); // each page also drops its saved chat copy and unsent notes
     io.emit('notes-update', globalState.notes);
+    io.emit('show-log-update', globalState.showLog);
     emitToChatClients('chat-messages-update', globalState.chatMessages);
     backup(true);
 }

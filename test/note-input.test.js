@@ -66,3 +66,13 @@ test('an imported or restored note is rebuilt from the known fields only', () =>
     assert.deepStrictEqual(input.cleanStoredTags([{ id: 'lx', name: 'LX', color: 'red"><b>' }, { name: 'no id' }]),
         [{ id: 'lx', name: 'LX', color: null }]);
 });
+
+test('a stored note keeps a valid startedAt and drops a bad one', () => {
+    const base = { id: 'n1', user: 'Alice', text: 'hi', timestamp: '2026-10-16T10:00:00.000Z' };
+    const [kept, dropped] = input.cleanStoredNotes([
+        { ...base, startedAt: '2026-10-16T09:59:40.000Z' },
+        { ...base, id: 'n2', startedAt: 'yesterday-ish' }
+    ]);
+    assert.strictEqual(kept.startedAt, '2026-10-16T09:59:40.000Z');
+    assert.strictEqual(dropped.startedAt, undefined);
+});

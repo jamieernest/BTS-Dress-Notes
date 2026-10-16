@@ -23,6 +23,8 @@ function cleanShowName(name) {
     return clean ? clean.slice(0, MAX_NAME).trim() : null;
 }
 
+const isShowId = (id) => typeof id === 'string' && ID.test(id);
+
 function showId(name, date = new Date()) {
     const slug = name.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60).replace(/-+$/, '');
     return `${date.toISOString().replace(/[:.]/g, '-')}${slug ? `-${slug}` : ''}`;
@@ -46,7 +48,7 @@ function saveShow(dir, name, exportData, date = new Date()) {
 
 // The show with this id, or null if there is none (or the id is not one).
 async function readShow(dir, id) {
-    if (typeof id !== 'string' || !ID.test(id)) return null;
+    if (!isShowId(id)) return null;
     try {
         const data = JSON.parse(await fs.promises.readFile(path.join(dir, `${id}.json`), 'utf8'));
         return checkBackup(data) || typeof data.name !== 'string' ? null : data;
@@ -71,4 +73,4 @@ async function listShows(dir) {
     return shows.filter(Boolean).sort((a, b) => (a.id < b.id ? 1 : -1));
 }
 
-module.exports = { MAX_NAME, cleanShowName, showId, saveShow, readShow, listShows };
+module.exports = { MAX_NAME, cleanShowName, isShowId, showId, saveShow, readShow, listShows };
