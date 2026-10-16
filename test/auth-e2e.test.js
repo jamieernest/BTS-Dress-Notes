@@ -111,3 +111,34 @@ test('logging out closes that login\'s open pages but not anyone else\'s', async
     assert.strictEqual(bobPage.loggedOut, false);
     assert.strictEqual((await fetch(`${base}/session`, { headers: { cookie: alice } })).status, 401);
 });
+
+test('logging out ends at the logged-out page, which does not log back in', async (t) => {
+    const { app, oidc, base } = await setup(t);
+    const alice = await login(app, oidc, 'alice');
+    const out = await fetch(`${base}/logout`, { method: 'POST', redirect: 'manual', headers: { cookie: alice } });
+    const endSession = new URL(out.headers.get('location'));
+    assert.strictEqual(endSession.origin + endSession.pathname, `${oidc.issuer}/end-session`, 'Keycloak\'s login is ended too');
+    assert.ok(endSession.searchParams.get('id_token_hint'));
+    assert.strictEqual(endSession.searchParams.get('post_logout_redirect_uri'), `${base}/logged-out`);
+
+    const back = await fetch(endSession, { redirect: 'manual' });
+    assert.strictEqual(back.headers.get('location'), `${base}/logged-out`);
+    const page = await fetch(`${base}/logged-out`, { redirect: 'manual', headers: { cookie: alice, accept: 'text/html' } });
+    assert.strictEqual(page.status, 200, 'the page is shown, not a redirect to /login');
+    const html = await page.text();
+    assert.match(html, /logged out/);
+    assert.match(html, /href="\/login"/);
+    assert.strictEqual((await fetch(`${base}/base.css`, { redirect: 'manual' })).status, 200, 'its stylesheet needs no login');
+    assert.strictEqual((await fetch(`${base}/index.js`, { redirect: 'manual' })).status, 401, 'other files still do');
+
+    // "Log in again" goes back to the page that was logged out, and only to this site.
+    const fromOverlay = await (await fetch(`${base}/logged-out?returnTo=${encodeURIComponent('/overlay.html?x=1&y="2"')}`)).text();
+    assert.ok(fromOverlay.includes(`href="/login?returnTo=${encodeURIComponent('/overlay.html?x=1&y="2"')}"`));
+    const offSite = await (await fetch(`${base}/logged-out?returnTo=${encodeURIComponent('//evil.example/')}`)).text();
+    assert.match(offSite, /href="\/login"/);
+
+    // Logged in again (a back button to the page), it goes on to the page.
+    const again = await login(app, oidc, 'alice');
+    const res = await fetch(`${base}/logged-out?returnTo=%2Fconfig.html`, { redirect: 'manual', headers: { cookie: again } });
+    assert.strictEqual(res.headers.get('location'), '/config.html');
+});

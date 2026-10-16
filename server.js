@@ -290,6 +290,25 @@ app.get('/callback', async (req, res) => {
     }
 });
 
+// Where a logout ends up (straight from /logout, or back from Keycloak's
+// end-session page, so its URL must be one of the Keycloak client's "Valid post
+// logout redirect URIs"), and where a page goes when its login was logged out
+// elsewhere. Without it a logout went on to /login, and Keycloak (whose own
+// login can outlive ours) could sign the person straight back in.
+// `returnTo` is the page "Log in again" goes back to.
+const loggedOutPage = fs.readFileSync(path.join(__dirname, 'views', 'logged-out.html'), 'utf8');
+app.get('/logged-out', (req, res) => {
+    const returnTo = safeReturnTo(req.query.returnTo);
+    if (isLoggedIn(req)) return res.redirect(returnTo);
+    const loginUrl = returnTo === '/' ? '/login' : `/login?returnTo=${encodeURIComponent(returnTo)}`;
+    res.set('Cache-Control', 'no-store');
+    res.type('html').send(loggedOutPage.replace('{{loginUrl}}', loginUrl));
+});
+// The page's stylesheet and icon, the only files served without a login.
+for (const file of ['base.css', 'favicon.ico']) {
+    app.get(`/${file}`, (req, res) => res.sendFile(path.join(__dirname, 'public', file)));
+}
+
 // Destroys the local session and redirects to Keycloak's end-session endpoint.
 // POST only (the pages use a form), so a link or image on another site cannot
 // log anyone out; the SameSite=Lax cookie is not sent on a cross-site POST.
@@ -300,19 +319,19 @@ app.post('/logout', (req, res) => {
         if (oidcConfig) {
             try {
                 const endSessionUrl = oidc.buildEndSessionUrl(oidcConfig, {
-                    post_logout_redirect_uri: `${req.protocol}://${req.get('host')}/login`,
+                    post_logout_redirect_uri: `${req.protocol}://${req.get('host')}/logged-out`,
                     ...(idToken ? { id_token_hint: idToken } : {})
                 });
                 return res.redirect(endSessionUrl.href);
             } catch (error) {
-                // Issuer has no end_session_endpoint configured - fall through to /login.
+                // Issuer has no end_session_endpoint configured - only our login ends.
             }
         }
-        res.redirect('/login');
+        res.redirect('/logged-out');
     };
     if (!req.session) return finish();
     // Pages of this login still open on a socket are logged out too (they
-    // were authenticated at their handshake) and go back to /login.
+    // were authenticated at their handshake) and go to /logged-out.
     for (const socket of io.sockets.sockets.values()) {
         if (socket.request.sessionID !== req.sessionID) continue;
         socket.emit('logged-out');
@@ -322,8 +341,9 @@ app.post('/logout', (req, res) => {
 });
 
 // Auth guard - no page is exempt, including static assets, overlay/cast
-// pages and the recall/backup-viewer page. /login, /callback and /logout
-// above are registered before this and stay reachable without a session.
+// pages and the recall/backup-viewer page. /login, /callback, /logout and
+// /logged-out (with base.css and the favicon) above are registered before
+// this and stay reachable without a session.
 // It never writes the session: a page navigation is sent to /login with the
 // page to come back to in the URL, and anything else (scripts, fetches) just
 // gets a 401, so a stray asset request cannot become the post-login page.

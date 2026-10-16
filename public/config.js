@@ -61,7 +61,7 @@ document.addEventListener('DOMContentLoaded', function() {
             window.location.href = loginUrl();
         }
     });
-    socket.on('logged-out', () => { window.location.href = loginUrl(); });
+    socket.on('logged-out', () => { window.location.href = loggedOutUrl(); });
     keepLoginAlive(() => { window.location.href = loginUrl(); });
 
     socket.on('users-update', (users) => {

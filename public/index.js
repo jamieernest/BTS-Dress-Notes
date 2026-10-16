@@ -1086,15 +1086,31 @@ document.addEventListener('DOMContentLoaded', function() {
         connectionBanner.hidden = false;
     });
 
-    // Logged out in another tab: this page's login is gone too.
-    window.socket.on('logged-out', goToLogin);
+    // Logged out on purpose, here or in another tab: the note being written is
+    // dropped so whoever logs in next on this tab doesn't send it as theirs.
+    // (Unsent notes are kept per person and go out at their next login.)
+    // The tab that sent the logout form gets `logged-out` too, often before the
+    // form's own redirect: leaving then would cut that short before it reaches
+    // Keycloak, whose login would then sign the person straight back in.
+    let loggingOut = false;
+    function loggedOut() {
+        if (loggingOut) return;
+        loggingOut = true;
+        clearDraft();
+        window.location.href = loggedOutUrl();
+    }
+    document.querySelector('form[action="/logout"]').addEventListener('submit', () => {
+        loggingOut = true;
+        clearDraft();
+    });
+    window.socket.on('logged-out', loggedOut);
 
     keepLoginAlive(goToLogin);
 
     // A page kept in the back/forward cache (e.g. after visiting the recall
     // page) must not keep its socket, or the server would count it as open.
     window.addEventListener('pagehide', (e) => {
-        saveDraft();
+        if (!loggingOut) saveDraft();
         if (e.persisted) window.socket.disconnect();
     });
     window.addEventListener('pageshow', (e) => {
@@ -1102,7 +1118,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     window.socket.on('disconnect', () => {
-        connectionBanner.hidden = false;
+        if (!loggingOut) connectionBanner.hidden = false;
         updatePendingBadges();
     });
 

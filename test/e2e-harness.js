@@ -33,7 +33,8 @@ function freePort() {
     });
 }
 
-// Stub OIDC provider: whoever /authorize is asked for next is `nextUser`.
+// Stub OIDC provider: whoever /authorize is asked for next is `nextUser`
+// (it has no login of its own, so it never asks; Keycloak may).
 async function startOidc() {
     const { publicKey, privateKey } = await jose.generateKeyPair('RS256', { extractable: true });
     const jwk = { ...(await jose.exportJWK(publicKey)), kid: 'k1', alg: 'RS256', use: 'sig' };
@@ -47,6 +48,7 @@ async function startOidc() {
         if (url.pathname === '/.well-known/openid-configuration') {
             return json({
                 issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token`,
+                end_session_endpoint: `${issuer}/end-session`,
                 jwks_uri: `${issuer}/jwks`, response_types_supported: ['code'], subject_types_supported: ['public'],
                 id_token_signing_alg_values_supported: ['RS256'], code_challenge_methods_supported: ['S256'],
                 token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post']
@@ -62,6 +64,13 @@ async function startOidc() {
             back.searchParams.set('iss', issuer);
             res.statusCode = 302;
             res.setHeader('location', back.href);
+            return res.end();
+        }
+        // Like Keycloak: ends its own login, then back to the app.
+        if (url.pathname === '/end-session') {
+            state.endSessions = (state.endSessions || 0) + 1;
+            res.statusCode = 302;
+            res.setHeader('location', url.searchParams.get('post_logout_redirect_uri'));
             return res.end();
         }
         if (url.pathname === '/token') {

@@ -24,6 +24,12 @@
         });
     }
 
+    // Logged out on purpose (in another tab): say so rather than log back in.
+    function loggedOutUrl() {
+        return '/logged-out?returnTo=' + encodeURIComponent(location.pathname + location.search);
+    }
+
     root.keepLoginAlive = keepLoginAlive;
     root.loginUrl = loginUrl;
+    root.loggedOutUrl = loggedOutUrl;
 }(self));

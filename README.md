@@ -24,7 +24,7 @@ npm i
 
    (For Network TC) No extra MIDI interface is needed - see [Timecode modes](#timecode-modes) below
 
-7. Every page requires login via Keycloak SSO. Set `SESSION_SECRET` (required - the server won't start without it) and, to enable login, `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID` and `KEYCLOAK_CLIENT_SECRET` (one shared client covers every venue). See `AGENTS.md` for how these are used. A login lasts until it has gone 12 hours without any open page talking to the server (open pages, overlays included, keep it alive), and is saved to `local-sessions.json` (git-ignored) so it survives a server restart; changing `SESSION_SECRET` or deleting that file logs everyone out. Someone sent back to log in returns to the page they were on, with any half-written note.
+7. Every page requires login via Keycloak SSO. Set `SESSION_SECRET` (required - the server won't start without it) and, to enable login, `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID` and `KEYCLOAK_CLIENT_SECRET` (one shared client covers every venue). See `AGENTS.md` for how these are used. A login lasts until it has gone 12 hours without any open page talking to the server (open pages, overlays included, keep it alive), and is saved to `local-sessions.json` (git-ignored) so it survives a server restart; changing `SESSION_SECRET` or deleting that file logs everyone out. Someone sent back to log in returns to the page they were on, with any half-written note. In the Keycloak client, "Valid redirect URIs" must cover `http://<host>:<port>/callback` and "Valid post logout redirect URIs" must cover `http://<host>:<port>/logged-out` (or be `+` with a redirect URI pattern that covers it), or logging out stops at a Keycloak error page.
 
 8. Run by running `npm start`
 

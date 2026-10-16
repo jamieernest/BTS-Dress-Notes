@@ -56,7 +56,7 @@ document.addEventListener('DOMContentLoaded', function() {
     socket.on('connect_error', function(err) {
         if (err && err.message === 'unauthorized') goToLogin();
     });
-    socket.on('logged-out', goToLogin);
+    socket.on('logged-out', function() { window.location.href = loggedOutUrl(); });
     keepLoginAlive(goToLogin);
 
     socket.on('connect', function() {
