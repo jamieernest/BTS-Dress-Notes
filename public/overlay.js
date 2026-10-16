@@ -5,7 +5,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const realtimeValue = document.getElementById('realtimeValue');
     const lxCueDisplay = document.getElementById('lxCueDisplay');
     const connectionStatus = document.getElementById('connectionStatus');
-    const timeModeIndicator = document.getElementById('timeModeIndicator');
     const overlayContainer = document.getElementById('overlayContainer');
 
     let currentTimecode = {
@@ -63,6 +62,7 @@ document.addEventListener('DOMContentLoaded', function() {
     socket.on('connect', function() {
         connectionStatus.textContent = 'Connected';
         connectionStatus.className = 'connection-status connected';
+        startRealTimeMode();
     });
 
     socket.on('disconnect', function() {
@@ -100,18 +100,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     function updateTimeModeDisplay() {
-        if (timeMode === 'realtime') {
-            timeModeIndicator.textContent = 'Real Time';
-            timeModeIndicator.className = 'time-mode-indicator realtime-mode';
-        } else if (timeMode === 'network') {
-            timeModeIndicator.textContent = 'Network Timecode';
-            timeModeIndicator.className = 'time-mode-indicator network-mode';
-            timecodeLabel.textContent = 'Network Timecode';
-        } else {
-            timeModeIndicator.textContent = 'MIDI Timecode';
-            timeModeIndicator.className = 'time-mode-indicator midi-mode';
-            timecodeLabel.textContent = 'MIDI Timecode';
-        }
+        timecodeLabel.textContent = timeMode === 'network' ? 'Network timecode' : 'MIDI timecode';
     }
 
     function startRealTimeMode() {

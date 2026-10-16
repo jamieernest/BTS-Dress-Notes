@@ -3,65 +3,53 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BTS Dress Notes - Recall</title>
+    <title>Past notes · BTS Dress Notes</title>
+    <link rel="stylesheet" href="base.css">
+    <link rel="stylesheet" href="index-style.css">
     <link rel="stylesheet" href="recall-style.css">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>BTS Dress Notes - Recall</h1>
-            <p class="subtitle">Review and filter exported notes from previous sessions</p>
-            <a href="/" class="back-link">← Back to Live Notes</a>
-        </header>
-        
-        <div class="upload-section">
-            <h2>Upload Exported File</h2>
-            <div class="upload-area" id="uploadArea">
-                <p>Drag and drop a JSON file here, or click to browse</p>
-                <input type="file" id="fileInput" class="file-input" accept=".json">
-                <label for="fileInput" class="file-label">Choose File</label>
-            </div>
-            <div class="file-info" id="fileInfo">
-                <strong>File:</strong> <span id="fileName">No file selected</span> | 
-                <strong>Type:</strong> <span id="fileType">-</span> | 
-                <strong>Notes:</strong> <span id="fileNotesCount">0</span>
-            </div>
+    <header class="topbar">
+        <a href="/" class="btn ghost back">&larr; Notes</a>
+        <div class="brand">Past notes</div>
+        <div class="topbar-actions">
+            <button type="button" id="openAnother" class="btn ghost" hidden>Open another file&hellip;</button>
         </div>
-        
-        <div class="notes-section">
-            <div class="notes-header">
-                <h2>Imported Notes</h2>
-                <div class="stats">
-                    <span id="totalNotes">Total: 0 notes</span>
-                    <span id="filteredNotes">Showing: 0 notes</span>
-                </div>
-            </div>
-            
-            <div class="filter-section">
-                <div class="tags-label">Filter by scene:</div>
-                <div class="act-filter" id="recallActFilter">
-                    <div class="filter-tag active" data-act="all">All scenes</div>
-                    <div class="filter-tag" data-act="Preshow">Preshow</div>
-                </div>
-                
-                <div class="tags-label">Filter by Tags:</div>
-                <div class="filter-tags" id="filterTags">
-                    <div class="filter-tag active" data-tag="all">All Notes</div>
-                    <!-- Filter tags will be populated by JavaScript -->
-                </div>
-            </div>
-            
-            <div class="notes-list" id="notesList">
-                <div style="text-align: center; opacity: 0.7; padding: 2rem;">
-                    Upload a JSON file to view notes
-                </div>
-            </div>
+    </header>
+
+    <main class="page">
+        <input type="file" id="fileInput" accept=".json,application/json" hidden>
+
+        <div id="dropZone" class="empty drop-zone">
+            <p class="empty-title">Open a notes file</p>
+            <p class="muted">Drop a <strong>.json</strong> notes file here, or choose one. To get one, open the menu on the notes page and pick &ldquo;Download notes (JSON)&rdquo;.</p>
+            <button type="button" id="chooseFile" class="btn primary">Choose file&hellip;</button>
+            <p id="fileError" class="field-error" role="alert" hidden></p>
         </div>
-        
-        <footer>
-            <p>BTS Dress Notes &copy; 2025 | Vibecoded by Jamie with ❤️</p>
-        </footer>
-    </div>
+
+        <section id="notesSection" class="notes" aria-label="Notes" hidden>
+            <p id="fileInfo" class="file-info muted"></p>
+            <div class="toolbar">
+                <label class="search">
+                    <svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+                    <input type="search" id="searchInput" placeholder="Search notes, people, cues" aria-label="Search notes">
+                </label>
+                <select id="sceneFilter" class="select" aria-label="Filter by scene"></select>
+                <select id="tagFilter" class="select" aria-label="Filter by tag"></select>
+                <button type="button" id="clearFilters" class="btn outline clear-filters" title="Show all notes again" hidden><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Clear filters</button>
+                <div class="toolbar-end">
+                    <span id="notesCount" class="muted">0 notes</span>
+                </div>
+            </div>
+            <div id="notesList" class="notes-list"></div>
+            <div id="notesNoMatch" class="empty" hidden>
+                <p class="empty-title">No notes match these filters</p>
+                <button type="button" class="btn outline" data-action="clear-filters"><svg class="icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>Clear filters</button>
+            </div>
+        </section>
+    </main>
+
+    <footer class="credit muted">Vibecoded by Jamie with &#10084;&#65039;</footer>
 
     <script src="note-order.js"></script>
     <script src="vendor/purify.min.js"></script>

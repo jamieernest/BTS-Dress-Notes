@@ -41,6 +41,36 @@ test('another user cannot edit a note by sending the message directly', async (t
     assert.strictEqual(edits[0].lastEditedBy, 'alice');
 });
 
+test('a note cannot have its last tag taken off', async (t) => {
+    const oidc = await startOidc();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'note-author-e2e-'));
+    const app = createApp({ issuer: oidc.issuer, sessionsFile: path.join(dir, 'sessions.json'), port: await freePort() });
+    await app.start();
+    const alice = new Browser(app, await login(app, oidc, 'alice'));
+    t.after(async () => {
+        alice.close();
+        await app.stop().catch(() => {});
+        oidc.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+    alice.load();
+    const updates = [];
+    alice.page.socket.on('note-update-tags', (u) => updates.push(u));
+    await until(() => alice.page.socket.connected, 'the browser to connect');
+
+    alice.note('tagged', { tags: ['lighting'] });
+    await until(() => alice.noteTexts().length === 1, 'the note to arrive');
+    const noteId = alice.page.notes[0].id;
+
+    alice.page.socket.emit('note-update-tags', { noteId, tags: [] });
+    await until(() => updates.length === 1, 'the server to answer');
+    assert.deepStrictEqual(updates[0].tags, ['lighting'], 'the sender is told the tag is still there');
+
+    alice.page.socket.emit('note-update-tags', { noteId, tags: ['sound'] });
+    await until(() => updates.length === 2, 'the swap to be broadcast');
+    assert.deepStrictEqual(updates[1].tags, ['sound']);
+});
+
 // Ownership is the Keycloak identity, so it has to survive a backup, a restart and a display-name change.
 const { io } = require('socket.io-client');
 const { backupFilename } = require('../notes-backup');

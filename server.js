@@ -1102,7 +1102,10 @@ io.on('connection', (socket) => {
         if (user.isOverlay || !data) return;
         const note = globalState.notes.find(n => n.id === data.noteId);
         if (note) {
-            note.tags = input.cleanTags(data.tags);
+            const tags = input.cleanTags(data.tags);
+            // Every note keeps at least one tag; put the sender's view back if it tried to clear them.
+            if (!tags.length) return socket.emit('note-update-tags', { noteId: note.id, tags: note.tags });
+            note.tags = tags;
             io.emit('note-update-tags', { noteId: note.id, tags: note.tags });
             scheduleBackup();
         }
@@ -1226,7 +1229,7 @@ io.on('connection', (socket) => {
     on('note-submit', (data, ack) => {
         const respond = typeof ack === 'function' ? ack : () => {};
         if (user.isOverlay) return respond({ error: 'Overlays cannot add notes.' });
-        if (!data || typeof data !== 'object') return respond({ error: 'Malformed note.' });
+        if (!data || typeof data !== 'object') return respond({ error: 'Something went wrong. Write it again.' });
         const clientId = input.cleanId(data.clientId) || undefined;
         if (clientId) {
             const existing = globalState.notes.find(n => n.clientId === clientId);

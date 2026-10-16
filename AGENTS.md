@@ -30,6 +30,8 @@ Everything from a socket goes through the zod schemas in `note-input.js` / `chat
 
 The CSP (helmet in `server.js`) allows only `'self'` scripts, so no inline handlers or `<script>` blocks. Build markup through `SafeHtml.setHtml` (DOMPurify, `public/safe-html.js`), never `innerHTML`. DOMPurify's html profile strips `<svg><use>`, so `public/index.js` templates emit `<i data-icon="name">` placeholders that its local `setHtml()` swaps for `svg > use[href=#i-name]` from the sprite in `index.html`.
 
+`public/base.css` (tokens, buttons, topbar, chips, selects) is loaded by every page; each page's own CSS only adds its layout. A note always keeps at least one tag: the composer requires one, the tag picker (opened from the note's tag chips) won't untick the last, and the server's `note-update-tags` refuses an empty list. Keep backend detail (saving, servers, sockets) out of user-facing text.
+
 ## Eos OSC input
 
 LX cue text arrives two ways, both routed through `handleOscMessage()` in `server.js`: the TCP connection to the desk (`EOS_PORT`, 3037) and the UDP OSC server (`OSC_PORT`). Port 3037 is OSC 1.1 SLIP-framed, and one TCP `data` chunk routinely holds several packets, so never parse raw chunks as strings; decode with `eos-osc.js`. Cue text is `<list>/<label> <time> [<percent>]`, and labels can contain `/` (e.g. `1/1899 B/O 3.0 100%`); during a fade Eos resends it with a falling time and rising percentage. `npm test` runs regression tests built from captured desk traffic. Set `DEBUG_EOS=1` to log every decoded TCP message.

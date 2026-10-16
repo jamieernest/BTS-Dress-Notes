@@ -9,9 +9,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const midiModeButton = document.querySelector('.time-mode-button[data-mode="midi"]');
 
     const timeModeNames = {
-        midi: 'Time Mode: MIDI Timecode',
-        network: 'Time Mode: Network Timecode (MIDI gateway)',
-        realtime: 'Time Mode: Real Time (System Clock)'
+        midi: 'MIDI timecode',
+        network: 'Network timecode (MIDI gateway)',
+        realtime: 'Time of day (server clock)'
     };
     let timeMode = null;
     const midiInputSelect = byId('midiInputSelect');
@@ -28,27 +28,31 @@ document.addEventListener('DOMContentLoaded', function() {
         select.value = value;
     }
 
+    // A status row: its text, and 'ok' (green), 'bad' (red) or '' (neutral) for its dot.
+    function setStatus(row, text, state) {
+        row.querySelector('.row-value').textContent = text;
+        row.dataset.state = state;
+    }
+
     function formatTimecode(tc) {
         const pad = n => (n || 0).toString().padStart(2, '0');
         return `${pad(tc.hours)}:${pad(tc.minutes)}:${pad(tc.seconds)}:${pad(tc.frames)}`;
     }
 
     function updateTimeModeDisplay() {
-        timeModeStatus.textContent = timeModeNames[timeMode] || `Time Mode: ${timeMode}`;
-        timeModeButtons.forEach(button => button.classList.toggle('active', button.dataset.mode === timeMode));
+        timeModeStatus.textContent = timeModeNames[timeMode] || timeMode;
+        timeModeButtons.forEach(button => button.setAttribute('aria-pressed', button.dataset.mode === timeMode));
     }
 
     // `page` tells the server which page this is (see pageOf() in server.js).
     const socket = io({ auth: { page: 'config' } });
 
     socket.on('connect', () => {
-        connectionStatus.textContent = 'Connected to Server';
-        connectionStatus.className = 'status-connected';
+        setStatus(connectionStatus, 'Connected', 'ok');
     });
 
     socket.on('disconnect', () => {
-        connectionStatus.textContent = 'Disconnected from Server';
-        connectionStatus.className = 'status-disconnected';
+        setStatus(connectionStatus, 'Disconnected. Reconnecting\u2026', 'bad');
     });
 
     // A refused handshake means the session is gone; retrying can't succeed.
@@ -106,24 +110,22 @@ document.addEventListener('DOMContentLoaded', function() {
 
     socket.on('system-status', (data) => {
         if (data.midiAvailable && data.portCount > 0) {
-            midiStatus.textContent = `MIDI Interface: ${data.portCount} port(s) available - ${data.currentPort}`;
-            midiStatus.className = 'status-connected';
+            setStatus(midiStatus, `Using ${data.currentPort}`, 'ok');
             midiModeButton.disabled = false;
+            midiModeButton.title = '';
         } else if (data.portCount > 0) {
-            midiStatus.textContent = `MIDI Interface: ${data.portCount} port(s) available - none selected`;
-            midiStatus.className = 'status-disconnected';
+            setStatus(midiStatus, `No input chosen (${data.portCount} available)`, 'bad');
             midiModeButton.disabled = true;
+            midiModeButton.title = 'Choose a MIDI input below first';
         } else {
-            midiStatus.textContent = 'MIDI Interface: No MIDI devices found';
-            midiStatus.className = 'status-disconnected';
+            setStatus(midiStatus, 'No MIDI devices found', 'bad');
             midiModeButton.disabled = true;
+            midiModeButton.title = 'No MIDI devices found';
         }
         if (data.oscAvailable) {
-            oscStatus.textContent = 'LX Cues: OSC Source Active (Auto-updating)';
-            oscStatus.className = 'status-connected';
+            setStatus(oscStatus, 'Updating from OSC', 'ok');
         } else {
-            oscStatus.textContent = 'LX Cues: Manual Input';
-            oscStatus.className = '';
+            setStatus(oscStatus, 'Typed in by hand', '');
         }
         byId('midiPort').textContent = data.currentPort || 'none';
         byId('midiPortCount').textContent = data.portCount;
@@ -134,21 +136,16 @@ document.addEventListener('DOMContentLoaded', function() {
         const where = `${status.group}:${status.port}` +
             (status.interfaceAddress ? ` via ${status.interfaceAddress}` : '');
         if (status.error) {
-            networkStatus.textContent = `Network Timecode: Error on ${where} - ${status.error}`;
-            networkStatus.className = 'status-disconnected';
+            setStatus(networkStatus, `Error on ${where}: ${status.error}`, 'bad');
         } else if (!status.listening) {
-            networkStatus.textContent = `Network Timecode: Starting (${where})...`;
-            networkStatus.className = '';
+            setStatus(networkStatus, `Starting (${where})\u2026`, '');
         } else if (status.running) {
-            networkStatus.textContent = `Network Timecode: Receiving from ${status.source} on ${where}`;
-            networkStatus.className = 'status-connected';
+            setStatus(networkStatus, `Receiving from ${status.source} on ${where}`, 'ok');
         } else if (status.source) {
-            networkStatus.textContent = `Network Timecode: Stopped (last from ${status.source} on ${where})`;
-            networkStatus.className = '';
+            setStatus(networkStatus, `Stopped (last from ${status.source} on ${where})`, '');
         } else {
-            networkStatus.textContent = `Network Timecode: Listening on ${where}` +
-                (status.gatewayIp ? ` for ${status.gatewayIp}` : '') + ' - no timecode yet';
-            networkStatus.className = '';
+            setStatus(networkStatus, `Listening on ${where}` +
+                (status.gatewayIp ? ` for ${status.gatewayIp}` : '') + ', no timecode yet', '');
         }
         byId('networkGroup').textContent = `${status.group}:${status.port}`;
         byId('networkInterface').textContent =
@@ -172,14 +169,13 @@ document.addEventListener('DOMContentLoaded', function() {
     socket.on('eos-status', (status) => {
         const where = `${status.host}:${status.port}`;
         const text = {
-            connecting: `Connecting to ${where}...`,
+            connecting: `Connecting to ${where}\u2026`,
             connected: `Connected to ${where}`,
-            failed: `Failed to connect to ${where} - ${status.error}`,
+            failed: `Couldn't connect to ${where}: ${status.error}`,
             disconnected: `Disconnected from ${where}`
         }[status.state] || status.state;
-        eosStatus.textContent = `Eos TCP: ${text}`;
-        eosStatus.className = status.state === 'connected' ? 'status-connected'
-            : status.state === 'connecting' ? '' : 'status-disconnected';
+        setStatus(eosStatus, text, status.state === 'connected' ? 'ok'
+            : status.state === 'connecting' ? '' : 'bad');
         byId('eosConnectionState').textContent = text;
         eosReconnectButton.disabled = status.state === 'connecting';
     });
@@ -193,6 +189,7 @@ document.addEventListener('DOMContentLoaded', function() {
         resetResult.hidden = true;
         resetConfirm.hidden = false;
         resetButton.hidden = true;
+        byId('resetCancelButton').focus();
     });
     byId('resetCancelButton').addEventListener('click', () => {
         resetConfirm.hidden = true;

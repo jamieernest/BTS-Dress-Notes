@@ -3,88 +3,104 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BTS Dress Notes - Config</title>
+    <title>Settings · BTS Dress Notes</title>
+    <link rel="stylesheet" href="base.css">
     <link rel="stylesheet" href="config-style.css">
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>BTS Dress Notes - Config</h1>
-            <p class="subtitle">Global settings and system status</p>
-            <a href="/" class="back-link">← Back to Live Notes</a>
-        </header>
-
-        <div class="user-info">
-            <span>You are: </span>
-            <span class="user-name-display" id="currentUserName">Guest</span>
-            <form method="post" action="/logout" class="logout-form"><button type="submit" class="logout-link">Log out</button></form>
+    <header class="topbar">
+        <a href="/" class="btn ghost back">&larr; Notes</a>
+        <div class="brand">Settings &amp; status</div>
+        <div class="topbar-user">
+            <span class="muted">Signed in as</span> <strong id="currentUserName">Guest</strong>
+            <form method="post" action="/logout" class="logout-form"><button type="submit" class="btn ghost">Log out</button></form>
         </div>
+    </header>
 
-        <section class="panel">
-            <h2>Time Mode</h2>
-            <p class="panel-note">Applies to every connected page, including the overlays.</p>
-            <div class="time-mode-buttons" id="timeModeButtons">
-                <button type="button" class="time-mode-button" data-mode="midi">MIDI Timecode</button>
-                <button type="button" class="time-mode-button" data-mode="network">Network Timecode</button>
-                <button type="button" class="time-mode-button" data-mode="realtime">Real Time</button>
+    <main class="settings">
+        <section class="section" aria-labelledby="statusTitle">
+            <h2 id="statusTitle">Status</h2>
+            <div class="rows">
+                <div class="row" id="connectionStatus" data-state="bad">
+                    <span class="state-dot"></span><span class="row-label">Server</span><span class="row-value">Disconnected</span>
+                </div>
+                <div class="row" id="eosStatus">
+                    <span class="state-dot"></span><span class="row-label">Eos console</span><span class="row-value">-</span>
+                    <button type="button" id="eosReconnectButton" class="btn outline">Reconnect</button>
+                </div>
+                <div class="row" id="oscStatus">
+                    <span class="state-dot"></span><span class="row-label">LX cues</span><span class="row-value">Typed in by hand</span>
+                </div>
+                <div class="row" id="midiStatus">
+                    <span class="state-dot"></span><span class="row-label">MIDI</span><span class="row-value">Scanning&hellip;</span>
+                </div>
+                <div class="row" id="networkStatus">
+                    <span class="state-dot"></span><span class="row-label">Network timecode</span><span class="row-value">Starting&hellip;</span>
+                </div>
             </div>
         </section>
 
-        <section class="panel">
-            <h2>Inputs</h2>
-            <p class="panel-note">Changes apply straight away and are kept after a restart.</p>
-            <div class="setting-row">
-                <label for="midiInputSelect">MIDI input</label>
-                <select id="midiInputSelect"></select>
-            </div>
-            <div class="setting-row">
-                <label for="networkInterfaceSelect">Network interface</label>
-                <select id="networkInterfaceSelect"></select>
-            </div>
-        </section>
-
-        <section class="panel">
-            <h2>Eos console</h2>
-            <p class="panel-note">LX cues come from the console over TCP. If it was off or unreachable when the server started, or the link dropped, reconnect here.</p>
-            <div class="setting-row">
-                <button type="button" id="eosReconnectButton">Reconnect to Eos</button>
-                <span id="eosConnectionState" class="eos-state">-</span>
-            </div>
-        </section>
-
-        <section class="panel danger-panel">
-            <h2>Reset</h2>
-            <p class="panel-note">Deletes every note and every chat message for everyone, on the server and in every open browser, and drops unsent notes and saved chat copies. A restart afterwards comes up empty. Tags are kept. Use it after a dress.</p>
-            <button type="button" id="resetButton" class="danger-button">Reset all notes and chat</button>
-            <div id="resetConfirm" class="reset-confirm" hidden>
-                <span>Delete all notes and chat for everyone? This cannot be undone.</span>
-                <button type="button" id="resetConfirmButton" class="danger-button">Yes, delete everything</button>
-                <button type="button" id="resetCancelButton">Cancel</button>
-            </div>
-            <p id="resetResult" class="panel-note" hidden></p>
-        </section>
-
-        <section class="panel">
-            <h2>Status</h2>
-            <div class="status-list">
-                <div id="connectionStatus" class="status-disconnected">Disconnected from Server</div>
-                <div id="midiStatus">MIDI Interface: Scanning...</div>
-                <div id="networkStatus">Network Timecode: Starting...</div>
-                <div id="eosStatus">Eos TCP: -</div>
-                <div id="oscStatus">LX Cues: Manual Input</div>
-                <div id="timeModeStatus">Time Mode: -</div>
+        <section class="section" aria-labelledby="timecodeTitle">
+            <h2 id="timecodeTitle">Timecode</h2>
+            <p class="section-note">Applies to every page, overlays included, and is kept after a restart.</p>
+            <div class="rows">
+                <div class="row">
+                    <span class="row-label" id="timeModeLabel">Clock source</span>
+                    <div class="segmented" id="timeModeButtons" role="group" aria-labelledby="timeModeLabel">
+                        <button type="button" class="time-mode-button" data-mode="midi">MIDI</button>
+                        <button type="button" class="time-mode-button" data-mode="network">Network</button>
+                        <button type="button" class="time-mode-button" data-mode="realtime">Time of day</button>
+                    </div>
+                </div>
+                <div class="row">
+                    <label class="row-label" for="midiInputSelect">MIDI input</label>
+                    <select id="midiInputSelect" class="select"></select>
+                </div>
+                <div class="row">
+                    <label class="row-label" for="networkInterfaceSelect">Network interface</label>
+                    <select id="networkInterfaceSelect" class="select"></select>
+                </div>
             </div>
         </section>
 
-        <section class="panel">
-            <h2>Debug</h2>
+        <section class="section" aria-labelledby="overlaysTitle">
+            <h2 id="overlaysTitle">OBS overlays</h2>
+            <p class="section-note">Add these as browser sources. The background is transparent.</p>
+            <div class="rows">
+                <a class="row row-link" href="/overlay.html" target="_blank"><span class="row-label">Timecode and LX cue</span><span class="row-value mono">/overlay.html</span></a>
+                <a class="row row-link" href="/overlay-cast.html" target="_blank"><span class="row-label">Time and scene</span><span class="row-value mono">/overlay-cast.html</span></a>
+            </div>
+        </section>
+
+        <section class="section" aria-labelledby="resetTitle">
+            <h2 id="resetTitle">Reset</h2>
+            <div class="rows">
+                <div class="row row-wrap">
+                    <div class="row-text">
+                        <div class="row-label">Reset all notes and chat</div>
+                        <p class="section-note">Deletes every note and chat message for everyone, including unsent notes in open browsers. Tags are kept. Use it after a dress.</p>
+                    </div>
+                    <button type="button" id="resetButton" class="btn danger-outline">Reset&hellip;</button>
+                    <div id="resetConfirm" class="reset-confirm" role="alert" hidden>
+                        <span>Delete all notes and chat for everyone? This can't be undone.</span>
+                        <button type="button" id="resetCancelButton" class="btn ghost">Cancel</button>
+                        <button type="button" id="resetConfirmButton" class="btn danger">Delete everything</button>
+                    </div>
+                </div>
+            </div>
+            <p id="resetResult" class="section-note result" role="status" hidden></p>
+        </section>
+
+        <details class="section debug">
+            <summary>Details for troubleshooting</summary>
             <dl class="debug-grid">
-                <dt>MIDI timecode</dt><dd id="midiTimecode">--:--:--:--</dd>
+                <dt>Clock source</dt><dd id="timeModeStatus">-</dd>
+                <dt>MIDI timecode</dt><dd id="midiTimecode" class="mono">--:--:--:--</dd>
                 <dt>MIDI frame rate</dt><dd id="midiFrameRate">-</dd>
                 <dt>MIDI port</dt><dd id="midiPort">-</dd>
                 <dt>MIDI ports available</dt><dd id="midiPortCount">-</dd>
-                <dt>MTC messages received (at page load)</dt><dd id="mtcMessages">-</dd>
-                <dt>Network timecode</dt><dd id="networkTimecode">--:--:--:--</dd>
+                <dt>MTC messages (at page load)</dt><dd id="mtcMessages">-</dd>
+                <dt>Network timecode</dt><dd id="networkTimecode" class="mono">--:--:--:--</dd>
                 <dt>Network frame rate</dt><dd id="networkFrameRate">-</dd>
                 <dt>Gateway multicast</dt><dd id="networkGroup">-</dd>
                 <dt>Network interface</dt><dd id="networkInterface">-</dd>
@@ -92,12 +108,13 @@
                 <dt>Gateway source</dt><dd id="networkSource">-</dd>
                 <dt>Listening / receiving</dt><dd id="networkState">-</dd>
                 <dt>Network error</dt><dd id="networkError">-</dd>
+                <dt>Eos connection</dt><dd id="eosConnectionState">-</dd>
                 <dt>Current LX cue</dt><dd id="currentLxCue">-</dd>
-                <dt>Current act</dt><dd id="currentAct">-</dd>
+                <dt>Current scene</dt><dd id="currentAct">-</dd>
                 <dt>Online users</dt><dd id="onlineUsers">-</dd>
             </dl>
-        </section>
-    </div>
+        </details>
+    </main>
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="keepalive.js"></script>

@@ -39,6 +39,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const tagFilterPopover = $('tagFilterPopover');
     const tagPicker = $('tagPicker');
     const tagPickerList = $('tagPickerList');
+    const tagPickerHint = $('tagPickerHint');
     const chatToggle = $('chatToggle');
     const chatDrawer = $('chatDrawer');
     const chatClose = $('chatClose');
@@ -560,10 +561,15 @@ document.addEventListener('DOMContentLoaded', function() {
     function renderTagPicker() {
         const note = allNotes.find(n => n.id === tagPickerNoteId);
         if (!note) return closeTagPicker();
+        // The last tag on a note can't be taken off, only swapped by ticking another first.
+        const onlyTag = note.tags.length === 1 ? note.tags[0] : null;
+        tagPickerHint.hidden = !onlyTag;
+        const focused = tagPicker.contains(document.activeElement) ? document.activeElement.dataset.tag : null;
         setHtml(tagPickerList, availableTags.map(tag => `
-            <button type="button" class="tag-option" role="menuitemcheckbox" data-tag="${esc(tag.id)}" aria-checked="${note.tags.includes(tag.id)}" style="--tag: ${safeColor(tag.color)}">
+            <button type="button" class="tag-option" role="menuitemcheckbox" data-tag="${esc(tag.id)}" aria-checked="${note.tags.includes(tag.id)}"${tag.id === onlyTag ? ' aria-disabled="true"' : ''} style="--tag: ${safeColor(tag.color)}">
                 <span class="dot"></span>${esc(tag.name)}<i data-icon="check" data-class="check"></i>
             </button>`).join('') || '<div class="popover-title">No tags set up</div>');
+        if (focused) [...tagPickerList.querySelectorAll('.tag-option')].find(o => o.dataset.tag === focused)?.focus();
     }
 
     function openTagPicker(noteId, anchor) {
@@ -589,6 +595,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!option || !note) return;
         const id = option.dataset.tag;
         const tags = note.tags.includes(id) ? note.tags.filter(t => t !== id) : [...note.tags, id];
+        if (!tags.length) return;
         option.setAttribute('aria-checked', String(tags.includes(id)));
         window.socket.emit('note-update-tags', { noteId: note.id, tags });
     });
@@ -683,12 +690,19 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- Rendering notes ---
-    function tagChipsHTML(note, clickable) {
+    function tagChipsHTML(note) {
         return note.tags.map(id => {
             const tag = tagById(id);
-            const attrs = clickable ? `data-action="edit-tags" title="Change tags"` : 'tabindex="-1"';
-            return `<${clickable ? 'button type="button"' : 'span'} class="chip" style="--tag: ${safeColor(tag.color)}" ${attrs}><span class="dot"></span>${esc(tag.name)}</${clickable ? 'button' : 'span'}>`;
+            return `<span class="chip" style="--tag: ${safeColor(tag.color)}"><span class="dot"></span>${esc(tag.name)}</span>`;
         }).join('');
+    }
+
+    // A note's tags are one dropdown: the chips and a chevron open the tag picker.
+    function tagTriggerHTML(note) {
+        const names = note.tags.map(id => tagById(id).name).join(', ');
+        const label = note.tags.length ? `Tags: ${names}. Change tags` : 'Add a tag';
+        return `<button type="button" class="tag-trigger" data-action="edit-tags" aria-haspopup="dialog" aria-label="${esc(label)}" title="Change tags">
+            ${tagChipsHTML(note) || '<span class="chip add-tag">Add a tag</span>'}<i data-icon="chevron"></i></button>`;
     }
 
     function avatarHTML(key, name, extraClass) {
@@ -765,13 +779,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const actions = `
             <span class="row-actions">
-                ${iconButton('edit-tags', 'tag', note.tags.length ? 'Change tags' : 'Add a tag')}
                 ${iconButton('reply', 'reply', 'Reply')}
                 ${canEdit && !editing ? iconButton('edit-note', 'edit', 'Edit note') : ''}
                 ${canDelete && !editing ? iconButton('delete-note', 'trash', 'Delete note') : ''}
             </span>`;
 
-        const foot = note.tags.length ? `<div class="note-foot">${tagChipsHTML(note, true)}</div>` : '';
+        const foot = `<div class="note-foot">${tagTriggerHTML(note)}</div>`;
 
         const draft = commentDrafts.get(note.id) || '';
         return `
@@ -794,7 +807,11 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <button type="button" class="btn primary" data-action="submit-comment" ${draft.trim() ? '' : 'disabled'}>Reply</button>
                                 </div>
                             </div>
-                        </div>` : ''}
+                        </div>` : `
+                        <button type="button" class="comment-input reply-prompt" data-action="reply">
+                            ${avatarHTML(currentUser.sub || currentUser.name, currentUser.name, 'sm')}
+                            <span class="reply-prompt-box">Reply to this thread…</span>
+                        </button>`}
                     </div>` : ''}
                 </div>
             </article>`;
@@ -934,7 +951,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="note-main">
                     ${noteHeadHTML(note, currentUser.name, `<span class="pending-badge">${pendingBadgeText()}</span>`)}
                     <div class="note-text">${esc(note.text)}</div>
-                    ${note.tags.length ? `<div class="note-foot">${tagChipsHTML(note, false)}</div>` : ''}
+                    ${note.tags.length ? `<div class="note-foot">${tagChipsHTML(note)}</div>` : ''}
                 </div>
             </article>
         `.trim());
@@ -960,7 +977,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 pendingNotes.delete(note.clientId);
                 savePendingNotes();
                 pending.element.querySelector('.pending-badge').textContent =
-                    `Not saved: ${(stored && stored.error) || 'refused by the server'}`;
+                    `Not added. ${(stored && stored.error) || 'Something went wrong. Write it again.'}`;
                 pending.element.classList.add('failed');
                 return;
             }
@@ -1513,7 +1530,9 @@ document.addEventListener('DOMContentLoaded', function() {
         commentDrafts.delete(note.id);
         openReplies.delete(note.id);
         updateNoteElement(note);
-        noteElements.get(note.id)?.querySelector('[data-action="reply"]')?.focus();
+        // Back to the "Reply…" prompt under the thread if there is one, else the reply icon.
+        const el = noteElements.get(note.id);
+        (el?.querySelector('.reply-prompt') || el?.querySelector('[data-action="reply"]'))?.focus();
     }
 
     // A delete shows straight away but only reaches the server once its Undo

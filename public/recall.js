@@ -1,314 +1,241 @@
-// All the JavaScript code remains exactly the same as in the previous version
-// Only the CSS has been changed for the background
+// Reads a notes file exported from the main page ("Download notes (JSON)") and shows it the same way,
+// read-only, with search and scene/tag filters. Nothing is sent to the server.
 document.addEventListener('DOMContentLoaded', function() {
-    const uploadArea = document.getElementById('uploadArea');
-    const fileInput = document.getElementById('fileInput');
-    const fileInfo = document.getElementById('fileInfo');
-    const fileName = document.getElementById('fileName');
-    const fileType = document.getElementById('fileType');
-    const fileNotesCount = document.getElementById('fileNotesCount');
-    const filterTagsContainer = document.getElementById('filterTags');
-    const filterActContainer = document.getElementById('recallActFilter');
-    const notesList = document.getElementById('notesList');
-    const totalNotes = document.getElementById('totalNotes');
-    const filteredNotes = document.getElementById('filteredNotes');
+    const $ = id => document.getElementById(id);
+    const fileInput = $('fileInput');
+    const dropZone = $('dropZone');
+    const fileError = $('fileError');
+    const notesSection = $('notesSection');
+    const fileInfo = $('fileInfo');
+    const searchInput = $('searchInput');
+    const sceneFilter = $('sceneFilter');
+    const tagFilter = $('tagFilter');
+    const notesCount = $('notesCount');
+    const clearFiltersBtn = $('clearFilters');
+    const notesList = $('notesList');
+    const notesNoMatch = $('notesNoMatch');
+
+    // Note text comes from other people (and the file from anywhere): see public/safe-html.js.
+    const { escapeHtml: esc, setHtml } = SafeHtml;
+    const safeColor = (color) => SafeHtml.safeColour(color, '#8a8f98');
 
     let allNotes = [];
-    let availableTags = [];
-    let filterTag = 'all';
-    let filterAct = 'all';
+    let tagsById = new Map();
 
-    // Drag and drop functionality
-    uploadArea.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        uploadArea.classList.add('drag-over');
-    });
+    // --- Opening a file ---
+    function showError(message) {
+        fileError.textContent = message;
+        fileError.hidden = false;
+    }
 
-    uploadArea.addEventListener('dragleave', function() {
-        uploadArea.classList.remove('drag-over');
-    });
-
-    uploadArea.addEventListener('drop', function(e) {
-        e.preventDefault();
-        uploadArea.classList.remove('drag-over');
-
-        if (e.dataTransfer.files.length) {
-            handleFile(e.dataTransfer.files[0]);
-        }
-    });
-
-    uploadArea.addEventListener('click', function() {
-        fileInput.click();
-    });
-
-    fileInput.addEventListener('change', function() {
-        if (fileInput.files.length) {
-            handleFile(fileInput.files[0]);
-        }
-    });
-    recallActFilter.addEventListener('click', function(e) {
-        if (e.target.classList.contains('filter-tag')) {
-            const actValue = e.target.getAttribute('data-act');
-            filterAct = actValue;
-
-            document.querySelectorAll('.act-filter .filter-tag').forEach(t => t.classList.remove('active'));
-            e.target.classList.add('active');
-
-            updateNotesList();
-            updateStats();
-        }
-    });
-
-    function handleFile(file) {
-        const fileExtension = file.name.split('.').pop().toLowerCase();
-
-        if (fileExtension !== 'json') {
-            alert('Please select a JSON file');
+    function openFile(file) {
+        if (!file) return;
+        fileError.hidden = true;
+        if (!/\.json$/i.test(file.name)) {
+            showError(`"${file.name}" isn't a notes file. Choose the .json file downloaded from the notes page.`);
             return;
         }
-
-        fileName.textContent = file.name;
-        fileType.textContent = fileExtension.toUpperCase();
-
         const reader = new FileReader();
-
-        reader.onload = function(e) {
+        reader.onload = () => {
+            let data;
             try {
-                if (fileExtension === 'json') {
-                    const data = JSON.parse(e.target.result);
-                    processJsonData(data);
-                }
+                data = JSON.parse(reader.result);
             } catch (error) {
-                alert('Error parsing file: ' + error.message);
+                showError(`"${file.name}" couldn't be read. It may be damaged or not a notes file.`);
+                return;
             }
+            if (!data || !Array.isArray(data.notes)) {
+                showError(`"${file.name}" has no notes in it. Choose the file downloaded from the notes page.`);
+                return;
+            }
+            load(file.name, data);
         };
-
+        reader.onerror = () => showError(`"${file.name}" couldn't be opened.`);
         reader.readAsText(file);
     }
 
-    function processJsonData(data) {
-        if (data.notes && Array.isArray(data.notes)) {
-            allNotes = data.notes;
-            fileNotesCount.textContent = allNotes.length;
-            fileInfo.style.display = 'block';
+    $('chooseFile').addEventListener('click', () => fileInput.click());
+    $('openAnother').addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => {
+        openFile(fileInput.files[0]);
+        fileInput.value = '';
+    });
 
-            // Extract tags from notes
-            extractTags();
-            updateNotesList();
-            updateFilterTags();
-            updateFilterActs();
-            updateStats();
-        } else {
-            alert('Invalid JSON format: Expected "notes" array');
-        }
+    // Dropping works anywhere on the page, not only on the box.
+    document.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('drag-over');
+    });
+    document.addEventListener('dragleave', (e) => {
+        if (!e.relatedTarget) dropZone.classList.remove('drag-over');
+    });
+    document.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        openFile(e.dataTransfer.files[0]);
+    });
+
+    // --- Loaded notes ---
+    function hashHue(text) {
+        let h = 0;
+        for (const ch of String(text)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+        return h % 360;
     }
 
-    function parseTimecode(timecodeStr) {
-        if (!timecodeStr) return { hours: 0, minutes: 0, seconds: 0, frames: 0 };
-
-        const parts = timecodeStr.replace(/"/g, '').split(':');
-        if (parts.length === 4) {
-            return {
-                hours: parseInt(parts[0]) || 0,
-                minutes: parseInt(parts[1]) || 0,
-                seconds: parseInt(parts[2]) || 0,
-                frames: parseInt(parts[3]) || 0
-            };
-        }
-
-        return { hours: 0, minutes: 0, seconds: 0, frames: 0 };
+    function initials(name) {
+        const parts = String(name || '?').trim().split(/\s+/);
+        return ((parts[0] || '?')[0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
     }
 
-    // Note text comes from other people (and the file from anywhere): see public/safe-html.js.
-    const { escapeHtml, safeColour, setHtml } = SafeHtml;
+    // Same colours as the notes page, so a person looks the same on both.
+    function avatarHTML(key, name, extraClass) {
+        return `<span class="avatar${extraClass ? ` ${extraClass}` : ''}" style="background:hsl(${hashHue(key)}, 45%, 42%)" aria-hidden="true">${esc(initials(name))}</span>`;
+    }
 
-    function extractTags() {
-        availableTags = [];
-        const tagMap = new Map();
+    function load(name, data) {
+        allNotes = data.notes.filter(note => note && typeof note === 'object').map(note => ({
+            ...note,
+            text: String(note.text || ''),
+            user: String(note.user || 'Unknown'),
+            act: String(note.act || 'Preshow'),
+            tags: Array.isArray(note.tags) ? note.tags.filter(tag => typeof tag === 'string') : [],
+            comments: Array.isArray(note.comments) ? note.comments.filter(c => c && typeof c === 'object') : []
+        }));
 
-        allNotes.forEach(note => {
-            if (note.tags && Array.isArray(note.tags)) {
-                note.tags.forEach(tag => {
-                    if (typeof tag === 'string') {
-                        if (!tagMap.has(tag)) {
-                            tagMap.set(tag, {
-                                id: tag,
-                                name: tag,
-                                color: getRandomColor()
-                            });
-                        }
-                    } else if (tag.id && tag.name) {
-                        if (!tagMap.has(tag.id)) {
-                            tagMap.set(tag.id, {
-                                id: tag.id,
-                                name: tag.name,
-                                color: tag.color || getRandomColor()
-                            });
-                        }
-                    }
-                });
+        // Newer files carry the tag list with names and colours; older ones only the ids on each note.
+        tagsById = new Map();
+        (Array.isArray(data.tags) ? data.tags : []).forEach(tag => {
+            if (tag && tag.id) tagsById.set(tag.id, { id: tag.id, name: String(tag.name || tag.id), color: tag.color });
+        });
+        allNotes.forEach(note => note.tags.forEach(id => {
+            if (!tagsById.has(id)) tagsById.set(id, { id, name: id, color: `hsl(${hashHue(id)}, 55%, 60%)` });
+        }));
+
+        const exported = data.exportedAt ? new Date(data.exportedAt) : null;
+        const parts = [name];
+        if (exported && !isNaN(exported)) parts.push(`exported ${exported.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`);
+        parts.push(`${allNotes.length} ${allNotes.length === 1 ? 'note' : 'notes'}`);
+        fileInfo.textContent = parts.join(' · ');
+
+        const scenes = [...new Set(allNotes.map(note => note.act))];
+        fillSelect(sceneFilter, [['all', 'All scenes'], ...scenes.map(scene => [scene, scene])]);
+        const usedTags = [...tagsById.values()].filter(tag => allNotes.some(note => note.tags.includes(tag.id)));
+        fillSelect(tagFilter, [['all', 'All tags'], ...usedTags.map(tag => [tag.id, tag.name])]);
+        searchInput.value = '';
+
+        dropZone.hidden = true;
+        notesSection.hidden = false;
+        $('openAnother').hidden = false;
+        render();
+    }
+
+    function fillSelect(select, options) {
+        select.replaceChildren(...options.map(([value, label]) => {
+            const option = document.createElement('option');
+            option.value = value;
+            option.textContent = label;
+            return option;
+        }));
+        select.value = 'all';
+    }
+
+    function pad(n) {
+        return String(n || 0).padStart(2, '0');
+    }
+
+    function formatNoteTimecode(note) {
+        const tc = note.timecode && typeof note.timecode === 'object' ? note.timecode : {};
+        const base = `${pad(tc.hours)}:${pad(tc.minutes)}:${pad(tc.seconds)}`;
+        return note.frameRate === 'ms' ? base : `${base}:${pad(tc.frames)}`;
+    }
+
+    function clockTime(timestamp) {
+        const date = new Date(timestamp);
+        return isNaN(date) ? '' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+
+    function matches(note) {
+        if (sceneFilter.value !== 'all' && note.act !== sceneFilter.value) return false;
+        if (tagFilter.value !== 'all' && !note.tags.includes(tagFilter.value)) return false;
+        const query = searchInput.value.trim().toLowerCase();
+        if (!query) return true;
+        const haystack = [note.text, note.user, note.lxCue, note.act,
+            ...note.tags.map(id => (tagsById.get(id) || {}).name),
+            ...note.comments.map(c => `${c.user} ${c.text}`)].join(' ').toLowerCase();
+        return haystack.includes(query);
+    }
+
+    function noteHTML(note) {
+        const rate = note.frameRate === 'ms' ? 'real time' : `${note.frameRate || 30} fps`;
+        const title = note.timestamp ? `${rate} · sent ${new Date(note.timestamp).toLocaleString()}` : rate;
+        const chips = note.tags.map(id => {
+            const tag = tagsById.get(id);
+            return `<span class="chip" style="--tag: ${safeColor(tag.color)}"><span class="dot"></span>${esc(tag.name)}</span>`;
+        }).join('');
+        const comments = note.comments.map(comment => `
+            <div class="comment">
+                ${avatarHTML(comment.userId || comment.user, comment.user, 'sm')}
+                <div class="comment-main">
+                    <div class="comment-head">
+                        <span class="comment-user">${esc(comment.user)}</span>
+                        <span>${esc(clockTime(comment.timestamp))}</span>
+                    </div>
+                    <div class="comment-text">${esc(comment.text)}</div>
+                </div>
+            </div>`).join('');
+        const edited = note.lastEdited
+            ? `<div class="note-edited">Edited by ${esc(note.lastEditedBy || 'unknown')} at ${esc(clockTime(note.lastEdited))}</div>` : '';
+        return `
+            <article class="note">
+                ${avatarHTML(note.userId || note.user, note.user)}
+                <div class="note-main">
+                    <div class="note-head">
+                        <span class="note-author">${esc(note.user)}</span>
+                        <span class="note-cue">Cue ${esc(note.lxCue || '–')}</span>
+                        <span class="note-tc mono" title="${esc(title)}">${esc(formatNoteTimecode(note))}</span>
+                    </div>
+                    <div class="note-text">${esc(note.text)}</div>
+                    ${edited}
+                    ${chips ? `<div class="note-foot">${chips}</div>` : ''}
+                    ${comments ? `<div class="comments">${comments}</div>` : ''}
+                </div>
+            </article>`;
+    }
+
+    // Newest first and grouped by scene, as on the notes page (the file itself stays oldest first).
+    function render() {
+        const shown = NoteOrder.newestFirst(allNotes.filter(matches));
+        let html = '';
+        let lastScene = null;
+        shown.forEach(note => {
+            if (note.act !== lastScene) {
+                html += `<div class="group-head"><span>${esc(note.act)}</span></div>`;
+                lastScene = note.act;
             }
+            html += noteHTML(note);
         });
+        setHtml(notesList, html);
 
-        availableTags = Array.from(tagMap.values());
+        const filtered = sceneFilter.value !== 'all' || tagFilter.value !== 'all' || searchInput.value.trim() !== '';
+        sceneFilter.classList.toggle('active', sceneFilter.value !== 'all');
+        tagFilter.classList.toggle('active', tagFilter.value !== 'all');
+        clearFiltersBtn.hidden = !filtered;
+        notesNoMatch.hidden = shown.length > 0 || allNotes.length === 0;
+        notesCount.textContent = filtered
+            ? `${shown.length} of ${allNotes.length} notes`
+            : `${allNotes.length} ${allNotes.length === 1 ? 'note' : 'notes'}`;
     }
 
-    function updateFilterTags() {
-        setHtml(filterTagsContainer, '<div class="filter-tag active" data-tag="all">All Notes</div>' + availableTags.map(tag => `
-                <div class="filter-tag" data-tag="${escapeHtml(tag.id)}" style="background-color: ${safeColour(tag.color)}; color: #000;">
-                    ${escapeHtml(tag.name)}
-                </div>
-            `).join(''));
-
-        document.querySelectorAll('.filter-tag').forEach(tag => {
-            tag.addEventListener('click', function() {
-                const tagId = this.getAttribute('data-tag');
-                filterTag = tagId;
-
-                document.querySelectorAll('.filter-tag').forEach(t => t.classList.remove('active'));
-                this.classList.add('active');
-
-                updateNotesList();
-                updateStats();
-                updateFilterActs();
-            });
-        });
+    function clearFilters() {
+        sceneFilter.value = 'all';
+        tagFilter.value = 'all';
+        searchInput.value = '';
+        render();
     }
 
-    function updateFilterActs() {
-        // Get unique acts from imported notes
-        const uniqueActs = [...new Set(allNotes.map(note => note.act))];
-
-        const actFilterContainer = document.getElementById('recallActFilter');
-        setHtml(actFilterContainer, '<div class="filter-tag active" data-act="all">All scenes</div>' +
-            uniqueActs.map(act => `<div class="filter-tag" data-act="${escapeHtml(act)}">${escapeHtml(act)}</div>`).join(''));
-    }
-
-    function updateNotesList() {
-        if (allNotes.length === 0) {
-            setHtml(notesList, '<div style="text-align: center; opacity: 0.7; padding: 2rem;">No notes to display</div>');
-            return;
-        }
-
-        // Filter notes
-        let filteredNotes = allNotes;
-        if (filterTag !== 'all') {
-            filteredNotes = allNotes.filter(note => 
-                note.tags && note.tags.includes(filterTag)
-            );
-        }
-
-        if (filterAct !== 'all') {
-            filteredNotes = filteredNotes.filter(note => 
-                note.act === filterAct
-            );
-        }
-        // Newest first, as on the main page (the exported file stays oldest first)
-        const chronologicalNotes = NoteOrder.newestFirst(filteredNotes);
-
-        setHtml(notesList, chronologicalNotes.map(note => {
-            const timecodeDisplay = formatTimecode(note.timecode);
-
-            const tagElements = (note.tags || []).map(tagId => {
-                const tag = availableTags.find(t => t.id === tagId);
-                if (tag) {
-                    return `<span class="note-tag" style="background-color: ${safeColour(tag.color)}; color: #000;">${escapeHtml(tag.name)}</span>`;
-                }
-                return `<span class="note-tag" style="background-color: #cccccc; color: #000;">${escapeHtml(tagId)}</span>`;
-            }).join('');
-
-            const commentElements = (note.comments || []).map(comment => {
-                const commentTime = new Date(comment.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                return `
-                    <div class="comment" style="background: rgba(255,255,255,0.1); padding: 0.5rem; border-radius: 5px; margin-top: 0.3rem; border-left: 2px solid rgba(76, 175, 80, 0.5);">
-                        <div style="display: flex; justify-content: space-between; font-size: 0.8rem; opacity: 0.8; margin-bottom: 0.2rem;">
-                            <span style="font-weight: bold; color: #4CAF50;">${escapeHtml(comment.user)}</span>
-                            <span>${escapeHtml(commentTime)}</span>
-                        </div>
-                        <div style="font-size: 0.9rem;">${escapeHtml(comment.text)}</div>
-                    </div>
-                `;
-            }).join('');
-
-            return `
-                <div class="note-item" data-tags="${escapeHtml((note.tags || []).join(','))}" data-act="${escapeHtml(note.act || 'Act 1')}">
-                    <div class="note-header">
-                        <span class="note-user">${escapeHtml(note.user)}</span>
-                        <span class="note-timecode">
-                            ${escapeHtml(timecodeDisplay)}
-                            <span class="note-lx-cue">LX: ${escapeHtml(note.lxCue || 'N/A')}</span>
-                            @ ${escapeHtml(note.frameRate || '30 fps')}
-                        </span>
-                        <span class="note-act">${escapeHtml(note.act || 'Act 1')}</span>
-                    </div>
-                    <div class="note-text">${escapeHtml(note.text)}</div>
-                    ${(note.tags || []).length > 0 ? `<div class="note-tags">${tagElements}</div>` : ''}
-                    ${(note.comments || []).length > 0 ? `
-                        <div class="comments-section" style="margin-top: 1rem;">
-                            <div style="font-size: 0.9rem; opacity: 0.8; margin-bottom: 0.5rem;">Comments:</div>
-                            ${commentElements}
-                        </div>
-                    ` : ''}
-                </div>
-            `;
-        }).join(''));
-    }
-
-    function updateStats() {
-        totalNotes.textContent = `Total: ${allNotes.length} notes`;
-
-        let filteredNotes = allNotes;
-        if (filterTag !== 'all') {
-            filteredNotes = filteredNotes.filter(note => 
-                note.tags && note.tags.includes(filterTag)
-            );
-        }
-        if (filterAct !== 'all') {
-            filteredNotes = filteredNotes.filter(note => 
-                note.act === filterAct
-            );
-        }
-
-        filteredNotes.textContent = `Showing notes`;
-    }
-
-    function formatTimecode(tc) {
-        if (!tc || typeof tc !== 'object') {
-            return '00:00:00:00';
-        }
-        return `${(tc.hours || 0).toString().padStart(2, '0')}:${(tc.minutes || 0).toString().padStart(2, '0')}:${(tc.seconds || 0).toString().padStart(2, '0')}:${(tc.frames || 0).toString().padStart(2, '0')}`;
-    }
-
-    function updateActFilter() {
-        // Get unique acts from imported notes
-        const uniqueActs = [...new Set(allNotes.map(note => note.act))];
-
-        const actFilterContainer = document.getElementById('recallActFilter');
-        setHtml(actFilterContainer, '<div class="filter-tag active" data-act="all">All scenes</div>' +
-            uniqueActs.map(act => `<div class="filter-tag" data-act="${escapeHtml(act)}">${escapeHtml(act)}</div>`).join(''));
-
-        // Re-attach event listeners
-        document.querySelectorAll('.act-filter .filter-tag').forEach(tag => {
-            tag.addEventListener('click', function() {
-                const actValue = this.getAttribute('data-act');
-                filterAct = actValue;
-
-                document.querySelectorAll('.act-filter .filter-tag').forEach(t => t.classList.remove('active'));
-                this.classList.add('active');
-
-                updateNotesList();
-                updateStats();
-            });
-        });
-    }
-
-    function getRandomColor() {
-        const colors = [
-            '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', 
-            '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F',
-            '#E63946', '#F4A261', '#9B5DE5', '#00B4D8',
-            '#06D6A0', '#118AB2', '#8AC926', '#FF6F91'
-        ];
-        return colors[Math.floor(Math.random() * colors.length)];
-    }
+    searchInput.addEventListener('input', render);
+    sceneFilter.addEventListener('change', render);
+    tagFilter.addEventListener('change', render);
+    clearFiltersBtn.addEventListener('click', clearFilters);
+    notesNoMatch.querySelector('[data-action="clear-filters"]').addEventListener('click', clearFilters);
 });

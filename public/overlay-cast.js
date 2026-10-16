@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const connectionStatus = document.getElementById('connectionStatus');
     const overlayContainer = document.getElementById('overlayContainer');
 
-    let currentAct = 'Act 1';
+    let currentAct = '--';
     let realTimeInterval = null;
 
     // Parse URL parameters for customization - matching original overlay
@@ -48,6 +48,7 @@ document.addEventListener('DOMContentLoaded', function() {
     socket.on('connect', function() {
         connectionStatus.textContent = 'Connected';
         connectionStatus.className = 'connection-status connected';
+        startRealTimeMode();
     });
 
     socket.on('disconnect', function() {
