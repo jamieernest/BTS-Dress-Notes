@@ -72,3 +72,14 @@ test('Escape is left alone elsewhere', () => {
     assert.equal(escapeAction(key('Escape', { isComposing: true }), noteInput, { noteInput, noteValue: '' }), null);
     assert.equal(escapeAction(key('a'), noteInput, { noteInput, noteValue: '' }), null);
 });
+
+test('an empty note box lets go of the frozen timecode, keeping the note if the box is still focused', () => {
+    const { emptyBoxAction, EMPTY_RELEASE_MS } = require('../public/type-to-note.js');
+    assert.equal(EMPTY_RELEASE_MS, 15000);
+    assert.equal(emptyBoxAction({ isTyping: true, noteValue: '', focused: true }), 'release');
+    assert.equal(emptyBoxAction({ isTyping: true, noteValue: ' \n', focused: true }), 'release');
+    assert.equal(emptyBoxAction({ isTyping: true, noteValue: '', focused: false }), 'cancel');
+    assert.equal(emptyBoxAction({ isTyping: true, noteValue: 'half a thought', focused: false }), null);
+    assert.equal(emptyBoxAction({ isTyping: true, noteValue: 'half a thought', focused: true }), null);
+    assert.equal(emptyBoxAction({ isTyping: false, noteValue: '', focused: true }), null);
+});

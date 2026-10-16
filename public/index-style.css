@@ -237,6 +237,15 @@ textarea:focus {
     font-weight: 600;
 }
 
+.note-item.pending.failed {
+    border-left-color: #f44336;
+}
+
+.note-item.failed .note-pending-badge {
+    background: rgba(244, 67, 54, 0.3);
+    color: #ef9a9a;
+}
+
 .note-item {
     background: rgba(255, 255, 255, 0.1);
     border-radius: 8px;

@@ -24,7 +24,7 @@ npm i
 
    (For Network TC) No extra MIDI interface is needed - see [Timecode modes](#timecode-modes) below
 
-7. Every page requires login via Keycloak SSO. Set `SESSION_SECRET` (required - the server won't start without it) and, to enable login, `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID` and `KEYCLOAK_CLIENT_SECRET` (one shared client covers every venue). See `AGENTS.md` for how these are used. Logins last 12 hours and are saved to `local-sessions.json` (git-ignored) so they survive a server restart; changing `SESSION_SECRET` or deleting that file logs everyone out.
+7. Every page requires login via Keycloak SSO. Set `SESSION_SECRET` (required - the server won't start without it) and, to enable login, `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID` and `KEYCLOAK_CLIENT_SECRET` (one shared client covers every venue). See `AGENTS.md` for how these are used. A login lasts until it has gone 12 hours without any open page talking to the server (open pages, overlays included, keep it alive), and is saved to `local-sessions.json` (git-ignored) so it survives a server restart; changing `SESSION_SECRET` or deleting that file logs everyone out. Someone sent back to log in returns to the page they were on, with any half-written note.
 
 8. Run by running `npm start`
 
@@ -61,7 +61,7 @@ Have fun and enjoy :)
 
 ## Notes backup, restart and reset
 
-Notes are kept in server memory and saved to `backups/` every minute and when the server stops or crashes. When the server starts it loads the newest backup under 2 hours old that is intact (valid JSON, well-formed notes, not cut short), trying older ones if the newest is damaged, and starts empty if none qualifies; the log says which. A restart after a dress, hours later, therefore starts clean.
+Notes are kept in server memory and saved to `backups/` about a second after every change (one file per minute at most), every minute, and when the server stops or crashes. A browser also keeps each note it has sent until the server confirms it, and sends it again after a reload or reconnect. When the server starts it loads the newest backup under 2 hours old that is intact (valid JSON, well-formed notes, not cut short), trying older ones if the newest is damaged, and starts empty if none qualifies; the log says which. A restart after a dress, hours later, therefore starts clean.
 
 Only the person who sent a note can edit it; backups record who wrote each note (by login), so this survives a restart or an export/import. Notes from a backup or file that has no author record, such as one made before this rule, can be edited by anyone.
 

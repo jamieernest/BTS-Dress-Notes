@@ -20,6 +20,7 @@
     </div>
 
     <script src="/socket.io/socket.io.js"></script>
+    <script src="keepalive.js"></script>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
             const realtimeValue = document.getElementById('realtimeValue');
@@ -58,7 +59,15 @@
             }
             
             // Connect to WebSocket server
-            const socket = io();
+            const socket = io({ auth: { page: 'overlay' } });
+
+            // A lost login cannot come back by reconnecting: log in again and return here.
+            function goToLogin() { window.location.href = loginUrl(); }
+            socket.on('connect_error', function(err) {
+                if (err && err.message === 'unauthorized') goToLogin();
+            });
+            socket.on('logged-out', goToLogin);
+            keepLoginAlive(goToLogin);
             
             socket.on('connect', function() {
                 connectionStatus.textContent = 'Connected';

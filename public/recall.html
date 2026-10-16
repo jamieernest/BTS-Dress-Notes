@@ -186,6 +186,12 @@
                 return { hours: 0, minutes: 0, seconds: 0, frames: 0 };
             }
             
+            // Note text comes from other people (and the file from anywhere), so all of it is escaped.
+            const htmlEscapes = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+            function escapeHtml(str) {
+                return String(str == null ? '' : str).replace(/[&<>"']/g, (m) => htmlEscapes[m]);
+            }
+
             function extractTags() {
                 availableTags = [];
                 const tagMap = new Map();
@@ -222,8 +228,8 @@
                 
                 availableTags.forEach(tag => {
                     const filterTagElement = `
-                        <div class="filter-tag" data-tag="${tag.id}" style="background-color: ${tag.color}; color: #000;">
-                            ${tag.name}
+                        <div class="filter-tag" data-tag="${escapeHtml(tag.id)}" style="background-color: ${escapeHtml(tag.color)}; color: #000;">
+                            ${escapeHtml(tag.name)}
                         </div>
                     `;
                     filterTagsContainer.innerHTML += filterTagElement;
@@ -253,7 +259,7 @@
                 
                 uniqueActs.forEach(act => {
                     const actElement = `
-                        <div class="filter-tag" data-act="${act}">${act}</div>
+                        <div class="filter-tag" data-act="${escapeHtml(act)}">${escapeHtml(act)}</div>
                     `;
                     actFilterContainer.innerHTML += actElement;
                 });
@@ -287,9 +293,9 @@
                     const tagElements = (note.tags || []).map(tagId => {
                         const tag = availableTags.find(t => t.id === tagId);
                         if (tag) {
-                            return `<span class="note-tag" style="background-color: ${tag.color}; color: #000;">${tag.name}</span>`;
+                            return `<span class="note-tag" style="background-color: ${escapeHtml(tag.color)}; color: #000;">${escapeHtml(tag.name)}</span>`;
                         }
-                        return `<span class="note-tag" style="background-color: #cccccc; color: #000;">${tagId}</span>`;
+                        return `<span class="note-tag" style="background-color: #cccccc; color: #000;">${escapeHtml(tagId)}</span>`;
                     }).join('');
                     
                     const commentElements = (note.comments || []).map(comment => {
@@ -297,26 +303,26 @@
                         return `
                             <div class="comment" style="background: rgba(255,255,255,0.1); padding: 0.5rem; border-radius: 5px; margin-top: 0.3rem; border-left: 2px solid rgba(76, 175, 80, 0.5);">
                                 <div style="display: flex; justify-content: space-between; font-size: 0.8rem; opacity: 0.8; margin-bottom: 0.2rem;">
-                                    <span style="font-weight: bold; color: #4CAF50;">${comment.user}</span>
+                                    <span style="font-weight: bold; color: #4CAF50;">${escapeHtml(comment.user)}</span>
                                     <span>${commentTime}</span>
                                 </div>
-                                <div style="font-size: 0.9rem;">${comment.text}</div>
+                                <div style="font-size: 0.9rem;">${escapeHtml(comment.text)}</div>
                             </div>
                         `;
                     }).join('');
                     
                     return `
-                        <div class="note-item" data-tags="${(note.tags || []).join(',')}" data-act="${note.act || 'Act 1'}">
+                        <div class="note-item" data-tags="${escapeHtml((note.tags || []).join(','))}" data-act="${escapeHtml(note.act || 'Act 1')}">
                             <div class="note-header">
-                                <span class="note-user">${note.user}</span>
+                                <span class="note-user">${escapeHtml(note.user)}</span>
                                 <span class="note-timecode">
                                     ${timecodeDisplay} 
-                                    <span class="note-lx-cue">LX: ${note.lxCue || 'N/A'}</span>
-                                    @ ${note.frameRate || '30 fps'}
+                                    <span class="note-lx-cue">LX: ${escapeHtml(note.lxCue || 'N/A')}</span>
+                                    @ ${escapeHtml(note.frameRate || '30 fps')}
                                 </span>
-                                <span class="note-act">${note.act || 'Act 1'}</span>
+                                <span class="note-act">${escapeHtml(note.act || 'Act 1')}</span>
                             </div>
-                            <div class="note-text">${note.text}</div>
+                            <div class="note-text">${escapeHtml(note.text)}</div>
                             ${(note.tags || []).length > 0 ? `<div class="note-tags">${tagElements}</div>` : ''}
                             ${(note.comments || []).length > 0 ? `
                                 <div class="comments-section" style="margin-top: 1rem;">
@@ -363,7 +369,7 @@
                 
                 uniqueActs.forEach(act => {
                     const actElement = `
-                        <div class="filter-tag" data-act="${act}">${act}</div>
+                        <div class="filter-tag" data-act="${escapeHtml(act)}">${escapeHtml(act)}</div>
                     `;
                     actFilterContainer.innerHTML += actElement;
                 });

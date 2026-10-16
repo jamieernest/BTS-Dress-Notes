@@ -122,13 +122,10 @@ document.addEventListener('DOMContentLoaded', function() {
         return date.toLocaleDateString();
     }
 
+    // Also used inside attribute values, so quotes are escaped too.
+    const htmlEscapes = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
     function escapeHtml(str) {
-        return str.replace(/[&<>]/g, function(m) {
-            if (m === '&') return '&amp;';
-            if (m === '<') return '&lt;';
-            if (m === '>') return '&gt;';
-            return m;
-        });
+        return String(str == null ? '' : str).replace(/[&<>"']/g, (m) => htmlEscapes[m]);
     }
 
     // --- Tag persistence ---
@@ -155,9 +152,9 @@ document.addEventListener('DOMContentLoaded', function() {
         availableTags.forEach(tag => {
             const tagId = `tag-${tag.id}`;
             const tagElement = `
-                <input type="checkbox" id="${tagId}" class="tag-checkbox" value="${tag.id}">
-                <label for="${tagId}" class="tag-label" style="background-color: ${tag.color}; color: #000;">
-                    ${tag.name}
+                <input type="checkbox" id="${escapeHtml(tagId)}" class="tag-checkbox" value="${escapeHtml(tag.id)}" ${selectedTags.includes(tag.id) ? 'checked' : ''}>
+                <label for="${escapeHtml(tagId)}" class="tag-label" style="background-color: ${escapeHtml(tag.color)}; color: #000;">
+                    ${escapeHtml(tag.name)}
                 </label>
             `;
             tagsContainer.innerHTML += tagElement;
@@ -177,8 +174,8 @@ document.addEventListener('DOMContentLoaded', function() {
         filterTagsContainer.innerHTML = '<div class="filter-tag active" data-tag="all">All Notes</div>';
         availableTags.forEach(tag => {
             const filterTagElement = `
-                <div class="filter-tag" data-tag="${tag.id}" style="background-color: ${tag.color}; color: #000;">
-                    ${tag.name}
+                <div class="filter-tag" data-tag="${escapeHtml(tag.id)}" style="background-color: ${escapeHtml(tag.color)}; color: #000;">
+                    ${escapeHtml(tag.name)}
                 </div>
             `;
             filterTagsContainer.innerHTML += filterTagElement;
@@ -196,14 +193,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function updateEditTagsDisplay(noteTags) {
         editTagsContainer.innerHTML = '';
+        noteTags = noteTags || [];
         editTagsSelected = [...noteTags];
         availableTags.forEach(tag => {
             const tagId = `edit-tag-${tag.id}`;
             const isChecked = noteTags.includes(tag.id);
             const tagElement = `
-                <input type="checkbox" id="${tagId}" class="tag-checkbox" value="${tag.id}" ${isChecked ? 'checked' : ''}>
-                <label for="${tagId}" class="tag-label" style="background-color: ${tag.color}; color: #000;">
-                    ${tag.name}
+                <input type="checkbox" id="${escapeHtml(tagId)}" class="tag-checkbox" value="${escapeHtml(tag.id)}" ${isChecked ? 'checked' : ''}>
+                <label for="${escapeHtml(tagId)}" class="tag-label" style="background-color: ${escapeHtml(tag.color)}; color: #000;">
+                    ${escapeHtml(tag.name)}
                 </label>
             `;
             editTagsContainer.innerHTML += tagElement;
@@ -239,7 +237,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const uniqueActs = [...new Set(allNotes.map(note => note.act || 'Preshow'))];
         actFilter.innerHTML = '<div class="filter-tag active" data-act="all">All Acts</div>';
         uniqueActs.forEach(act => {
-            const actElement = `<div class="filter-tag" data-act="${act}">${act}</div>`;
+            const actElement = `<div class="filter-tag" data-act="${escapeHtml(act)}">${escapeHtml(act)}</div>`;
             actFilter.innerHTML += actElement;
         });
         document.querySelectorAll('.act-filter .filter-tag').forEach(tag => {
@@ -363,26 +361,44 @@ document.addEventListener('DOMContentLoaded', function() {
             timecode: currentUser.frozenTimecode,
             lxCue: currentUser.frozenLxCue
         });
+        startAutoResumeTimer();
+    }
+
+    // Unfreezes the personal timecode and LX cue so they follow the show again.
+    function releaseFreeze() {
+        currentUser.isTyping = false;
+        currentUser.frozenTimecode = null;
+        currentUser.frozenLxCue = null;
+        personalTimecodeContainer.classList.remove('frozen');
+        if (timeMode !== 'realtime') updatePersonalTimecodeDisplay(currentGlobalTimecode);
+        updatePersonalLxCueDisplay(currentGlobalLxCue);
+        window.socket.emit('typing-stop');
+        clearAutoResumeTimer();
     }
 
     function cancelNote() {
         noteInput.value = '';
         sendNoteBtn.disabled = true;
-        currentUser.isTyping = false;
-        currentUser.frozenTimecode = null;
-        currentUser.frozenLxCue = null;
-        personalTimecodeContainer.classList.remove('frozen');
         selectedTags = [];
         document.querySelectorAll('.tag-checkbox:checked').forEach(cb => cb.checked = false);
-        window.socket.emit('typing-stop');
-        clearAutoResumeTimer();
+        releaseFreeze();
+        clearDraft();
     }
 
+    // Restarted by every focus, keystroke and blur: once the box has been
+    // empty that long the timecode follows the show again (see type-to-note.js).
     function startAutoResumeTimer() {
         clearAutoResumeTimer();
         autoResumeTimer = setTimeout(function() {
-            if (noteInput.value.trim() === '' && document.activeElement !== noteInput) cancelNote();
-        }, 15000);
+            autoResumeTimer = null;
+            const action = typeToNote.emptyBoxAction({
+                isTyping: currentUser.isTyping,
+                noteValue: noteInput.value,
+                focused: document.activeElement === noteInput
+            });
+            if (action === 'release') releaseFreeze();
+            else if (action === 'cancel') cancelNote();
+        }, typeToNote.EMPTY_RELEASE_MS);
     }
 
     function clearAutoResumeTimer() {
@@ -449,14 +465,15 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // --- Incremental DOM update functions ---
     function getTagElements(tags) {
-        return tags.map(tagId => {
+        return (tags || []).map(tagId => {
             const tag = availableTags.find(t => t.id === tagId);
-            return tag ? `<span class="note-tag" style="background-color: ${tag.color}; color: #000;">${tag.name}</span>`
-                       : `<span class="note-tag" style="background-color: #cccccc; color: #000;">${tagId}</span>`;
+            return tag ? `<span class="note-tag" style="background-color: ${escapeHtml(tag.color)}; color: #000;">${escapeHtml(tag.name)}</span>`
+                       : `<span class="note-tag" style="background-color: #cccccc; color: #000;">${escapeHtml(tagId)}</span>`;
         }).join('');
     }
 
     function formatNoteTimecode(note) {
+        if (!note.timecode) return formatTimecode(null);
         if (note.frameRate === 'ms') {
             const ms = Math.floor((note.timecode.milliseconds || 0) / 10);
             return `${note.timecode.hours.toString().padStart(2, '0')}:${note.timecode.minutes.toString().padStart(2, '0')}:${note.timecode.seconds.toString().padStart(2, '0')}:${ms.toString().padStart(2, '0')}`;
@@ -465,8 +482,10 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function getNoteHTML(note) {
+        const tags = note.tags || [];
+        const act = escapeHtml(note.act || 'Preshow');
         const timecodeDisplay = formatNoteTimecode(note);
-        const tagElements = getTagElements(note.tags);
+        const tagElements = getTagElements(tags);
         const editButton = `<button class="small edit-tags-btn" data-action="edit-tags" data-note-id="${note.id}">Edit Tags</button>`;
         const editNoteButton = !NoteAuthor.canEditNote(note, currentUser.sub) ? '' : `<button class="small edit-note-btn" data-action="edit-note" data-note-id="${note.id}">Edit Note</button>`;
         const editedIndicator = note.lastEdited ? `<div class="note-edited">Last edited by ${escapeHtml(note.lastEditedBy || 'unknown')} at ${new Date(note.lastEdited).toLocaleTimeString()}</div>` : '';
@@ -494,12 +513,12 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <span class="comment-text-display">${escapeHtml(comment.text)}</span>
                                 <textarea class="comment-text-edit" style="display: none">${escapeHtml(comment.text)}</textarea>
                             </div>
-                            <div class="comment-actions" style="margin-top: 0.5rem;">
+                            ${!NoteAuthor.canEditNote(comment, currentUser.sub) ? '' : `<div class="comment-actions" style="margin-top: 0.5rem;">
                                 <button class="small edit-comment-btn" data-action="edit-comment" data-note-id="${note.id}" data-comment-id="${comment.id}">Edit</button>
                                 <button class="small delete-comment-btn" data-action="delete-comment" data-note-id="${note.id}" data-comment-id="${comment.id}">Delete</button>
                                 <button class="small save-comment-btn" data-action="save-comment" data-note-id="${note.id}" data-comment-id="${comment.id}" style="display: none">Save</button>
                                 <button class="small cancel-comment-btn" data-action="cancel-comment" data-note-id="${note.id}" data-comment-id="${comment.id}" style="display: none">Cancel</button>
-                            </div>
+                            </div>`}
                         </div>
                     `).join('') : ''}
                 </div>
@@ -514,14 +533,14 @@ document.addEventListener('DOMContentLoaded', function() {
         `;
 
         return `
-            <div class="note-item" data-tags="${note.tags.join(',')}" data-act="${note.act || 'Preshow'}" data-note-id="${note.id}">
+            <div class="note-item" data-tags="${escapeHtml(tags.join(','))}" data-act="${act}" data-note-id="${note.id}">
                 <div class="note-header">
-                    <span class="note-act">${note.act || 'Preshow'}</span>
+                    <span class="note-act">${act}</span>
                     <span class="note-user">${escapeHtml(note.user)}</span>
                     <span class="note-timecode">
                         ${timecodeDisplay} 
-                        <span class="note-lx-cue">LX: ${note.lxCue || 'N/A'}</span>
-                        @ ${note.frameRate || '30 fps'}
+                        <span class="note-lx-cue">LX: ${escapeHtml(note.lxCue || 'N/A')}</span>
+                        @ ${escapeHtml(note.frameRate || '30 fps')}
                     </span>
                 </div>
                 <div class="note-text">
@@ -529,7 +548,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <textarea class="note-text-edit" style="display: none">${escapeHtml(note.text)}</textarea>
                 </div>
                 ${editedIndicator}
-                ${note.tags.length > 0 ? `<div class="note-tags">${tagElements}</div>` : ''}
+                ${tags.length > 0 ? `<div class="note-tags">${tagElements}</div>` : ''}
                 ${commentsSection}
                 <div class="note-actions-row">
                     ${editButton}
@@ -553,7 +572,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const newElement = createNoteElement(note);
         oldElement.replaceWith(newElement);
         noteElements.set(note.id, newElement);
-        const shouldShow = (filterTag === 'all' || note.tags.includes(filterTag)) &&
+        const shouldShow = (filterTag === 'all' || (note.tags || []).includes(filterTag)) &&
                            (filterAct === 'all' || (note.act || 'Preshow') === filterAct);
         newElement.style.display = shouldShow ? 'block' : 'none';
     }
@@ -562,7 +581,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Only for a note that is the newest; addNote rebuilds the list for one that isn't.
         // Pending notes stay above every note the server has.
         notesList.insertBefore(noteElement, notesList.querySelector('.note-item:not(.pending)'));
-        const shouldShow = (filterTag === 'all' || note.tags.includes(filterTag)) &&
+        const shouldShow = (filterTag === 'all' || (note.tags || []).includes(filterTag)) &&
                            (filterAct === 'all' || (note.act || 'Preshow') === filterAct);
         noteElement.style.display = shouldShow ? 'block' : 'none';
     }
@@ -606,7 +625,29 @@ document.addEventListener('DOMContentLoaded', function() {
     // has stored it. While disconnected it is held here rather than in
     // socket.io's send buffer, and every pending note is (re)sent on connect:
     // one sent just before a drop may or may not have arrived, and the server
-    // ignores a resend with a clientId it already has.
+    // ignores a resend with a clientId it already has. They are also saved to
+    // localStorage (pending-notes.js), so a reload or a trip through /login
+    // while the server is unreachable does not lose them.
+    const pendingStore = createPendingNotes({
+        // reached inside pendingStore's try/catch, as merely touching localStorage can throw
+        getItem: (key) => localStorage.getItem(key),
+        setItem: (key, value) => localStorage.setItem(key, value),
+        removeItem: (key) => localStorage.removeItem(key)
+    });
+
+    function savePendingNotes() {
+        pendingStore.save(currentUser.sub, [...pendingNotes.values()]);
+    }
+
+    // The notes this browser had not got stored before it was last closed.
+    function restorePendingNotes() {
+        for (const { note, writtenAt } of pendingStore.load(currentUser.sub)) {
+            if (pendingNotes.has(note.clientId) || allNotes.some(n => n.clientId === note.clientId)) continue;
+            showPendingNote(note, writtenAt);
+            sendPendingNote(note, writtenAt);
+        }
+        savePendingNotes();
+    }
     function pendingBadgeText() {
         return window.socket.connected ? 'Pending - sending...' : 'Pending - will send on reconnect';
     }
@@ -621,13 +662,13 @@ document.addEventListener('DOMContentLoaded', function() {
                     <span class="note-timecode">
                         ${formatNoteTimecode(note)}
                         <span class="note-lx-cue">LX: ${escapeHtml(note.lxCue || 'N/A')}</span>
-                        @ ${note.frameRate || '30 fps'}
+                        @ ${escapeHtml(note.frameRate || '30 fps')}
                     </span>
                 </div>
                 <div class="note-text">
                     <span class="note-text-display">${escapeHtml(note.text)}</span>
                 </div>
-                ${note.tags.length > 0 ? `<div class="note-tags">${getTagElements(note.tags)}</div>` : ''}
+                ${(note.tags || []).length > 0 ? `<div class="note-tags">${getTagElements(note.tags)}</div>` : ''}
             </div>
         `.trim();
         return wrapper.firstChild;
@@ -645,6 +686,17 @@ document.addEventListener('DOMContentLoaded', function() {
     function sendPendingNote(note, writtenAt) {
         if (!window.socket.connected) return;
         window.socket.emit('note-submit', { ...note, ageMs: Math.max(0, Date.now() - writtenAt) }, (stored) => {
+            if (!stored || stored.error) {
+                // Refused, so resending cannot help: say so on the note and stop trying.
+                const pending = pendingNotes.get(note.clientId);
+                if (!pending) return;
+                pendingNotes.delete(note.clientId);
+                savePendingNotes();
+                pending.element.querySelector('.note-pending-badge').textContent =
+                    `Not saved: ${(stored && stored.error) || 'refused by the server'}`;
+                pending.element.classList.add('failed');
+                return;
+            }
             clearPendingNote(stored.clientId);
             addNote(stored);
         });
@@ -655,19 +707,29 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!pending) return;
         pending.element.remove();
         pendingNotes.delete(clientId);
+        savePendingNotes();
     }
 
-    function submitNote(data) {
-        const clientId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-        const note = { ...data, clientId };
-        const writtenAt = Date.now();
+    function showPendingNote(note, writtenAt) {
         const wasNearTop = isNearTop();
         const element = createPendingNoteElement(note);
-        pendingNotes.set(clientId, { note, element, writtenAt });
+        pendingNotes.set(note.clientId, { note, element, writtenAt });
         // The newest pending note goes above the older ones.
         notesList.insertBefore(element, notesList.firstChild);
         if (wasNearTop) scrollToTop();
         else toggleScrollButton();
+    }
+
+    function newClientId() {
+        if (window.crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+        return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+    }
+
+    function submitNote(data) {
+        const note = { ...data, clientId: newClientId() };
+        const writtenAt = Date.now();
+        showPendingNote(note, writtenAt);
+        savePendingNotes();
         sendPendingNote(note, writtenAt);
     }
 
@@ -676,20 +738,83 @@ document.addEventListener('DOMContentLoaded', function() {
         if (note) updateNoteElement(note);
     }
 
+    // --- Draft note ---
+    // The note being written is kept in sessionStorage (this tab only), with
+    // its frozen timecode, so a reload or a bounce through /login gives it back.
+    const DRAFT_KEY = 'note-draft';
+
+    function saveDraft() {
+        try {
+            if (noteInput.value.trim() === '') return clearDraft();
+            sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+                text: noteInput.value,
+                tags: selectedTags,
+                timecode: currentUser.frozenTimecode,
+                lxCue: currentUser.frozenLxCue
+            }));
+        } catch (e) { /* storage unavailable */ }
+    }
+
+    function clearDraft() {
+        try { sessionStorage.removeItem(DRAFT_KEY); } catch (e) { /* storage unavailable */ }
+    }
+
+    function restoreDraft() {
+        let draft = null;
+        try { draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY)); } catch (e) { /* none */ }
+        if (!draft || typeof draft.text !== 'string' || !draft.timecode) return;
+        noteInput.value = draft.text;
+        sendNoteBtn.disabled = draft.text.trim().length === 0;
+        selectedTags = Array.isArray(draft.tags) ? draft.tags : [];
+        currentUser.isTyping = true;
+        currentUser.frozenTimecode = draft.timecode;
+        currentUser.frozenLxCue = draft.lxCue;
+        updatePersonalTimecodeDisplay(draft.timecode);
+        updatePersonalLxCueDisplay(draft.lxCue);
+        personalTimecodeContainer.classList.add('frozen');
+        startAutoResumeTimer();
+    }
+
+    // --- Login ---
+    // Back through Keycloak to this same page, keeping the note being written.
+    let goingToLogin = false;
+    function goToLogin() {
+        if (goingToLogin) return;
+        goingToLogin = true;
+        saveDraft();
+        window.location.href = loginUrl();
+    }
+
     // --- Socket.io setup ---
-    window.socket = io();
+    // `page` tells the server which page this is (see pageOf() in server.js).
+    window.socket = io({ auth: { page: 'main' } });
 
     // The server refuses the socket handshake when the session is missing or
-    // expired (e.g. the 12-hour login ran out, or local-sessions.json was deleted).
-    // That's distinct from an ordinary network blip - socket.io's normal
+    // expired (e.g. the login sat idle for 12 hours, or local-sessions.json was
+    // deleted). That's distinct from an ordinary network blip - socket.io's normal
     // auto-reconnect can never succeed here, so send the user back through
     // the login flow instead of retrying forever.
     window.socket.on('connect_error', (err) => {
         if (err && err.message === 'unauthorized') {
-            window.location.href = '/login';
+            goToLogin();
             return;
         }
         connectionBanner.hidden = false;
+    });
+
+    // Logged out in another tab: this page's login is gone too.
+    window.socket.on('logged-out', goToLogin);
+
+    keepLoginAlive(goToLogin);
+
+    // A page kept in the back/forward cache (e.g. after visiting the recall
+    // page) must not keep its socket, or the server would count it as open.
+    window.addEventListener('pagehide', (e) => {
+        saveDraft();
+        if (e.persisted) window.socket.disconnect();
+    });
+    window.addEventListener('pageshow', (e) => {
+        if (e.persisted) window.socket.connect();
     });
 
     window.socket.on('disconnect', () => {
@@ -712,6 +837,7 @@ document.addEventListener('DOMContentLoaded', function() {
         currentUserName.textContent = data.name;
         updateChatUserName();
         if (changed) rebuildFullNotesList(); // edit buttons depend on who we are, which may arrive after the notes
+        restorePendingNotes();
     });
 
     // Collapsing the online users list is remembered per browser (nice to have, so failures are ignored).
@@ -807,7 +933,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         allNotes = notes;
         for (const note of notes) {
-            if (note.clientId) clearPendingNote(note.clientId);
+            if (note.clientId && pendingNotes.has(note.clientId)) clearPendingNote(note.clientId);
         }
         rebuildFullNotesList();
     });
@@ -896,6 +1022,7 @@ document.addEventListener('DOMContentLoaded', function() {
         chatCopy.onReset();
         for (const { element } of pendingNotes.values()) element.remove();
         pendingNotes.clear();
+        savePendingNotes();
     });
 
     window.socket.on('export-data', (data) => {
@@ -931,8 +1058,10 @@ document.addEventListener('DOMContentLoaded', function() {
     noteInput.addEventListener('focus', startTyping);
     noteInput.addEventListener('input', () => {
         sendNoteBtn.disabled = noteInput.value.trim().length === 0;
-        startAutoResumeTimer();
+        // After a release, the next key freezes the timecode at that moment.
         if (!currentUser.isTyping && noteInput.value.length > 0) startTyping();
+        else startAutoResumeTimer();
+        saveDraft();
     });
     noteInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -973,16 +1102,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 frameRate: timeMode === 'realtime' ? 'ms' : currentUser.currentFrameRate,
                 tags: selectedTags,
             });
-            noteInput.value = '';
-            sendNoteBtn.disabled = true;
-            currentUser.isTyping = false;
-            currentUser.frozenTimecode = null;
-            currentUser.frozenLxCue = null;
-            personalTimecodeContainer.classList.remove('frozen');
-            selectedTags = [];
-            document.querySelectorAll('.tag-checkbox:checked').forEach(cb => cb.checked = false);
-            window.socket.emit('typing-stop');
-            clearAutoResumeTimer();
+            cancelNote();
         }
     });
 
@@ -1152,4 +1272,5 @@ document.addEventListener('DOMContentLoaded', function() {
     updatePersonalTimecodeDisplay(currentGlobalTimecode);
     updateGlobalLxCueDisplay(currentGlobalLxCue);
     updatePersonalLxCueDisplay(currentGlobalLxCue);
+    restoreDraft();
 });

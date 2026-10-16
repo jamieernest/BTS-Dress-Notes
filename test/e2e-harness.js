@@ -119,15 +119,18 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
     };
 }
 
-// Logs in through the real /login -> OIDC -> /callback flow; returns the session cookie.
-async function login(app, oidc, who) {
+// Logs in through the real /login -> OIDC -> /callback flow; returns the session
+// cookie, which the server only sets once the login has succeeded.
+async function login(app, oidc, who, returnTo) {
     oidc.state.nextUser = who;
     const base = `http://127.0.0.1:${app.port}`;
-    let res = await fetch(`${base}/login`, { redirect: 'manual' });
-    const cookie = res.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+    let res = await fetch(`${base}/login${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`, { redirect: 'manual' });
     res = await fetch(res.headers.get('location'), { redirect: 'manual' });
-    res = await fetch(res.headers.get('location'), { redirect: 'manual', headers: { cookie } });
+    res = await fetch(res.headers.get('location'), { redirect: 'manual' });
     assert.strictEqual(res.status, 302, 'login callback should redirect');
+    const cookie = res.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+    assert.ok(cookie, 'login callback should set the session cookie');
+    if (returnTo !== undefined) login.lastRedirect = res.headers.get('location');
     return cookie;
 }
 
