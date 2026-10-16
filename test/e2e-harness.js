@@ -24,6 +24,8 @@ async function until(check, what, timeoutMs = 8000) {
     }
 }
 
+const exitedNow = (child) => child.exitCode !== null || child.signalCode !== null;
+
 function freePort() {
     return new Promise((resolve) => {
         const s = net.createServer().listen(0, '127.0.0.1', () => {
@@ -99,6 +101,14 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
     // A copy of the tags, so a test that changes them leaves the tracked tags.json alone.
     const tagsFile = path.join(path.dirname(sessionsFile), 'tags.json');
     if (!fs.existsSync(tagsFile)) fs.copyFileSync(path.join(ROOT, 'tags.json'), tagsFile);
+    // Signals the server and waits for it to exit; one that already has is not
+    // waited on, since its 'exit' event has been and gone.
+    async function ended(signal) {
+        if (!child || exitedNow(child)) return;
+        const exited = new Promise((resolve) => child.once('exit', resolve));
+        child.kill(signal);
+        await exited;
+    }
     return {
         port,
         backupsDir,
@@ -106,9 +116,7 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
         recordingsDir,
         // Kills the process without the shutdown backup, as a crash or power cut would.
         async kill() {
-            const exited = new Promise((resolve) => child.once('exit', resolve));
-            child.kill('SIGKILL');
-            await exited;
+            await ended('SIGKILL');
         },
         async start() {
             const oscPort = await freePort();
@@ -125,12 +133,14 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
             let out = '';
             child.stdout.on('data', (d) => { out += d; });
             child.stderr.on('data', (d) => { out += d; });
-            await until(() => out.includes('Server running on'), `server to start:\n${out}`);
+            // A server that dies starting (a port taken meanwhile, say) fails here, with what it said.
+            await until(() => {
+                if (exitedNow(child)) assert.fail(`server exited while starting:\n${out}`);
+                return out.includes('Server running on');
+            }, 'server to start');
         },
         async stop() {
-            const exited = new Promise((resolve) => child.once('exit', resolve));
-            child.kill('SIGINT');
-            await exited;
+            await ended('SIGINT');
         }
     };
 }
