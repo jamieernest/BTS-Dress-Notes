@@ -835,21 +835,25 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Puts focus and caret back where they were if the focused field was re-rendered.
+    // Keeps focus (and the caret, in a text box) on the matching field or button in the new element.
     function rerenderPreservingFocus(oldEl, newEl) {
         const active = document.activeElement;
-        let field = null;
-        let caret = 0;
-        if (active && oldEl.contains(active) && active.dataset.field) {
-            field = `[data-field="${active.dataset.field}"]${active.dataset.commentId ? `[data-comment-id="${CSS.escape(active.dataset.commentId)}"]` : ''}`;
-            caret = active.selectionStart;
+        let target = null;
+        let caret = null;
+        if (active && oldEl.contains(active) && (active.dataset.field || active.dataset.action)) {
+            const comment = active.dataset.commentId ? `[data-comment-id="${CSS.escape(active.dataset.commentId)}"]` : '';
+            target = active.dataset.field
+                ? `[data-field="${active.dataset.field}"]${comment}`
+                : `[data-action="${active.dataset.action}"]${comment}${active.classList.contains('reply-prompt') ? '.reply-prompt' : ''}`;
+            if (active.dataset.field) caret = active.selectionStart;
         }
         newEl.hidden = oldEl.hidden;
         oldEl.replaceWith(newEl);
-        if (field) {
-            const input = newEl.querySelector(field);
-            if (input) {
-                input.focus();
-                input.setSelectionRange(caret, caret);
+        if (target) {
+            const el = newEl.querySelector(target);
+            if (el) {
+                el.focus();
+                if (caret !== null) el.setSelectionRange(caret, caret);
             }
         }
     }
@@ -1522,18 +1526,21 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!text) return;
         window.socket.emit('comment-submit', { noteId: note.id, text });
         commentDrafts.delete(note.id);
+        closeReplyBox(note);
+    }
+
+    // Closes the reply box and focuses the "Reply…" prompt under the thread if there is one, else the reply icon.
+    function closeReplyBox(note) {
+        openReplies.delete(note.id);
         updateNoteElement(note);
-        noteElements.get(note.id)?.querySelector('[data-field="comment"]')?.focus();
+        const el = noteElements.get(note.id);
+        (el?.querySelector('.reply-prompt') || el?.querySelector('[data-action="reply"]'))?.focus();
     }
 
     // Throws the reply draft away and closes the reply box.
     function cancelComment(note) {
         commentDrafts.delete(note.id);
-        openReplies.delete(note.id);
-        updateNoteElement(note);
-        // Back to the "Reply…" prompt under the thread if there is one, else the reply icon.
-        const el = noteElements.get(note.id);
-        (el?.querySelector('.reply-prompt') || el?.querySelector('[data-action="reply"]'))?.focus();
+        closeReplyBox(note);
     }
 
     // A delete shows straight away but only reaches the server once its Undo
