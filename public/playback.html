@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Playback · BTS Dress Notes</title>
+    <link rel="stylesheet" href="base.css">
+    <link rel="stylesheet" href="index-style.css">
+    <link rel="stylesheet" href="playback-style.css">
+    <script src="playback-boot.js"></script>
+</head>
+<body class="playback-page">
+    <header class="topbar">
+        <a id="notesViewLink" href="/" class="btn ghost back">&larr; Back to notes</a>
+        <span id="playbackTitle" class="playback-title"></span>
+        <span id="demoBadge" class="chip" hidden>Sample show</span>
+        <div class="topbar-actions">
+            <div class="options-wrap">
+                <button type="button" id="optionsToggle" class="btn ghost icon-only" aria-label="Playback options" aria-expanded="false" aria-controls="playbackMenu">
+                    <svg class="icon" aria-hidden="true"><use href="icons.svg#i-more"/></svg>
+                </button>
+                <div id="playbackMenu" class="playback-menu" hidden>
+                    <button type="button" id="openNotes">Open notes</button>
+                    <button type="button" id="openVideo">Choose video</button>
+                    <button type="button" id="timingToggle" aria-expanded="false" aria-controls="timingPanel" hidden>Adjust timing</button>
+                    <button type="button" id="helpToggle" aria-expanded="false" aria-controls="helpPanel">Timeline help</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="page playback">
+        <input type="file" id="notesInput" accept=".json,application/json" hidden>
+        <input type="file" id="videoInput" accept="video/*,.mov,.mp4" hidden>
+        <p id="fileError" class="field-error" role="alert" hidden></p>
+        <div id="sourceLoading" class="loading-region is-loading" aria-busy="true"><div data-loading-placeholder class="skeleton"><span class="bone line w-60"></span><span class="bone line w-45"></span></div></div>
+
+        <div id="helpPanel" class="help-panel" hidden>
+            <button type="button" id="closeHelp" class="btn ghost">Close help</button>
+            <p>Drag anywhere on the timeline to scrub. Click the video to play or pause.</p>
+            <p>Bars are notes; circles are recorded LX cues. Hover or tap for details. Clicking a note starts 3 seconds before it; a cue starts at its recorded time.</p>
+            <dl>
+                <dt><kbd>Space</kbd></dt><dd>Play / pause</dd>
+                <dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt><dd>Back / forward 5 seconds</dd>
+                <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous / next visible note</dd>
+                <dt><kbd>Page Up</kbd> <kbd>Page Down</kbd></dt><dd>Previous / next LX cue</dd>
+                <dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>Start / end of the video</dd>
+            </dl>
+            <p class="muted">Keyboard seeking works while the timeline is focused. Escape closes details or help.</p>
+        </div>
+
+        <div id="dropZone" class="empty drop-zone">
+            <p class="empty-title">Watch back a show with its notes</p>
+            <p class="muted">Drop the Vor video and the downloaded notes here, or choose them.</p>
+            <div class="drop-actions"><a href="/playback.html?source=live" class="btn outline">Use live notes</a><a href="/recall.html" class="btn outline">Open past notes</a></div>
+            <a href="playback.html?demo=1" class="btn outline demo-link">Try a sample show</a>
+            <p class="drop-status">
+                <span id="notesStatus" class="chip">Notes</span>
+                <span id="videoStatus" class="chip">Video</span>
+            </p>
+        </div>
+
+        <section id="player" class="player" hidden>
+            <div class="stage">
+                <div id="recordingPrompt" class="recording-prompt" hidden>
+                    <p id="recordingTitle" class="empty-title">Choose the recording for this show</p>
+                    <p class="muted">Your notes are ready. The video stays on your device.</p>
+                    <button type="button" id="chooseRecording" class="btn primary">Choose video</button>
+                </div>
+                <video id="video" playsinline preload="metadata" tabindex="0" role="button" aria-label="Play video"></video>
+                <div id="timingPanel" class="timing-panel" hidden>
+                    <span class="nudge">
+                        <span class="muted">Move notes</span>
+                        <button type="button" class="btn outline" data-nudge="1000" title="1 second earlier">&minus;1s</button>
+                        <button type="button" class="btn outline" data-nudge="100" title="A tenth of a second earlier">&minus;0.1s</button>
+                        <button type="button" class="btn outline" data-nudge="-100" title="A tenth of a second later">+0.1s</button>
+                        <button type="button" class="btn outline" data-nudge="-1000" title="1 second later">+1s</button>
+                    </span>
+                    <form id="clockForm" class="clock-form">
+                        <label>or pause and type the clock in the picture
+                            <input type="text" id="clockInput" class="mono" size="10" placeholder="19:47:58" spellcheck="false" aria-describedby="clockError">
+                        </label>
+                        <button type="submit" class="btn outline">Match</button>
+                    </form>
+                    <p id="clockError" class="field-error" role="alert" hidden>Enter a clock time such as 19:47:58.</p>
+                </div>
+
+                <div class="timeline">
+                    <div id="track" class="track" tabindex="0" role="slider" aria-label="Video timeline" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-disabled="true" aria-keyshortcuts="ArrowLeft ArrowRight Home End PageUp PageDown [ ]">
+                        <div id="sceneStrip" class="scene-strip"></div>
+                        <div class="lane">
+                            <div id="grid" class="grid"></div>
+                            <div id="laneMarks"></div>
+                        </div>
+                        <div id="playhead" class="playhead"></div>
+                        <div id="hoverCard" class="hover-card" hidden></div>
+                    </div>
+                    <div id="axis" class="axis" hidden>
+                        <span id="axisStart" class="label axis-start">0:00</span>
+                        <span id="axisNow" class="label axis-now"></span>
+                        <span id="axisEnd" class="label axis-end"></span>
+                    </div>
+                </div>
+            </div>
+
+            <aside class="side">
+                <div class="side-head">
+                    <div class="side-title"><strong>Notes</strong><span id="sideCount" class="muted"></span></div>
+                    <div id="tagFilters" class="tag-filters" role="group" aria-label="Show tags"></div>
+                </div>
+                <div id="sideList" class="side-list"></div>
+            </aside>
+        </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="keepalive.js"></script>
+    <script src="vendor/purify.min.js"></script>
+    <script src="safe-html.js"></script>
+    <script src="timecode-format.js"></script>
+    <script src="note-view.js"></script>
+    <script src="loading-state.js"></script>
+    <script src="playback-context.js"></script>
+    <script src="playback-timeline.js"></script>
+    <script src="playback.js"></script>
+</body>
+</html>

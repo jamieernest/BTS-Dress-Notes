@@ -70,6 +70,14 @@ Notes live only in `globalState.notes`; `server.js` `backup()` writes them (with
 
 Saved shows (`saved-shows.js`) are named copies of the notes export in git-ignored `saved-shows/` (`SAVED_SHOWS_DIR`), one file per show, id = file name. The config page's "Save notes" sends `save-show` (`{ name, reset }`, acked; reset runs only after the file is written). They are never loaded back into live notes or aged out. Past notes lists them from `GET /shows` and opens `GET /shows/:id` (ids are checked against a pattern, never joined as paths); an open show and its filters live in the URL (`?show=&scene=&tag=&q=`) so a reload keeps them, while a file opened from the computer stays client-side only. Chat is not saved.
 
+## Show log and video playback
+
+`globalState.showLog` records scene/LX changes with wall-clock times (`show-log.js`, dropping fade-progress repeats), travels with `notesExport()` through backups and saved shows, and broadcasts as `show-log-update`. Notes carry `startedAt`, worked out from `startedAgeMs`. Playback timing lives in `public/playback-timeline.js`; older exports infer scenes from notes and omit cue marks.
+
+`public/playback-context.js` builds live/saved/local-file links and safe return paths. `/playback.html?source=live` loads authenticated, uncached `GET /playback/live` and refreshes on note changes; `?show=` reads `/shows/:id`; `?file=` reads this tab's sessionStorage. `?note=` waits for video metadata/timing before seeking three seconds before the note. Return links preserve saved-show filters and highlight the note. Recordings are local files and need choosing on each new player page; they are not uploaded or persisted. Local file keys use `getRandomValues`, since `randomUUID` is unavailable on HTTP venue/Tailscale pages.
+
+`npm run dev:playback` starts the sample instance on 3030 (`PLAYBACK_PORT` overrides), using `.env` login settings and separate git-ignored `.playback-dev/` notes, tags, backups and saved shows. `PLAYBACK_DEMO=1` seeds invented live notes only when empty and adds a sample saved show without overwriting existing ones. `/playback.html?demo=1` remains a standalone sample; assets live in `public/playback-demo/` (`scene.svg` is the recording's source).
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

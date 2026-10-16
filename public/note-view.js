@@ -87,6 +87,9 @@
     }
 
     // --- Notes ---
+    function playbackLinkHTML(href) {
+        return `<a class="icon-btn note-playback" href="${esc(href)}" aria-label="View this note in video" title="View this note in video"><i data-icon="video"></i></a>`;
+    }
     // Who wrote it, then where in the show (cue and timecode), then `side`.
     function noteHeadHTML(note, name, side = '') {
         const rate = note.frameRate === 'ms' ? 'real time' : `${note.frameRate || 30} fps`;
@@ -260,7 +263,7 @@
     }
 
     return {
-        esc, safeColor, setHtml,
+        esc, safeColor, setHtml, playbackLinkHTML,
         clockTime, fullTime, relativeTime, plural,
         initials, personColor, avatarHTML,
         unknownTag, tagChipHTML, tagChipsHTML, dotHTML,

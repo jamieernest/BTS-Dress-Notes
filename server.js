@@ -16,9 +16,11 @@ const { FileSessionStore } = require('./session-store');
 const { authorsOf, applyAuthors, backupFilename, backupTime, checkBackup, findRestorableBackup, writeBackupFile } = require('./notes-backup');
 const savedShows = require('./saved-shows');
 const SAVED_SHOWS_DIR = process.env.SAVED_SHOWS_DIR || path.join(__dirname, 'saved-shows');
+const PLAYBACK_DEMO = process.env.PLAYBACK_DEMO === '1';
 const { sanitizeAge, insertionIndex } = require('./public/note-order');
 const { canEditNote } = require('./public/note-author');
 const input = require('./note-input');
+const showLog = require('./show-log');
 const crypto = require('crypto');
 const helmet = require('helmet');
 const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
@@ -148,6 +150,8 @@ app.use(helmet({
             'style-src': ["'self'", "'unsafe-inline'"],
             'img-src': ["'self'", 'data:'],
             'connect-src': ["'self'"],
+            // playback.html plays a video opened locally, through a blob: URL.
+            'media-src': ["'self'", 'blob:'],
             'form-action': ["'self'", ...originOf(KEYCLOAK_ISSUER)],
             'upgrade-insecure-requests': null
         }
@@ -385,7 +389,8 @@ app.get('/shows/:id', async (req, res) => {
 // files per request so frontend edits still work without a dev-server restart.
 const htmlPages = {
     '/': 'index.html', '/index.html': 'index.html', '/recall.html': 'recall.html',
-    '/config.html': 'config.html', '/overlay.html': 'overlay.html', '/overlay-cast.html': 'overlay-cast.html'
+    '/config.html': 'config.html', '/overlay.html': 'overlay.html', '/overlay-cast.html': 'overlay-cast.html',
+    '/playback.html': 'playback.html'
 };
 app.get(Object.keys(htmlPages), async (req, res, next) => {
     try {
@@ -395,7 +400,8 @@ app.get(Object.keys(htmlPages), async (req, res, next) => {
             fs.promises.readFile(path.join(__dirname, 'public', 'icons.svg'), 'utf8')
         ]);
         const sprite = icons.replace('<svg ', '<svg id="app-icons" class="icon-sprite" aria-hidden="true" ');
-        const rendered = html.replaceAll('icons.svg#', '#').replace(/<body\b[^>]*>/, body => `${body}\n${sprite}`);
+        const rendered = html.replaceAll('icons.svg#', '#').replace(/<body\b[^>]*>/,
+            body => `${PLAYBACK_DEMO ? body.replace('>', ' data-playback-demo="true">') : body}\n${sprite}`);
         res.set('Cache-Control', 'private, no-cache');
         res.type('html').send(rendered);
     } catch (error) {
@@ -468,7 +474,8 @@ const globalState = {
     timeMode: 'midi',
     tags: tags,
     currentLxCue: '1',
-    currentAct: 'Preshow'
+    currentAct: 'Preshow',
+    showLog: [] // every scene change and LX cue, with the time (show-log.js)
 };
 
 // After a restart the chat is restored from client offers, but only while this
@@ -568,6 +575,10 @@ function handleOscMessage(address, value) {
             
             // Update global state
             globalState.currentLxCue = cueName;
+            if (showLog.record(globalState.showLog, 'cue', cueName)) {
+                scheduleBackup();
+                io.emit('show-log-update', globalState.showLog);
+            }
             
             // Notify all clients
             io.emit('lx-cue-update', cueName);
@@ -586,6 +597,10 @@ function handleOscMessage(address, value) {
         const act = value;
         if (act && act !== globalState.currentAct) {
             globalState.currentAct = act;
+            if (showLog.record(globalState.showLog, 'scene', act)) {
+                scheduleBackup();
+                io.emit('show-log-update', globalState.showLog);
+            }
             console.log(`Updated current act to: ${act}`);
             io.emit('act-update', act);
         }
@@ -900,7 +915,9 @@ function notesExport() {
             name: u.name,
             joinedAt: u.joinedAt
         })),
-        tags: globalState.tags
+        tags: globalState.tags,
+        showLog: globalState.showLog,
+        ...(PLAYBACK_DEMO ? { demo: true } : {})
     };
 }
 
@@ -979,6 +996,7 @@ function restoreNotes() {
         if (found.file) {
             globalState.notes = applyAuthors(input.cleanStoredNotes(found.data.notes), found.data.authors);
             if (found.data.tags) globalState.tags = storedTags(found.data.tags);
+            globalState.showLog = showLog.cleanShowLog(found.data.showLog);
             console.log(`Notes restore: loaded ${found.data.notes.length} notes from backups/${found.file}`);
         } else {
             console.log(`Notes restore: starting empty (${found.reason})`);
@@ -989,6 +1007,27 @@ function restoreNotes() {
     notesRestored = true;
 }
 restoreNotes();
+
+// Opt-in examples for the separate playback development instance only.
+// Refuse to seed over existing notes; other instances use their normal data.
+if (PLAYBACK_DEMO) {
+    const sample = JSON.parse(fs.readFileSync(path.join(__dirname, 'public/playback-demo/show.json'), 'utf8'));
+    if (!globalState.notes.length) {
+        globalState.notes = input.cleanStoredNotes(sample.notes);
+        globalState.tags = storedTags(sample.tags);
+        globalState.showLog = showLog.cleanShowLog(sample.showLog);
+        backup(true);
+    }
+    const sampleId = savedShows.showId('Sample dress rehearsal', new Date('2026-10-07T19:00:00Z'));
+    if (!fs.existsSync(path.join(SAVED_SHOWS_DIR, `${sampleId}.json`))) {
+        savedShows.saveShow(SAVED_SHOWS_DIR, 'Sample dress rehearsal', { ...sample, totalNotes: sample.notes.length }, new Date('2026-10-07T19:00:00Z'));
+    }
+}
+
+app.get('/playback/live', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ ...notesExport(), name: PLAYBACK_DEMO ? 'Sample live session' : 'Live notes' });
+});
 
 // Safety net: a backup every minute even if nothing called scheduleBackup().
 setInterval(backup, Number(process.env.BACKUP_INTERVAL_MS) || 1 * 60 * 1000);
@@ -1108,6 +1147,7 @@ io.on('connection', (socket) => {
     socket.emit('timecode-update', globalState.networkTimecode);
     socket.emit('notes-update', globalState.notes);
     socket.emit('tags-update', globalState.tags);
+    socket.emit('show-log-update', globalState.showLog);
     socket.emit('time-mode-update', globalState.timeMode);
     socket.emit('lx-cue-update', globalState.currentLxCue);
     socket.emit('system-status', systemStatus());
@@ -1265,6 +1305,9 @@ io.on('connection', (socket) => {
     // resending it.
     // A late note carries ageMs (how long ago it was written); it is stamped
     // and placed by that rather than by its arrival (see public/note-order.js).
+    // startedAgeMs, how long ago its author started typing it, becomes
+    // startedAt on the server's clock whatever the timecode mode, which is what
+    // lines a note up with a recording (playback.html).
     on('note-submit', (data, ack) => {
         const respond = typeof ack === 'function' ? ack : () => {};
         if (user.isOverlay) return respond({ error: 'Overlays cannot add notes.' });
@@ -1278,6 +1321,8 @@ io.on('connection', (socket) => {
         if (!text) return respond({ error: 'A note needs some text.' });
 
         const noteTimecode = input.cleanTimecode(data.timecode) || {...currentModeTimecode()};
+        const now = Date.now();
+        const ageMs = sanitizeAge(data.ageMs);
 
         const note = {
             id: newId(),
@@ -1286,13 +1331,17 @@ io.on('connection', (socket) => {
             text,
             timecode: noteTimecode,
             lxCue: input.cleanCue(data.lxCue) || globalState.currentLxCue,
-            timestamp: new Date(Date.now() - sanitizeAge(data.ageMs)).toISOString(),
+            timestamp: new Date(now - ageMs).toISOString(),
             frameRate: input.cleanFrameRate(data.frameRate) || currentModeTimecode().frameRate,
             tags: input.cleanTags(data.tags),
             act: globalState.currentAct, // Use current act from OSC
             comments: []
         };
         if (clientId) note.clientId = clientId;
+        // Older tabs don't send it; their notes have no startedAt.
+        if (typeof data.startedAgeMs === 'number') {
+            note.startedAt = new Date(now - Math.max(ageMs, sanitizeAge(data.startedAgeMs))).toISOString();
+        }
 
         globalState.notes.splice(insertionIndex(globalState.notes, note), 0, note);
 
@@ -1462,6 +1511,7 @@ io.on('connection', (socket) => {
         }
         console.log(`Backup with ${data.notes.length} notes imported by ${user.name}`);
         globalState.notes = applyAuthors(input.cleanStoredNotes(data.notes), data.authors);
+        globalState.showLog = showLog.cleanShowLog(data.showLog);
 
         // Restore tags if present in backup
         if (data.tags) {
@@ -1472,6 +1522,7 @@ io.on('connection', (socket) => {
         // Broadcast updates to all clients
         io.emit('notes-update', globalState.notes);
         io.emit('tags-update', globalState.tags);
+        io.emit('show-log-update', globalState.showLog);
         scheduleBackup();
 
         // Notify the importer of success
@@ -1523,9 +1574,11 @@ io.on('connection', (socket) => {
 function resetNotesAndChat() {
     globalState.notes = [];
     globalState.chatMessages = [];
+    globalState.showLog = [];
     chatRestore.close();
     io.emit('all-reset'); // each page also drops its saved chat copy and unsent notes
     io.emit('notes-update', globalState.notes);
+    io.emit('show-log-update', globalState.showLog);
     emitToChatClients('chat-messages-update', globalState.chatMessages);
     backup(true);
 }

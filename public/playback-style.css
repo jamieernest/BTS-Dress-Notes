@@ -1,0 +1,373 @@
+/* Playback: a Vor recording with its notes on a timeline. */
+.topbar { flex: none; gap: 12px; padding-left: 8px; }
+.back { color: var(--text-2); text-decoration: none; }
+.playback-title { flex: 1; font-size: 13px; color: var(--text-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#sourceLoading { display: none; padding: 48px 24px; }
+.opening-playback #sourceLoading { display: block; }
+.opening-playback #dropZone { display: none; }
+.drop-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 20px; }
+.drop-actions a { text-decoration: none; }
+.recording-prompt { flex: 1 1 0 !important; min-height: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; padding: 24px; text-align: center; background: var(--surface); border: 1px dashed var(--border-strong); border-radius: var(--radius); }
+.recording-prompt .muted { max-width: 300px; font-size: 13px; }
+.options-wrap { position: relative; }
+.playback-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    right: 0;
+    width: 180px;
+    padding: 4px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+}
+.playback-menu button { display: block; width: 100%; padding: 8px 10px; text-align: left; border-radius: 3px; font-size: 13px; }
+.playback-menu button:hover, .playback-menu button:focus-visible { background: var(--hover); }
+
+/* The page fits the window; only the notes list scrolls. */
+body.playback-page {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.page.playback {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
+    max-width: 1600px;
+    display: flex;
+    flex-direction: column;
+    padding: 16px 24px 20px;
+}
+
+.drop-zone {
+    margin-top: 48px;
+    min-height: 320px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 56px 24px;
+    border: 1px dashed var(--border-strong);
+    border-radius: 8px;
+    transition: border-color 0.15s, background 0.15s;
+}
+.drag-over .drop-zone {
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+.drop-status { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 16px; }
+.drop-status .chip.ready { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 50%, var(--border-strong)); }
+.playback > .field-error { flex: none; padding: 8px 0; }
+.help-panel {
+    position: fixed;
+    top: calc(var(--topbar-h) + 8px);
+    right: 24px;
+    z-index: 50;
+    width: 380px;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - var(--topbar-h) - 24px);
+    overflow-y: auto;
+    padding: 16px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+    font-size: 13px;
+}
+.help-panel p { margin-top: 10px; }
+.help-panel dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; margin-top: 14px; }
+.help-panel dd { color: var(--text-2); }
+.demo-link { margin-top: 20px; text-decoration: none; }
+#demoBadge { color: var(--warn); flex: none; }
+
+.player {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 20px;
+}
+.stage { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.stage > :not(video) { flex: none; }
+
+video {
+    display: block;
+    flex: 1 1 0;
+    min-height: 160px;
+    width: 100%;
+    object-fit: contain;
+    background: #000;
+    border-radius: var(--radius);
+    cursor: pointer;
+}
+
+/* Chapters above one shared event field: note stems and LX circles. */
+.timeline {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: 12px;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.track {
+    position: relative;
+    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    cursor: pointer;
+    touch-action: none;
+}
+.track.scrubbing { cursor: grabbing; }
+
+/* Scenes: a strip of named sections along the top, like chapters. */
+.scene-strip {
+    position: relative;
+    height: 32px;
+    border-bottom: 1px solid var(--border);
+    border-radius: var(--radius) var(--radius) 0 0;
+    overflow: hidden;
+}
+.scene {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    text-indent: 6px;
+    border-left: 1px solid var(--border-strong);
+    font-size: 12px;
+    line-height: 31px;
+    color: var(--text-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.scene:first-child { border-left-color: transparent; }
+.scene:nth-child(even) { background: color-mix(in srgb, var(--text) 3%, transparent); }
+.scene.current { background: var(--accent-soft); color: var(--text); }
+.scene.hover { color: var(--text); }
+
+.lane { position: relative; height: 80px; }
+
+/* Faint time guides, with only the current position and endpoints labelled. */
+.grid .line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 1px solid var(--border);
+    pointer-events: none;
+}
+/* Where a scene starts, carried down through the notes. */
+.scene-line {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    border-left: 1px solid color-mix(in srgb, var(--text-3) 70%, transparent);
+    pointer-events: none;
+}
+.axis { grid-column: 1; position: relative; height: 16px; margin-top: 6px; }
+.axis .label {
+    position: absolute;
+    transform: translateX(-50%);
+    font-size: 10px;
+    line-height: 16px;
+    font-family: var(--mono);
+    color: var(--text-3);
+    white-space: nowrap;
+}
+.axis .axis-start { left: 0; transform: none; }
+.axis .axis-end { right: 0; transform: none; }
+.axis .axis-now { color: var(--text-2); }
+
+/* LX circles sit over the stems, with larger invisible pointer targets. */
+.cue-mark {
+    position: absolute;
+    top: 28px;
+    width: 24px;
+    height: 24px;
+    margin-left: -12px;
+    z-index: 3;
+}
+.cue-mark::before {
+    content: "";
+    position: absolute;
+    left: 9px;
+    top: 9px;
+    width: 6px;
+    height: 6px;
+    border: 1px solid var(--warn);
+    border-radius: 50%;
+    background: var(--surface);
+}
+.cue-mark.hover::before { outline: 1px solid var(--text); outline-offset: 2px; }
+.cue-mark.current::before { background: var(--warn); }
+
+/* A note: a line in its first tag's colour, with room around it to hover. */
+.note-mark {
+    position: absolute;
+    top: 18px;
+    height: 44px;
+    width: 24px;
+    margin-left: -12px;
+    z-index: 2;
+}
+.note-mark::before {
+    content: "";
+    position: absolute;
+    left: 10.5px;
+    top: 2px;
+    bottom: 2px;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--tag, var(--text-3));
+}
+.note-mark.hover::before, .note-mark.selected::before { box-shadow: 0 0 0 2px var(--text); }
+
+.playhead {
+    position: absolute;
+    top: -3px;
+    bottom: -3px;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--text);
+    border-radius: 1px;
+    pointer-events: none;
+    z-index: 4;
+}
+.scrubbing .playhead { width: 3px; margin-left: -1.5px; }
+
+.hover-card {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    width: max-content;
+    max-width: min(300px, 100%);
+    padding: 8px 10px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+    font-size: 12px;
+    color: var(--text-2);
+    pointer-events: none;
+    z-index: 5;
+    cursor: default;
+}
+.hover-card strong { color: var(--text); font-weight: 600; }
+.hover-card .who { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+.hover-card .who .mono { margin-left: auto; padding-left: 8px; }
+.hover-card .text {
+    color: var(--text);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 4;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.dots { display: inline-flex; gap: 3px; align-items: center; }
+
+/* --- Timing, tucked away until needed --- */
+.timing-panel {
+    position: fixed;
+    top: calc(var(--topbar-h) + 8px);
+    right: 24px;
+    z-index: 50;
+    max-width: calc(100vw - 48px);
+    padding: 12px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 18px;
+    font-size: 13px;
+    color: var(--text-2);
+}
+.nudge, .clock-form { display: inline-flex; gap: 4px; align-items: center; }
+.clock-form { gap: 6px; }
+.clock-form label { display: inline-flex; align-items: center; gap: 6px; }
+.clock-form input {
+    height: 30px;
+    padding: 0 8px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+}
+.clock-form input.invalid { border-color: var(--danger); }
+.timing-panel .field-error { flex-basis: 100%; }
+
+/* --- Notes beside the video --- */
+.side {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    min-width: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+    overflow: hidden;
+}
+.side-head {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+}
+.side-title { display: flex; gap: 8px; align-items: baseline; font-size: 13px; }
+.tag-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.tag-filters:empty { display: none; }
+.side-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.side-list .group-head { position: sticky; top: 0; z-index: 1; padding: 6px 12px; }
+.side-list .group-count { margin-left: auto; }
+
+.side-note {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 9px 12px;
+    border-bottom: 1px solid var(--border);
+    scroll-margin-top: 32px;
+}
+.side-note:hover { background: var(--hover); }
+.side-note.past { opacity: 0.55; }
+.side-note.current { opacity: 1; background: var(--surface); }
+.side-note.selected { opacity: 1; background: var(--accent-soft); }
+.side-note .meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); }
+.side-note .author { color: var(--text-2); font-weight: 500; }
+.side-note .when { margin-left: auto; }
+.side-note .text {
+    display: block;
+    margin-top: 2px;
+    font-size: 13px;
+    color: var(--text);
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.side-empty { padding: 24px 12px; text-align: center; }
+
+/* Keep the video visible when the notes move, including on narrow screens. */
+@media (max-width: 1000px) {
+    .page.playback { padding: 12px; }
+    .player {
+        grid-template-columns: minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1.2fr) minmax(0, 1fr);
+        gap: 12px;
+    }
+    video { min-height: 0; }
+    .clock-form, .clock-form label { flex-wrap: wrap; }
+    .drop-zone { flex: 1; min-height: 0; margin-top: 0; padding: 24px 12px; }
+}
+
+@media (max-width: 480px) {
+    .topbar { gap: 4px; padding-right: 8px; }
+    .help-panel { right: 12px; }
+    #demoBadge { font-size: 10px; padding: 0 6px; }
+    .playback-title { font-size: 12px; }
+    .recording-prompt { padding: 12px; gap: 8px; }
+    .recording-prompt .empty-title { font-size: 14px; }
+}

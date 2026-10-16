@@ -154,3 +154,4 @@ local-sessions.json.tmp
 
 # Shows saved from the config page
 saved-shows/
+.playback-dev/

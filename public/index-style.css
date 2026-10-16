@@ -649,6 +649,8 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
     .menu-item.mobile-only { display: block; }
     .notes-page .topbar { gap: 8px; }
     .notes-page .topbar-actions { gap: 0; flex: none; }
+    .video-link { width: 44px; min-width: 44px; padding: 0; }
+    .video-link > span { display: none; }
     .notes-page:has(.composer:focus-within) .topbar .live { display: none; }
     .notes-page:has(.composer:focus-within) .topbar .brand { display: block; }
     .notes-page .live { flex: 1; gap: 12px; font-size: 15px; }

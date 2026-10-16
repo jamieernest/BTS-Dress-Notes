@@ -77,6 +77,7 @@ kbd {
     white-space: nowrap;
 }
 .btn:hover { background: var(--hover); color: var(--text); }
+a.btn { text-decoration: none; }
 .btn.icon-only { width: 30px; padding: 0; justify-content: center; }
 .btn.primary { background: var(--accent); color: #fff; }
 .btn.primary:hover { background: var(--accent-hover); }
@@ -88,6 +89,8 @@ kbd {
 
 .link-btn { color: var(--accent); font-size: 13px; }
 .link-btn:hover { text-decoration: underline; }
+
+.note.context-note { outline: 1px solid var(--accent); outline-offset: -1px; scroll-margin-top: 72px; }
 
 /* --- Top bar --- */
 .topbar {

@@ -26,6 +26,7 @@
         </div>
 
         <div class="topbar-actions">
+            <a href="/playback.html?source=live" class="btn ghost video-link" aria-label="Open video" title="Open video"><svg class="icon" aria-hidden="true"><use href="icons.svg#i-video"/></svg><span>Video</span></a>
             <button type="button" id="usersButton" class="avatars awaiting-data" aria-haspopup="true" aria-expanded="false" title="Who's online">
                 <span id="avatarStack" class="avatar-stack"></span>
                 <span id="userCount" class="avatars-count">0 online</span>
@@ -84,6 +85,7 @@
                 <button type="button" id="tagFilter" class="select" hidden aria-haspopup="listbox" aria-expanded="false" title="Filter by tag"></button>
                 <button type="button" id="clearFilters" class="btn outline clear-filters" title="Show all notes again" hidden><svg class="icon" aria-hidden="true"><use href="icons.svg#i-close"/></svg>Clear filters</button>
                 <div class="toolbar-end">
+                    <span class="chip" id="liveSampleBadge" hidden>Sample live session</span>
                     <span id="notesCount" class="muted"></span>
                 </div>
             </div>
@@ -182,6 +184,7 @@
     <script src="timecode-format.js"></script>
     <script src="note-view.js"></script>
     <script src="loading-state.js"></script>
+    <script src="playback-context.js"></script>
     <script src="index.js"></script>
 </body>
 </html>

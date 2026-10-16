@@ -54,6 +54,9 @@
 @media (max-width: 640px) {
     .topbar { height: auto; min-height: var(--topbar-h); flex-wrap: wrap; gap: 4px 8px; padding: 8px 12px; }
     .topbar .brand { display: block; flex: 1; font-size: 14px; overflow-wrap: anywhere; }
+    .topbar:has(#playbackLink:not([hidden])) { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+    .topbar:has(#playbackLink:not([hidden])) .brand { grid-row: 2; grid-column: 1 / -1; }
+    .topbar:has(#playbackLink:not([hidden])) .topbar-actions { grid-row: 1; grid-column: 2; justify-self: end; }
     .show-name { display: block; font-size: 12px; }
     .show-name::before { content: none; }
     .topbar-actions:has(#openAnother[hidden]) { display: none; }
