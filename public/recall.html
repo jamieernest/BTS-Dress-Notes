@@ -38,9 +38,9 @@
             </div>
             
             <div class="filter-section">
-                <div class="tags-label">Filter by Act:</div>
+                <div class="tags-label">Filter by scene:</div>
                 <div class="act-filter" id="recallActFilter">
-                    <div class="filter-tag active" data-act="all">All Acts</div>
+                    <div class="filter-tag active" data-act="all">All scenes</div>
                     <div class="filter-tag" data-act="Preshow">Preshow</div>
                 </div>
                 
@@ -249,7 +249,7 @@
                 const uniqueActs = [...new Set(allNotes.map(note => note.act))];
                 
                 const actFilterContainer = document.getElementById('recallActFilter');
-                actFilterContainer.innerHTML = '<div class="filter-tag active" data-act="all">All Acts</div>';
+                actFilterContainer.innerHTML = '<div class="filter-tag active" data-act="all">All scenes</div>';
                 
                 uniqueActs.forEach(act => {
                     const actElement = `
@@ -359,7 +359,7 @@
                 const uniqueActs = [...new Set(allNotes.map(note => note.act))];
                 
                 const actFilterContainer = document.getElementById('recallActFilter');
-                actFilterContainer.innerHTML = '<div class="filter-tag active" data-act="all">All Acts</div>';
+                actFilterContainer.innerHTML = '<div class="filter-tag active" data-act="all">All scenes</div>';
                 
                 uniqueActs.forEach(act => {
                     const actElement = `

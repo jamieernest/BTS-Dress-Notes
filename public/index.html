@@ -7,176 +7,130 @@
     <link rel="stylesheet" href="index-style.css">
 </head>
 <body>
-    <div id="connectionBanner" class="connection-banner" role="status" aria-live="polite" hidden>Connection lost, reconnecting&hellip;</div>
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+        <symbol id="i-chat" viewBox="0 0 16 16"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+        <symbol id="i-more" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.2" fill="currentColor"/><circle cx="8" cy="8" r="1.2" fill="currentColor"/><circle cx="12.5" cy="8" r="1.2" fill="currentColor"/></symbol>
+        <symbol id="i-tag" viewBox="0 0 16 16"><path d="M2.5 2.5h5l6 6-5 5-6-6z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/><circle cx="5.3" cy="5.3" r="1" fill="currentColor"/></symbol>
+        <symbol id="i-edit" viewBox="0 0 16 16"><path d="M10.5 2.5l3 3-8 8h-3v-3z" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/></symbol>
+        <symbol id="i-check" viewBox="0 0 16 16"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-close" viewBox="0 0 16 16"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+        <symbol id="i-reply" viewBox="0 0 16 16"><path d="M6.5 4 3 7.5 6.5 11M3.5 7.5h6a3.5 3.5 0 0 1 3.5 3.5v1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-trash" viewBox="0 0 16 16"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+        <symbol id="i-up" viewBox="0 0 16 16"><path d="M8 13V3M4 7l4-4 4 4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+    </svg>
 
-    <!-- Edit Tags Modal -->
-    <div id="editTagsModal" class="edit-tags-modal">
-        <div class="edit-tags-content">
-            <h3>Edit Note Tags</h3>
-            <div class="edit-tags-container" id="editTagsContainer">
-                <!-- Tags for editing will be populated by JavaScript -->
-            </div>
-            <div class="edit-tags-actions">
-                <button id="cancelEditTags" class="secondary">Cancel</button>
-                <button id="saveEditTags" class="primary">Save Tags</button>
-            </div>
+    <div id="connectionBanner" class="connection-banner" role="status" aria-live="polite" hidden>Connection lost. Reconnecting&hellip; Notes you send are kept and go out when it's back.</div>
+
+    <header class="topbar">
+        <div class="brand">Dress Notes</div>
+
+        <div class="live" title="What a note is stamped with if you start writing now">
+            <span class="live-item"><span class="live-label">Cue</span> <span id="globalLxCue" class="live-value">1</span><input type="text" id="lxCueInput" class="cue-input" aria-label="Current cue" title="No cue feed from the desk, so type the current cue here. It updates for everyone." hidden></span>
+            <span class="live-item"><span class="live-label">Scene</span> <span id="currentActDisplay" class="live-value">Preshow</span></span>
+            <span class="live-item">
+                <span id="timeModeLabel" class="live-label">Clock</span>
+                <span id="globalTimecode" class="live-value mono">00:00:00:00</span>
+                <span id="sourceBadge" class="signal" hidden></span>
+            </span>
         </div>
+
+        <div class="topbar-actions">
+            <button type="button" id="usersButton" class="avatars" aria-haspopup="true" aria-expanded="false" title="Who's online">
+                <span id="avatarStack" class="avatar-stack"></span>
+                <span id="userCount" class="avatars-count">0 online</span>
+            </button>
+            <button type="button" id="chatToggle" class="btn ghost" aria-expanded="false">
+                <svg class="icon"><use href="#i-chat"/></svg><span>Chat</span><span id="chatUnread" class="count-badge" hidden>0</span>
+            </button>
+            <button type="button" id="menuButton" class="btn ghost icon-only" aria-label="More" aria-haspopup="true" aria-expanded="false"><svg class="icon"><use href="#i-more"/></svg></button>
+        </div>
+    </header>
+
+    <div id="usersPopover" class="popover users-popover" hidden>
+        <div class="popover-title">Online now</div>
+        <ul id="usersList" class="users-list"></ul>
     </div>
 
-    <div class="container">
-        <header>
-            <h1>BTS Dress Notes</h1>
-            <p class="subtitle">Dress Notes with LX Cue and Timecode information 😮</p>
-            <div style="margin-top: 1rem;">
-                <a href="/recall.html" class="primary" style="text-decoration: none; color: white; padding: 0.5rem 1rem; background: rgba(255, 152, 0, 0.3); border-radius: 5px;">View Exported Notes</a>
-                <a href="/config.html" class="primary" style="text-decoration: none; color: white; padding: 0.5rem 1rem; background: rgba(255, 255, 255, 0.15); border-radius: 5px; margin-left: 0.5rem;">Config &amp; Status</a>
-            </div>
-        </header>
-        
-        <div class="main-content">
-            <div class="status-panel">
-                <div class="user-info">
-                    <span>You are: </span>
-                    <span class="user-name-display" id="currentUserName">Guest</span>
-                    <a href="/logout" id="logoutLink" class="logout-link">Log out</a>
-                </div>
-                <details class="users-panel" id="usersPanel" open>
-                    <summary>Online users</summary>
-                    <ul class="users-list" id="usersList"></ul>
-                </details>
-            </div>
-            
-            <div class="timecode-section">
-                <div class="global-timecode">
-                    <div class="timecode-label">
-                        <span id="timeModeLabel">MIDI TIMECODE</span>
-                        <span id="sourceBadge" class="source-badge source-midi">MIDI</span>
-                    </div>
-                    <div class="timecode" id="globalTimecode">00:00:00:00</div>
-                    <div class="lx-cue" id="globalLxCue">LX Cue: 1</div>
-                    <div class="frame-rate-display" id="globalFrameRate">Frame Rate: 30 fps</div>
-                </div>
-                
-                <div class="personal-timecode" id="personalTimecode">
-                    <div class="timecode-label">YOUR NOTE TIMECODE</div>
-                    <div class="timecode" id="personalTimecodeDisplay">--:--:--:--</div>
-                    <div class="lx-cue" id="personalLxCueDisplay">LX Cue: --</div>
-                    <div class="frame-rate-display">Timecode will freeze when you type</div>
-                </div>
-            </div>
-            
-            <div class="notes-section">
-                <div class="notes-header">
-                    <h2>Add Your Note</h2>
-                    <div class="export-buttons">
-                        <button id="exportJson">Export JSON</button>
-                    </div>
-                </div>
-                
-                <div class="note-input-area">
-                    <textarea id="noteInput" placeholder="Start typing your note here... (Your personal timecode will freeze)"></textarea>
-                    
-                    <div class="lx-cue-input">
-                        <label for="lxCueInput">LX Cue:</label>
-                        <input type="text" id="lxCueInput" placeholder="Cue Number">
-                    </div>
-                    
-                    <div class="act-display">
-                        <label>Current Act:</label>
-                        <span id="currentActDisplay">Preshow</span>
-                    </div>
-                    <div class="tags-section">
-                        <div class="tags-label">Add Tags:</div>
-                        <div class="tags-container" id="tagsContainer">
-                            <!-- Tags will be populated by JavaScript -->
-                        </div>
-                    </div>
-                    
-                    <div class="note-actions">
-                        <button id="cancelNote" class="secondary">Cancel</button>
-                        <button id="sendNote" class="primary" disabled>Send Note</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Notes Log Panel (moved to right) -->
-        <div class="notes-log-panel">
-            <div class="notes-log-header">
-                <h3>All Notes</h3>
-                <span class="user-count" id="userCount">0 users</span>
-            </div>
-            
-            <div class="filter-section">
-                <div class="tags-label">Filter by Act:</div>
-                <div class="act-filter" id="actFilter">
-                    <div class="filter-tag active" data-act="all">All Acts</div>
-                    <div class="filter-tag" data-act="Preshow">Preshow</div>
-                </div>
-                
-                <div class="tags-label" style="margin-top: 1rem;">Filter by Tags:</div>
-                <div class="filter-tags" id="filterTags">
-                    <div class="filter-tag active" data-tag="all">All Notes</div>
-                    <!-- Filter tags will be populated by JavaScript -->
-                </div>
-            </div>
-            
-            <div class="notes-log-content" id="notesList">
-                <div style="text-align: center; opacity: 0.7; padding: 2rem;">
-                    No notes yet. Be the first to add one!
-                </div>
-            </div>
-        </div>
-        <button id="scrollToTopBtn" class="scroll-to-top-btn" style="display: none;">↑</button>
-        <!-- New Chat Section -->
-        <div class="chat-section">
-            <div class="chat-input-area">
-                <h3>Shitposts</h3>
-                <div class="user-info-small">
-                    <span>Chatting as: </span>
-                    <span class="user-name-display-small" id="chatUserName">Guest</span>
-                </div>
-                <textarea id="chatInput" placeholder="Shitpost here..."></textarea>
-                <div class="chat-actions">
-                    <button id="sendChat" class="primary" disabled>Send Message</button>
-                </div>
-            </div>
-            
-            <div class="chat-log-panel">
-                <div class="chat-log-header">
-                    <h3>Shitposts</h3>
-                    <span class="chat-count" id="chatCount">0 shitposts</span>
-                </div>
-                <div class="chat-log-content" id="chatMessages">
-                    <div style="text-align: center; opacity: 0.7; padding: 2rem;">
-                        No chat messages yet. Start the conversation!
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Instructions Panel (moved to bottom) -->
-        <div class="instructions-panel">
-            <h3>How It Works</h3>
-            <div class="instructions-grid">
-                <div class="instruction-item">• Start typing - your timecode and LX cue freeze</div>
-                <div class="instruction-item">• Send note - it gets timestamped with frozen timecode and LX cue</div>
-                <div class="instruction-item">• Add tags to categorize your notes</div>
-                <div class="instruction-item">• Anyone can edit tags on any note</div>
-                <div class="instruction-item">• Add comments to notes for discussions</div>
-                <div class="instruction-item">• LX cues automatically update via OSC from EOS</div>
-                <div class="instruction-item">• Filter notes by tags to find what you need</div>
-                <div class="instruction-item">• Export all notes as JSON with timestamps</div>
-                <div class="instruction-item">• Switch between MIDI Timecode, Network Timecode and Real Time (Global) on the Config &amp; Status page</div>
-                <div class="instruction-item">• Auto-resume after 15 seconds if note is empty and not focused</div>
-                <div class="instruction-item">• Use the "View Exported Notes" link to review past sessions</div>
-            </div>
-        </div>
-        
-        <footer>
-            <p>BTS Dress Notes &copy; 2025 | Vibecoded by Jamie with ❤️</p>
-        </footer>
+    <div id="menuPopover" class="popover menu-popover" hidden>
+        <div class="menu-user">Signed in as <strong id="currentUserName">Guest</strong></div>
+        <a href="/recall.html" class="menu-item">Open past notes&hellip;</a>
+        <button type="button" id="exportJson" class="menu-item">Download notes (JSON)</button>
+        <a href="/config.html" class="menu-item">Settings &amp; status</a>
+        <div class="menu-sep"></div>
+        <a href="/logout" id="logoutLink" class="menu-item">Log out</a>
     </div>
+
+    <main class="page">
+        <section id="composer" class="composer" aria-label="Write a note">
+            <textarea id="noteInput" rows="1" placeholder="Write a note… just start typing"></textarea>
+            <div class="composer-details">
+                <div class="tag-toggles" id="tagsContainer" role="group" aria-label="Tags for this note" aria-describedby="tagError"></div>
+                <p id="tagError" class="field-error" role="alert" hidden>Pick at least one tag so the right department sees this note.</p>
+                <div class="composer-footer">
+                    <div id="personalTimecode" class="stamp">
+                        <span id="stampLabel" class="stamp-label">Will be stamped</span>
+                        <span class="stamp-value">Cue <span id="personalLxCueDisplay">--</span> · <span id="personalTimecodeDisplay" class="mono">--:--:--:--</span></span>
+                    </div>
+                    <div class="composer-actions">
+                        <button type="button" id="cancelNote" class="btn ghost">Discard</button>
+                        <button type="button" id="sendNote" class="btn primary" disabled>Send note</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="notes" aria-label="Notes">
+            <div class="toolbar">
+                <label class="search">
+                    <svg class="icon"><use href="#i-search"/></svg>
+                    <input type="search" id="searchInput" placeholder="Search notes, people, cues">
+                </label>
+                <button type="button" id="actFilter" class="select" aria-haspopup="listbox" aria-expanded="false" title="Filter by scene"></button>
+                <button type="button" id="tagFilter" class="select" aria-haspopup="listbox" aria-expanded="false" title="Filter by tag"></button>
+                <div class="toolbar-end">
+                    <span id="notesCount" class="muted">0 notes</span>
+                    <button type="button" id="clearFilters" class="link-btn" hidden>Clear filters</button>
+                </div>
+            </div>
+
+            <div id="notesList" class="notes-list"></div>
+            <div id="notesEmpty" class="empty">
+                <p class="empty-title">No notes yet</p>
+                <p class="muted">Start typing anywhere on this page to write the first one. It's stamped with the cue and timecode from the moment you begin.</p>
+            </div>
+            <div id="notesNoMatch" class="empty" hidden>
+                <p class="empty-title">No notes match these filters</p>
+                <button type="button" class="link-btn" data-action="clear-filters">Clear filters</button>
+            </div>
+        </section>
+    </main>
+
+    <button type="button" id="scrollToTopBtn" class="to-top" hidden><svg class="icon"><use href="#i-up"/></svg>Newest</button>
+
+    <div id="actFilterPopover" class="popover filter-popover" role="listbox" aria-label="Filter by scene" hidden></div>
+    <div id="tagFilterPopover" class="popover filter-popover" role="listbox" aria-label="Filter by tag" hidden></div>
+
+    <div id="tagPicker" class="popover tag-picker" role="dialog" aria-label="Edit tags" hidden>
+        <div class="popover-title">Tags</div>
+        <div id="tagPickerList" class="tag-picker-list"></div>
+        <div class="popover-foot muted">Changes save straight away</div>
+    </div>
+
+    <aside id="chatDrawer" class="drawer" aria-label="Chat" hidden>
+        <div class="drawer-head">
+            <h2>Chat</h2>
+            <span id="chatCount" class="muted">0 messages</span>
+            <button type="button" id="chatClose" class="btn ghost icon-only" aria-label="Close chat"><svg class="icon"><use href="#i-close"/></svg></button>
+        </div>
+        <div id="chatMessages" class="chat-log"></div>
+        <div class="chat-compose">
+            <textarea id="chatInput" rows="2" placeholder="Message everyone (not saved as a note)"></textarea>
+            <div class="chat-compose-foot">
+                <button type="button" id="sendChat" class="btn primary" disabled>Send</button>
+            </div>
+        </div>
+    </aside>
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="chat-copy.js"></script>

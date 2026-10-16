@@ -1,43 +1,59 @@
 document.addEventListener('DOMContentLoaded', function() {
+    const $ = (id) => document.getElementById(id);
+
     // --- DOM element references ---
-    const globalTimecodeElement = document.getElementById('globalTimecode');
-    const globalLxCueElement = document.getElementById('globalLxCue');
-    const globalFrameRateElement = document.getElementById('globalFrameRate');
-    const personalTimecodeElement = document.getElementById('personalTimecodeDisplay');
-    const personalLxCueElement = document.getElementById('personalLxCueDisplay');
-    const personalTimecodeContainer = document.getElementById('personalTimecode');
-    const sourceBadge = document.getElementById('sourceBadge');
-    const timeModeLabel = document.getElementById('timeModeLabel');
-    const noteInput = document.getElementById('noteInput');
-    const lxCueInput = document.getElementById('lxCueInput');
-    const sendNoteBtn = document.getElementById('sendNote');
-    const cancelNoteBtn = document.getElementById('cancelNote');
-    const usersPanel = document.getElementById('usersPanel');
-    const usersList = document.getElementById('usersList');
-    const notesList = document.getElementById('notesList');
-    const exportJsonBtn = document.getElementById('exportJson');
-    const currentUserName = document.getElementById('currentUserName');
-    const tagsContainer = document.getElementById('tagsContainer');
-    const filterTagsContainer = document.getElementById('filterTags');
-    const currentActDisplay = document.getElementById('currentActDisplay');
-    const actFilter = document.getElementById('actFilter');
-    const editTagsModal = document.getElementById('editTagsModal');
-    const editTagsContainer = document.getElementById('editTagsContainer');
-    const cancelEditTagsBtn = document.getElementById('cancelEditTags');
-    const saveEditTagsBtn = document.getElementById('saveEditTags');
-    const userCount = document.getElementById('userCount');
-    const chatInput = document.getElementById('chatInput');
-    const sendChatBtn = document.getElementById('sendChat');
-    const chatMessages = document.getElementById('chatMessages');
-    const chatCount = document.getElementById('chatCount');
-    const chatUserName = document.getElementById('chatUserName');
-    const scrollToTopBtn = document.getElementById('scrollToTopBtn');
-    const connectionBanner = document.getElementById('connectionBanner');
+    const globalTimecodeElement = $('globalTimecode');
+    const globalLxCueElement = $('globalLxCue');
+    const personalTimecodeElement = $('personalTimecodeDisplay');
+    const personalLxCueElement = $('personalLxCueDisplay');
+    const personalTimecodeContainer = $('personalTimecode');
+    const stampLabel = $('stampLabel');
+    const sourceBadge = $('sourceBadge');
+    const timeModeLabel = $('timeModeLabel');
+    const composer = $('composer');
+    const noteInput = $('noteInput');
+    const lxCueInput = $('lxCueInput');
+    const sendNoteBtn = $('sendNote');
+    const cancelNoteBtn = $('cancelNote');
+    const usersButton = $('usersButton');
+    const usersPopover = $('usersPopover');
+    const usersList = $('usersList');
+    const avatarStack = $('avatarStack');
+    const userCount = $('userCount');
+    const menuButton = $('menuButton');
+    const menuPopover = $('menuPopover');
+    const notesList = $('notesList');
+    const notesEmpty = $('notesEmpty');
+    const notesNoMatch = $('notesNoMatch');
+    const notesCount = $('notesCount');
+    const clearFiltersBtn = $('clearFilters');
+    const searchInput = $('searchInput');
+    const exportJsonBtn = $('exportJson');
+    const currentUserName = $('currentUserName');
+    const tagsContainer = $('tagsContainer');
+    const tagFilter = $('tagFilter');
+    const tagError = $('tagError');
+    const currentActDisplay = $('currentActDisplay');
+    const actFilter = $('actFilter');
+    const actFilterPopover = $('actFilterPopover');
+    const tagFilterPopover = $('tagFilterPopover');
+    const tagPicker = $('tagPicker');
+    const tagPickerList = $('tagPickerList');
+    const chatToggle = $('chatToggle');
+    const chatDrawer = $('chatDrawer');
+    const chatClose = $('chatClose');
+    const chatUnread = $('chatUnread');
+    const chatInput = $('chatInput');
+    const sendChatBtn = $('sendChat');
+    const chatMessages = $('chatMessages');
+    const chatCount = $('chatCount');
+    const scrollToTopBtn = $('scrollToTopBtn');
+    const connectionBanner = $('connectionBanner');
 
     // --- State variables ---
     let currentUser = {
         name: 'Guest',
-        id: null,
+        sub: null,
         isTyping: false,
         frozenTimecode: null,
         frozenLxCue: null,
@@ -56,257 +72,259 @@ document.addEventListener('DOMContentLoaded', function() {
     let realTimeInterval = null;
     let availableTags = [];
     let selectedTags = [];
-    let filterTag = 'all';
-    let filterAct = 'all';
-    let currentlyEditingNoteId = null;
-    let editTagsSelected = [];
     let autoResumeTimer = null;
     let chatMessagesList = [];
-    let expandedCommentSections = new Set();
+    let unreadChat = 0;
     let currentAct = 'Preshow';
-    let noteElements = new Map();
+    const filters = { tag: 'all', act: 'all', search: '' };
+    const noteElements = new Map();
     // Notes submitted but not yet acknowledged by the server, keyed by the
-    // clientId sent with them: clientId -> { note, element }.
+    // clientId sent with them: clientId -> { note, element, writtenAt }.
     const pendingNotes = new Map();
 
-    let savedCommentInputs = {};
-    let focusedCommentNoteId = null;
+    // Per-note UI state lives here rather than in the DOM, so a note can be
+    // re-rendered (tags changed, comment added...) without losing what
+    // someone is in the middle of typing.
+    const openReplies = new Set(); // notes with the reply box open
+    const commentDrafts = new Map();            // noteId -> text
+    const noteEditDrafts = new Map();           // noteId -> text, while editing
+    const commentEditDrafts = new Map();        // `${noteId}/${commentId}` -> text, while editing
+    const deletedNotes = new Set();             // noteIds hidden while their Undo toast shows
+    const deletedComments = new Set();          // `${noteId}/${commentId}`, likewise
+    let tagPickerNoteId = null;
 
-    function captureCommentInputs() {
-        savedCommentInputs = {};
-        document.querySelectorAll('.comment-input').forEach(input => {
-            const noteId = input.dataset.noteId;
-            if (noteId) savedCommentInputs[noteId] = input.value;
-        });
-        const active = document.activeElement;
-        if (active && active.classList && active.classList.contains('comment-input')) {
-            focusedCommentNoteId = active.dataset.noteId;
-        } else {
-            focusedCommentNoteId = null;
-        }
+    // --- Helper functions ---
+    function esc(str) {
+        return String(str ?? '').replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
     }
 
-    function restoreCommentInputs() {
-        for (const [noteId, text] of Object.entries(savedCommentInputs)) {
-            const input = document.querySelector(`.comment-input[data-note-id="${noteId}"]`);
-            if (input) {
-                input.value = text;
-                const submitBtn = document.querySelector(`[data-action="submit-comment"][data-note-id="${noteId}"]`);
-                if (submitBtn) submitBtn.disabled = text.trim().length === 0;
-            }
-        }
-        if (focusedCommentNoteId) {
-            const input = document.querySelector(`.comment-input[data-note-id="${focusedCommentNoteId}"]`);
-            if (input) {
-                input.focus();
-                input.setSelectionRange(input.value.length, input.value.length);
-            }
-        }
+    function safeColor(color) {
+        return /^#[0-9a-f]{3,8}$/i.test(color || '') ? color : '#8a8f98';
     }
 
-    // --- Helper functions (reused from original) ---
+    const pad = (n) => String(n || 0).padStart(2, '0');
+
     function formatTimecode(tc) {
         if (!tc || typeof tc !== 'object') return '00:00:00:00';
-        return `${(tc.hours || 0).toString().padStart(2, '0')}:${(tc.minutes || 0).toString().padStart(2, '0')}:${(tc.seconds || 0).toString().padStart(2, '0')}:${(tc.frames || 0).toString().padStart(2, '0')}`;
+        if (tc.displayMode === 'realtime') return `${pad(tc.hours)}:${pad(tc.minutes)}:${pad(tc.seconds)}.${pad(Math.floor((tc.milliseconds || 0) / 10))}`;
+        return `${pad(tc.hours)}:${pad(tc.minutes)}:${pad(tc.seconds)}:${pad(tc.frames)}`;
     }
 
-    function formatCommentTime(timestamp) {
-        const date = new Date(timestamp);
-        const now = new Date();
-        const diffMs = now - date;
-        const diffMins = Math.floor(diffMs / 60000);
-        const diffHours = Math.floor(diffMs / 3600000);
-        if (diffMins < 1) return 'Just now';
-        if (diffMins < 60) return `${diffMins}m ago`;
-        if (diffHours < 24) return `${diffHours}h ago`;
-        return date.toLocaleDateString();
+    function formatNoteTimecode(note) {
+        if (note.frameRate === 'ms') return formatTimecode({ ...note.timecode, displayMode: 'realtime' });
+        return formatTimecode(note.timecode);
     }
 
-    function escapeHtml(str) {
-        return str.replace(/[&<>]/g, function(m) {
-            if (m === '&') return '&amp;';
-            if (m === '<') return '&lt;';
-            if (m === '>') return '&gt;';
-            return m;
-        });
+    function clockTime(timestamp) {
+        return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
 
-    // --- Tag persistence ---
-    function loadTagsFromStorage() {
-        const storedTags = localStorage.getItem('midi-timecode-notes-tags');
-        if (storedTags) {
-            availableTags = JSON.parse(storedTags);
-            updateTagsDisplay();
-            updateFilterTags();
+    function relativeTime(timestamp) {
+        const mins = Math.floor((Date.now() - new Date(timestamp)) / 60000);
+        if (mins < 1) return 'just now';
+        if (mins < 60) return `${mins}m ago`;
+        return clockTime(timestamp);
+    }
+
+    function plural(n, word) {
+        return `${n} ${word}${n === 1 ? '' : 's'}`;
+    }
+
+    function isMine(item) {
+        return NoteAuthor.canEditNote(item, currentUser.sub);
+    }
+
+    function initials(name) {
+        const parts = String(name || '?').trim().split(/\s+/);
+        return ((parts[0] || '?')[0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+    }
+
+    // A stable colour per person, so the same face shows up the same way everywhere.
+    function personColor(key) {
+        let h = 0;
+        for (const ch of String(key)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+        return `hsl(${h % 360}, 45%, 42%)`;
+    }
+
+    function tagById(id) {
+        return availableTags.find(t => t.id === id) || { id, name: id, color: '#8a8f98' };
+    }
+
+    const TOAST_MS = 6000;
+    let toastTimer = null;
+    function showToast(message, actionLabel, action) {
+        document.querySelectorAll('.toast').forEach(t => t.remove());
+        clearTimeout(toastTimer);
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.setAttribute('role', 'status');
+        toast.innerHTML = `<span>${esc(message)}</span>${actionLabel ? `<button type="button" class="link-btn">${esc(actionLabel)}</button>` : ''}`;
+        if (actionLabel) {
+            toast.querySelector('button').addEventListener('click', () => { toast.remove(); action(); });
         }
+        document.body.appendChild(toast);
+        toastTimer = setTimeout(() => toast.remove(), TOAST_MS);
+    }
+
+    // --- Tags ---
+    function loadTagsFromStorage() {
+        try {
+            const storedTags = localStorage.getItem('midi-timecode-notes-tags');
+            if (storedTags) availableTags = JSON.parse(storedTags);
+        } catch (e) { /* storage unavailable */ }
     }
 
     function saveTagsToStorage() {
-        localStorage.setItem('midi-timecode-notes-tags', JSON.stringify(availableTags));
+        try { localStorage.setItem('midi-timecode-notes-tags', JSON.stringify(availableTags)); } catch (e) { /* ignore */ }
     }
 
-    function initializeTags() {
-        loadTagsFromStorage();
+    function chipHTML(tag, attrs) {
+        return `<button type="button" class="chip" style="--tag: ${safeColor(tag.color)}" ${attrs}><span class="dot"></span>${esc(tag.name)}</button>`;
     }
-    initializeTags();
 
+    // Tags for the note being written: toggles under the note box.
     function updateTagsDisplay() {
-        tagsContainer.innerHTML = '';
-        availableTags.forEach(tag => {
-            const tagId = `tag-${tag.id}`;
-            const tagElement = `
-                <input type="checkbox" id="${tagId}" class="tag-checkbox" value="${tag.id}">
-                <label for="${tagId}" class="tag-label" style="background-color: ${tag.color}; color: #000;">
-                    ${tag.name}
-                </label>
-            `;
-            tagsContainer.innerHTML += tagElement;
-        });
-        availableTags.forEach(tag => {
-            const checkbox = document.getElementById(`tag-${tag.id}`);
-            if (checkbox) {
-                checkbox.addEventListener('change', function() {
-                    if (this.checked) selectedTags.push(this.value);
-                    else selectedTags = selectedTags.filter(t => t !== this.value);
-                });
-            }
-        });
+        selectedTags = selectedTags.filter(id => availableTags.some(t => t.id === id));
+        tagsContainer.innerHTML = availableTags.map(tag =>
+            chipHTML(tag, `data-tag="${esc(tag.id)}" aria-pressed="${selectedTags.includes(tag.id)}"`)
+        ).join('');
+    }
+
+    // A filter is a button opening a list of choices rather than a <select>,
+    // which can't show each tag's colour. color '' draws an empty ring, so
+    // "All tags" lines up with the coloured dots under it.
+    function dotHTML(color) {
+        if (color === undefined) return '';
+        return color ? `<span class="dot" style="--tag: ${safeColor(color)}"></span>` : '<span class="dot ring"></span>';
+    }
+
+    function renderDropdown(button, popover, options, value) {
+        const current = options.find(o => o.value === value) || options[0];
+        button.innerHTML = `${dotHTML(current.color)}<span>${esc(current.label)}</span>`;
+        button.classList.toggle('active', value !== 'all');
+        popover.innerHTML = options.map(o => `
+            <button type="button" class="tag-option" role="option" data-value="${esc(o.value)}" aria-selected="${o.value === value}">
+                ${dotHTML(o.color)}${esc(o.label)}<svg class="icon check"><use href="#i-check"/></svg>
+            </button>`).join('');
     }
 
     function updateFilterTags() {
-        filterTagsContainer.innerHTML = '<div class="filter-tag active" data-tag="all">All Notes</div>';
-        availableTags.forEach(tag => {
-            const filterTagElement = `
-                <div class="filter-tag" data-tag="${tag.id}" style="background-color: ${tag.color}; color: #000;">
-                    ${tag.name}
-                </div>
-            `;
-            filterTagsContainer.innerHTML += filterTagElement;
-        });
-        document.querySelectorAll('.filter-tag').forEach(tag => {
-            tag.addEventListener('click', function() {
-                filterTag = this.getAttribute('data-tag');
-                document.querySelectorAll('.filter-tag').forEach(t => t.classList.remove('active'));
-                this.classList.add('active');
-                filterNotes();
-            });
-        });
-        // Act filter listeners are reattached in updateActFilter
+        if (filters.tag !== 'all' && !availableTags.some(t => t.id === filters.tag)) filters.tag = 'all';
+        renderDropdown(tagFilter, tagFilterPopover, [
+            { value: 'all', label: 'All tags', color: '' },
+            ...availableTags.map(tag => ({ value: tag.id, label: tag.name, color: tag.color }))
+        ], filters.tag);
+        tagFilter.hidden = availableTags.length === 0;
     }
 
-    function updateEditTagsDisplay(noteTags) {
-        editTagsContainer.innerHTML = '';
-        editTagsSelected = [...noteTags];
-        availableTags.forEach(tag => {
-            const tagId = `edit-tag-${tag.id}`;
-            const isChecked = noteTags.includes(tag.id);
-            const tagElement = `
-                <input type="checkbox" id="${tagId}" class="tag-checkbox" value="${tag.id}" ${isChecked ? 'checked' : ''}>
-                <label for="${tagId}" class="tag-label" style="background-color: ${tag.color}; color: #000;">
-                    ${tag.name}
-                </label>
-            `;
-            editTagsContainer.innerHTML += tagElement;
-        });
-        availableTags.forEach(tag => {
-            const checkbox = document.getElementById(`edit-tag-${tag.id}`);
-            if (checkbox) {
-                checkbox.addEventListener('change', function() {
-                    if (this.checked) editTagsSelected.push(this.value);
-                    else editTagsSelected = editTagsSelected.filter(t => t !== this.value);
-                });
-            }
-        });
+    // --- Filtering ---
+    function noteMatches(note) {
+        if (filters.tag !== 'all' && !note.tags.includes(filters.tag)) return false;
+        if (filters.act !== 'all' && (note.act || 'Preshow') !== filters.act) return false;
+        if (filters.search) {
+            const haystack = [
+                note.text, note.user, note.lxCue, note.act,
+                ...note.tags.map(id => tagById(id).name),
+                ...(note.comments || []).map(c => `${c.user} ${c.text}`)
+            ].join(' ').toLowerCase();
+            if (!haystack.includes(filters.search)) return false;
+        }
+        return true;
     }
 
+    function filtersActive() {
+        return filters.tag !== 'all' || filters.act !== 'all' || filters.search !== '';
+    }
+
+    // Shows/hides rows, then each act heading with how many of its notes show.
     function filterNotes() {
-        const noteItems = document.querySelectorAll('.note-item:not(.pending)');
-        noteItems.forEach(item => {
-            let showNote = true;
-            if (filterTag !== 'all') {
-                const itemTags = item.getAttribute('data-tags').split(',');
-                if (!itemTags.includes(filterTag)) showNote = false;
+        let shown = 0;
+        let head = null;
+        let headCount = 0;
+        const closeGroup = () => {
+            if (!head) return;
+            head.hidden = headCount === 0;
+            head.querySelector('.group-count').textContent = plural(headCount, 'note');
+        };
+        for (const el of notesList.children) {
+            if (el.classList.contains('group-head')) {
+                closeGroup();
+                head = el;
+                headCount = 0;
+            } else if (!el.classList.contains('pending')) {
+                const note = allNotes.find(n => n.id === el.dataset.noteId);
+                const visible = !!note && !deletedNotes.has(note.id) && noteMatches(note);
+                el.hidden = !visible;
+                if (visible) { shown++; headCount++; }
             }
-            if (filterAct !== 'all') {
-                const itemAct = item.getAttribute('data-act');
-                if (itemAct !== filterAct) showNote = false;
-            }
-            item.style.display = showNote ? 'block' : 'none';
-        });
+        }
+        closeGroup();
+
+        const total = allNotes.length - deletedNotes.size;
+        notesCount.textContent = filtersActive() ? `${shown} of ${plural(total, 'note')}` : '';
+        clearFiltersBtn.hidden = !filtersActive();
+        notesEmpty.hidden = total > 0 || pendingNotes.size > 0;
+        notesNoMatch.hidden = !(total > 0 && shown === 0 && filtersActive());
     }
 
     function updateActFilter() {
-        const uniqueActs = [...new Set(allNotes.map(note => note.act || 'Preshow'))];
-        actFilter.innerHTML = '<div class="filter-tag active" data-act="all">All Acts</div>';
-        uniqueActs.forEach(act => {
-            const actElement = `<div class="filter-tag" data-act="${act}">${act}</div>`;
-            actFilter.innerHTML += actElement;
-        });
-        document.querySelectorAll('.act-filter .filter-tag').forEach(tag => {
-            tag.addEventListener('click', function() {
-                filterAct = this.getAttribute('data-act');
-                document.querySelectorAll('.act-filter .filter-tag').forEach(t => t.classList.remove('active'));
-                this.classList.add('active');
-                filterNotes();
-            });
-        });
+        const acts = [...new Set(allNotes.filter(n => !deletedNotes.has(n.id)).map(note => note.act || 'Preshow'))];
+        if (filters.act !== 'all' && !acts.includes(filters.act)) filters.act = 'all';
+        renderDropdown(actFilter, actFilterPopover, [
+            { value: 'all', label: 'All scenes' },
+            ...acts.map(act => ({ value: act, label: act }))
+        ], filters.act);
+        actFilter.hidden = acts.length < 2 && filters.act === 'all';
     }
 
-    // --- Timecode and UI update functions ---
+    function clearFilters() {
+        filters.tag = 'all';
+        filters.act = 'all';
+        filters.search = '';
+        searchInput.value = '';
+        updateActFilter();
+        updateFilterTags();
+        filterNotes();
+    }
+
+    // --- Timecode and live display ---
     function updateGlobalTimecodeDisplay(timecode) {
-        let formatted;
-        if (timecode.displayMode === 'realtime') {
-            const ms = Math.floor((timecode.milliseconds || 0) / 10);
-            formatted = `${timecode.hours.toString().padStart(2, '0')}:${timecode.minutes.toString().padStart(2, '0')}:${timecode.seconds.toString().padStart(2, '0')}:${ms.toString().padStart(2, '0')}`;
-        } else {
-            formatted = formatTimecode(timecode);
-        }
-        globalTimecodeElement.textContent = formatted;
+        globalTimecodeElement.textContent = formatTimecode(timecode);
     }
 
     function updatePersonalTimecodeDisplay(timecode) {
-        let formatted;
-        if (timecode.displayMode === 'realtime') {
-            const ms = Math.floor((timecode.milliseconds || 0) / 10);
-            formatted = `${timecode.hours.toString().padStart(2, '0')}:${timecode.minutes.toString().padStart(2, '0')}:${timecode.seconds.toString().padStart(2, '0')}:${ms.toString().padStart(2, '0')}`;
-        } else {
-            formatted = formatTimecode(timecode);
-        }
-        personalTimecodeElement.textContent = formatted;
+        personalTimecodeElement.textContent = formatTimecode(timecode);
     }
 
     function updateGlobalLxCueDisplay(cue) {
-        globalLxCueElement.textContent = `LX Cue: ${cue}`;
+        globalLxCueElement.textContent = cue || '--';
     }
 
     function updatePersonalLxCueDisplay(cue) {
-        personalLxCueElement.textContent = `LX Cue: ${cue}`;
+        personalLxCueElement.textContent = cue || '--';
     }
 
-    const timeModeLabels = {
-        midi: 'MIDI TIMECODE',
-        network: 'NETWORK TIMECODE',
-        realtime: 'REAL TIME'
-    };
+    const timeModeLabels = { midi: 'MIDI TC', network: 'Network TC', realtime: 'Time' };
 
     function updateSourceBadge() {
-        const name = timeMode === 'network' ? 'NETWORK' : 'MIDI';
-        sourceBadge.textContent = liveSources[timeMode] ? `LIVE ${name}` : name;
-        sourceBadge.className = `source-badge source-${timeMode}`;
+        const live = liveSources[timeMode];
+        sourceBadge.textContent = live ? 'Live' : 'Waiting';
+        sourceBadge.title = live ? 'Timecode is coming in' : 'No timecode received yet';
+        sourceBadge.classList.toggle('live', !!live);
     }
 
     function updateTimeModeDisplay() {
         timeModeLabel.textContent = timeModeLabels[timeMode] || timeModeLabels.midi;
         if (timeMode === 'realtime') {
-            sourceBadge.style.display = 'none';
-            globalFrameRateElement.textContent = 'Time Unit: Milliseconds';
+            sourceBadge.hidden = true;
+            globalTimecodeElement.title = 'Time of day';
             startRealTimeMode();
         } else {
             currentGlobalTimecode = latestTimecodes[timeMode];
             currentUser.currentFrameRate = currentGlobalTimecode.frameRate;
             updateSourceBadge();
-            sourceBadge.style.display = 'inline-block';
-            globalFrameRateElement.textContent = `Frame Rate: ${currentGlobalTimecode.frameRate} fps`;
+            sourceBadge.hidden = false;
+            globalTimecodeElement.title = `${currentGlobalTimecode.frameRate} fps`;
             stopRealTimeMode();
             updateGlobalTimecodeDisplay(currentGlobalTimecode);
             if (!currentUser.isTyping) updatePersonalTimecodeDisplay(currentGlobalTimecode);
@@ -326,56 +344,101 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function updateRealTimeDisplay() {
+    function realTimeNow() {
         const now = new Date();
-        const realTimeTimecode = {
+        return {
             hours: now.getHours(),
             minutes: now.getMinutes(),
             seconds: now.getSeconds(),
             milliseconds: now.getMilliseconds(),
             displayMode: 'realtime'
         };
-        updateGlobalTimecodeDisplay(realTimeTimecode);
-        if (!currentUser.isTyping) updatePersonalTimecodeDisplay(realTimeTimecode);
+    }
+
+    function updateRealTimeDisplay() {
+        const now = realTimeNow();
+        updateGlobalTimecodeDisplay(now);
+        if (!currentUser.isTyping) updatePersonalTimecodeDisplay(now);
+    }
+
+    // --- Writing a note ---
+    function updateComposer() {
+        const open = currentUser.isTyping || noteInput.value.length > 0 || document.activeElement === noteInput;
+        composer.classList.toggle('open', open);
+        personalTimecodeContainer.classList.toggle('frozen', currentUser.isTyping);
+        stampLabel.textContent = currentUser.isTyping ? 'Note taken at' : 'Taken when you start typing';
+        personalTimecodeContainer.title = 'Locked when you start writing, so it matches the moment you saw';
+        noteInput.style.height = 'auto';
+        noteInput.style.height = `${noteInput.scrollHeight}px`;
     }
 
     function startTyping() {
         if (currentUser.isTyping) return;
         currentUser.isTyping = true;
         if (timeMode === 'realtime') {
-            const now = new Date();
-            currentUser.frozenTimecode = {
-                hours: now.getHours(),
-                minutes: now.getMinutes(),
-                seconds: now.getSeconds(),
-                milliseconds: now.getMilliseconds(),
-                displayMode: 'realtime',
-                frameRate: 'ms'
-            };
+            currentUser.frozenTimecode = { ...realTimeNow(), frameRate: 'ms' };
         } else {
             currentUser.frozenTimecode = { ...currentGlobalTimecode, displayMode: timeMode };
         }
         currentUser.frozenLxCue = currentGlobalLxCue;
         updatePersonalTimecodeDisplay(currentUser.frozenTimecode);
         updatePersonalLxCueDisplay(currentUser.frozenLxCue);
-        personalTimecodeContainer.classList.add('frozen');
+        updateComposer();
         window.socket.emit('typing-start', {
             timecode: currentUser.frozenTimecode,
             lxCue: currentUser.frozenLxCue
         });
     }
 
-    function cancelNote() {
+    function resetComposer() {
         noteInput.value = '';
         sendNoteBtn.disabled = true;
         currentUser.isTyping = false;
         currentUser.frozenTimecode = null;
         currentUser.frozenLxCue = null;
-        personalTimecodeContainer.classList.remove('frozen');
         selectedTags = [];
-        document.querySelectorAll('.tag-checkbox:checked').forEach(cb => cb.checked = false);
+        updateTagsDisplay();
+        showTagError(false);
+        if (timeMode !== 'realtime') updatePersonalTimecodeDisplay(currentGlobalTimecode);
+        updatePersonalLxCueDisplay(currentGlobalLxCue);
         window.socket.emit('typing-stop');
         clearAutoResumeTimer();
+        updateComposer();
+    }
+
+    // A note needs a tag (unless none are set up) so it reaches the right department.
+    function needsTag() {
+        return availableTags.length > 0 && selectedTags.length === 0;
+    }
+
+    function showTagError(show) {
+        tagError.hidden = !show;
+        tagsContainer.classList.toggle('invalid', show);
+    }
+
+    function cancelNote() {
+        resetComposer();
+    }
+
+    // Discarding typed text can be undone for a few seconds (stamp included).
+    function discardNote() {
+        const text = noteInput.value;
+        if (!text.trim()) return cancelNote();
+        const saved = { text, tags: [...selectedTags], timecode: currentUser.frozenTimecode, lxCue: currentUser.frozenLxCue };
+        cancelNote();
+        noteInput.blur();
+        showToast('Note discarded', 'Undo', () => {
+            noteInput.value = saved.text;
+            selectedTags = saved.tags;
+            updateTagsDisplay();
+            noteInput.focus();
+            currentUser.frozenTimecode = saved.timecode;
+            currentUser.frozenLxCue = saved.lxCue;
+            updatePersonalTimecodeDisplay(saved.timecode);
+            updatePersonalLxCueDisplay(saved.lxCue);
+            sendNoteBtn.disabled = false;
+            updateComposer();
+        });
     }
 
     function startAutoResumeTimer() {
@@ -392,27 +455,177 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // --- Chat functions ---
+    // --- Online users ---
+    // One entry per person, even with the page open in several tabs.
+    function renderUsers(users) {
+        const people = new Map();
+        for (const u of users) {
+            const key = u.id || u.name;
+            const existing = people.get(key);
+            if (existing) existing.isTyping = existing.isTyping || u.isTyping;
+            else people.set(key, { key, name: u.name, isTyping: !!u.isTyping, me: !!currentUser.sub && u.id === currentUser.sub });
+        }
+        const list = [...people.values()].sort((a, b) => (b.me - a.me) || a.name.localeCompare(b.name));
+        userCount.textContent = `${list.length} online`;
+
+        const MAX = 4;
+        avatarStack.innerHTML = list.slice(0, MAX).map(p =>
+            `<span class="avatar${p.isTyping ? ' typing' : ''}" style="background:${personColor(p.key)}">${esc(initials(p.name))}</span>`
+        ).join('') + (list.length > MAX ? `<span class="avatar more">+${list.length - MAX}</span>` : '');
+
+        usersList.innerHTML = list.map(p => `
+            <li>
+                <span class="avatar" style="background:${personColor(p.key)}">${esc(initials(p.name))}</span>
+                <span>${esc(p.name)}</span>${p.me ? '<span class="you">you</span>' : ''}
+                ${p.isTyping ? '<span class="writing">writing…</span>' : ''}
+            </li>`).join('');
+    }
+
+    // --- Popovers (online list, menu, tag picker) ---
+    function placePopover(popover, anchor, align) {
+        popover.hidden = false;
+        const r = anchor.getBoundingClientRect();
+        const w = popover.offsetWidth;
+        const h = popover.offsetHeight;
+        let left = align === 'right' ? r.right - w : r.left;
+        left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
+        let top = r.bottom + 4;
+        if (top + h > window.innerHeight - 8) top = Math.max(8, r.top - h - 4);
+        popover.style.left = `${left}px`;
+        popover.style.top = `${top}px`;
+    }
+
+    function closePopovers() {
+        let closed = false;
+        for (const [popover, button] of [[usersPopover, usersButton], [menuPopover, menuButton], [actFilterPopover, actFilter], [tagFilterPopover, tagFilter]]) {
+            if (popover.hidden) continue;
+            closed = true;
+            const hadFocus = popover.contains(document.activeElement);
+            popover.hidden = true;
+            button.setAttribute('aria-expanded', 'false');
+            if (hadFocus) button.focus({ preventScroll: true });
+        }
+        if (!tagPicker.hidden) {
+            closed = true;
+            closeTagPicker();
+        }
+        return closed;
+    }
+
+    function togglePopover(popover, button, align = 'right') {
+        const wasOpen = !popover.hidden;
+        closePopovers();
+        if (wasOpen) return false;
+        placePopover(popover, button, align);
+        button.setAttribute('aria-expanded', 'true');
+        return true;
+    }
+
+    function renderTagPicker() {
+        const note = allNotes.find(n => n.id === tagPickerNoteId);
+        if (!note) return closeTagPicker();
+        tagPickerList.innerHTML = availableTags.map(tag => `
+            <button type="button" class="tag-option" role="menuitemcheckbox" data-tag="${esc(tag.id)}" aria-checked="${note.tags.includes(tag.id)}" style="--tag: ${safeColor(tag.color)}">
+                <span class="dot"></span>${esc(tag.name)}<svg class="icon check"><use href="#i-check"/></svg>
+            </button>`).join('') || '<div class="popover-title">No tags set up</div>';
+    }
+
+    function openTagPicker(noteId, anchor) {
+        closePopovers();
+        tagPickerNoteId = noteId;
+        renderTagPicker();
+        placePopover(tagPicker, anchor, 'left');
+        const first = tagPickerList.querySelector('.tag-option');
+        if (first) first.focus();
+    }
+
+    function closeTagPicker() {
+        const noteId = tagPickerNoteId;
+        tagPicker.hidden = true;
+        tagPickerNoteId = null;
+        const el = noteId && noteElements.get(noteId);
+        if (el && tagPicker.contains(document.activeElement)) el.querySelector('[data-action="edit-tags"]')?.focus();
+    }
+
+    tagPickerList.addEventListener('click', (e) => {
+        const option = e.target.closest('.tag-option');
+        const note = allNotes.find(n => n.id === tagPickerNoteId);
+        if (!option || !note) return;
+        const id = option.dataset.tag;
+        const tags = note.tags.includes(id) ? note.tags.filter(t => t !== id) : [...note.tags, id];
+        option.setAttribute('aria-checked', String(tags.includes(id)));
+        window.socket.emit('note-update-tags', { noteId: note.id, tags });
+    });
+
+    tagPickerList.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+        e.preventDefault();
+        const options = [...tagPickerList.querySelectorAll('.tag-option')];
+        const i = options.indexOf(document.activeElement);
+        const next = options[(i + (e.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length];
+        if (next) next.focus();
+    });
+
+    // --- Chat ---
+    function isMyChat(msg) {
+        return msg.userId ? msg.userId === currentUser.sub : msg.user === currentUser.name;
+    }
+
+    // Messages from one person within a few minutes of each other read as one
+    // run: the name and face show once, at the start.
+    function continuesRun(prev, msg) {
+        return !!prev && (prev.userId || prev.user) === (msg.userId || msg.user)
+            && new Date(msg.timestamp) - new Date(prev.timestamp) < 5 * 60 * 1000;
+    }
+
+    function renderChatMessage(msg, prev) {
+        const mine = isMyChat(msg);
+        const cont = continuesRun(prev, msg);
+        const head = cont ? '' : `
+                <div class="chat-msg-head">
+                    ${mine ? '' : `<span class="chat-msg-user">${esc(msg.user)}</span>`}
+                    <span class="chat-msg-time">${clockTime(msg.timestamp)}</span>
+                </div>`;
+        const face = mine ? '' : (cont ? '<span class="avatar-gap"></span>' : avatarHTML(msg.userId || msg.user, msg.user, 'sm'));
+        return `
+            <div class="chat-msg${mine ? ' mine' : ''}${cont ? ' cont' : ''}">
+                ${face}
+                <div class="chat-msg-main">${head}
+                    <div class="bubble" title="${esc(new Date(msg.timestamp).toLocaleString())}">${esc(msg.text)}</div>
+                </div>
+            </div>`;
+    }
+
+    function chatNearBottom() {
+        return chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 80;
+    }
+
     function updateChatMessages() {
-        chatCount.textContent = `${chatMessagesList.length} shitpost${chatMessagesList.length !== 1 ? 's' : ''}`;
+        chatCount.textContent = plural(chatMessagesList.length, 'message');
         if (chatMessagesList.length === 0) {
-            chatMessages.innerHTML = '<div style="text-align: center; opacity: 0.7; padding: 2rem;">No chat messages yet. Start the conversation!</div>';
+            chatMessages.innerHTML = '<div class="chat-empty">No messages yet. Chat here is for everyone online and isn\'t part of the notes.</div>';
             return;
         }
-        const sorted = [...chatMessagesList].sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
-        chatMessages.innerHTML = sorted.map(msg => {
-            const time = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            return `
-                <div class="chat-message">
-                    <div class="chat-message-header">
-                        <span class="chat-message-user">${escapeHtml(msg.user)}</span>
-                        <span class="chat-message-time">${time}</span>
-                    </div>
-                    <div class="chat-message-text">${escapeHtml(msg.text)}</div>
-                </div>
-            `;
-        }).join('');
-        setTimeout(() => chatMessages.scrollTop = chatMessages.scrollHeight, 100);
+        const sorted = [...chatMessagesList].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        chatMessages.innerHTML = sorted.map((m, i) => renderChatMessage(m, sorted[i - 1])).join('');
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+    }
+
+    function updateUnread() {
+        chatUnread.hidden = unreadChat === 0;
+        chatUnread.textContent = unreadChat > 99 ? '99+' : String(unreadChat);
+    }
+
+    function setChatOpen(open) {
+        chatDrawer.hidden = !open;
+        document.body.classList.toggle('chat-open', open);
+        chatToggle.setAttribute('aria-expanded', String(open));
+        if (open) {
+            unreadChat = 0;
+            updateUnread();
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+        try { localStorage.setItem('chat-open', open ? '1' : '0'); } catch (e) { /* ignore */ }
     }
 
     function sendChatMessage() {
@@ -424,180 +637,223 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function updateChatUserName() {
-        chatUserName.textContent = currentUser.name;
-    }
-
-    function updateUserCount(count) {
-        userCount.textContent = `${count} user${count !== 1 ? 's' : ''}`;
-    }
-
-    // --- Scroll button logic ---
-    // Newest notes are at the top of the list.
-    function isNearTop() {
-        return notesList.scrollTop < 50;
-    }
-
+    // --- Scroll back to the newest notes ---
     function toggleScrollButton() {
-        if (isNearTop()) scrollToTopBtn.style.display = 'none';
-        else scrollToTopBtn.style.display = 'flex';
+        scrollToTopBtn.hidden = window.scrollY < 400;
     }
 
     function scrollToTop() {
-        notesList.scrollTo({ top: 0, behavior: 'smooth' });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
-    // --- Incremental DOM update functions ---
-    function getTagElements(tags) {
-        return tags.map(tagId => {
-            const tag = availableTags.find(t => t.id === tagId);
-            return tag ? `<span class="note-tag" style="background-color: ${tag.color}; color: #000;">${tag.name}</span>`
-                       : `<span class="note-tag" style="background-color: #cccccc; color: #000;">${tagId}</span>`;
+    // --- Rendering notes ---
+    function tagChipsHTML(note, clickable) {
+        return note.tags.map(id => {
+            const tag = tagById(id);
+            const attrs = clickable ? `data-action="edit-tags" title="Change tags"` : 'tabindex="-1"';
+            return `<${clickable ? 'button type="button"' : 'span'} class="chip" style="--tag: ${safeColor(tag.color)}" ${attrs}><span class="dot"></span>${esc(tag.name)}</${clickable ? 'button' : 'span'}>`;
         }).join('');
     }
 
-    function formatNoteTimecode(note) {
-        if (note.frameRate === 'ms') {
-            const ms = Math.floor((note.timecode.milliseconds || 0) / 10);
-            return `${note.timecode.hours.toString().padStart(2, '0')}:${note.timecode.minutes.toString().padStart(2, '0')}:${note.timecode.seconds.toString().padStart(2, '0')}:${ms.toString().padStart(2, '0')}`;
-        }
-        return formatTimecode(note.timecode);
+    function avatarHTML(key, name, extraClass) {
+        return `<span class="avatar${extraClass ? ` ${extraClass}` : ''}" style="background:${personColor(key)}" aria-hidden="true">${esc(initials(name))}</span>`;
     }
 
-    function getNoteHTML(note) {
-        const timecodeDisplay = formatNoteTimecode(note);
-        const tagElements = getTagElements(note.tags);
-        const editButton = `<button class="small edit-tags-btn" data-action="edit-tags" data-note-id="${note.id}">Edit Tags</button>`;
-        const editNoteButton = !NoteAuthor.canEditNote(note, currentUser.sub) ? '' : `<button class="small edit-note-btn" data-action="edit-note" data-note-id="${note.id}">Edit Note</button>`;
-        const editedIndicator = note.lastEdited ? `<div class="note-edited">Last edited by ${escapeHtml(note.lastEditedBy || 'unknown')} at ${new Date(note.lastEdited).toLocaleTimeString()}</div>` : '';
-        const isCommentsExpanded = expandedCommentSections.has(note.id);
-        const commentCount = note.comments ? note.comments.length : 0;
+    function iconButton(action, icon, label, extra) {
+        return `<button type="button" class="icon-btn" data-action="${action}" aria-label="${label}" title="${label}"${extra || ''}><svg class="icon"><use href="#i-${icon}"/></svg></button>`;
+    }
 
-        const commentsSection = `
-            <div class="comments-section">
-                <button class="comments-toggle ${isCommentsExpanded ? 'expanded' : ''}" data-action="toggle-comments" data-note-id="${note.id}">
-                    <span>Comments</span>
-                    <span class="count">${commentCount}</span>
-                    <span class="arrow">▼</span>
-                </button>
-                <div class="comments-container ${isCommentsExpanded ? 'expanded' : ''}" id="comments-${note.id}">
-                    ${note.comments ? note.comments.map(comment => `
-                        <div class="comment-item" data-comment-id="${comment.id}">
-                            <div class="comment-header">
-                                <span class="comment-user">${escapeHtml(comment.user)}</span>
-                                <span class="comment-time">
-                                    ${formatCommentTime(comment.timestamp)}
-                                    ${comment.lastEdited ? `(edited by ${escapeHtml(comment.lastEditedBy || 'unknown')} at ${new Date(comment.lastEdited).toLocaleTimeString()})` : ''}
-                                </span>
-                            </div>
-                            <div class="comment-text">
-                                <span class="comment-text-display">${escapeHtml(comment.text)}</span>
-                                <textarea class="comment-text-edit" style="display: none">${escapeHtml(comment.text)}</textarea>
-                            </div>
-                            <div class="comment-actions" style="margin-top: 0.5rem;">
-                                <button class="small edit-comment-btn" data-action="edit-comment" data-note-id="${note.id}" data-comment-id="${comment.id}">Edit</button>
-                                <button class="small delete-comment-btn" data-action="delete-comment" data-note-id="${note.id}" data-comment-id="${comment.id}">Delete</button>
-                                <button class="small save-comment-btn" data-action="save-comment" data-note-id="${note.id}" data-comment-id="${comment.id}" style="display: none">Save</button>
-                                <button class="small cancel-comment-btn" data-action="cancel-comment" data-note-id="${note.id}" data-comment-id="${comment.id}" style="display: none">Cancel</button>
-                            </div>
-                        </div>
-                    `).join('') : ''}
-                </div>
-                <div class="comment-input-area ${isCommentsExpanded ? 'expanded' : ''}" id="comment-input-${note.id}">
-                    <textarea class="comment-input" data-action="comment-input" data-note-id="${note.id}" placeholder="Add a comment..."></textarea>
-                    <div class="comment-actions">
-                        <button class="small secondary cancel-comment" data-action="cancel-comment-input" data-note-id="${note.id}">Cancel</button>
-                        <button class="small primary submit-comment" data-action="submit-comment" data-note-id="${note.id}" disabled>Submit</button>
-                    </div>
-                </div>
-            </div>
-        `;
-
+    // Who wrote it, then where in the show (cue and timecode), then when.
+    function noteHeadHTML(note, name, side) {
+        const rate = note.frameRate === 'ms' ? 'real time' : `${note.frameRate || 30} fps`;
+        const title = note.timestamp ? `${rate} · sent ${new Date(note.timestamp).toLocaleString()}` : rate;
         return `
-            <div class="note-item" data-tags="${note.tags.join(',')}" data-act="${note.act || 'Preshow'}" data-note-id="${note.id}">
-                <div class="note-header">
-                    <span class="note-act">${note.act || 'Preshow'}</span>
-                    <span class="note-user">${escapeHtml(note.user)}</span>
-                    <span class="note-timecode">
-                        ${timecodeDisplay} 
-                        <span class="note-lx-cue">LX: ${note.lxCue || 'N/A'}</span>
-                        @ ${note.frameRate || '30 fps'}
-                    </span>
+            <div class="note-head">
+                <span class="note-author">${esc(name)}</span>
+                <span class="note-cue">Cue ${esc(note.lxCue || '–')}</span>
+                <span class="note-tc mono" title="${esc(title)}">${esc(formatNoteTimecode(note))}</span>
+                ${side}
+            </div>`;
+    }
+
+    function commentHTML(note, comment) {
+        const key = `${note.id}/${comment.id}`;
+        const editing = commentEditDrafts.has(key);
+        const tools = isMine(comment) && !editing ? `
+            <span class="row-actions">
+                ${iconButton('edit-comment', 'edit', 'Edit comment', ` data-comment-id="${esc(comment.id)}"`)}
+                ${iconButton('delete-comment', 'trash', 'Delete reply', ` data-comment-id="${esc(comment.id)}"`)}
+            </span>` : '';
+        const body = editing ? `
+            <div class="comment-edit">
+                <textarea data-field="comment-edit" data-comment-id="${esc(comment.id)}" aria-label="Edit comment">${esc(commentEditDrafts.get(key))}</textarea>
+                <div class="edit-actions">
+                    <button type="button" class="btn ghost" data-action="cancel-comment-edit" data-comment-id="${esc(comment.id)}">Cancel</button>
+                    <button type="button" class="btn primary" data-action="save-comment" data-comment-id="${esc(comment.id)}">Save</button>
                 </div>
-                <div class="note-text">
-                    <span class="note-text-display">${escapeHtml(note.text)}</span>
-                    <textarea class="note-text-edit" style="display: none">${escapeHtml(note.text)}</textarea>
+            </div>` : `<div class="comment-text">${esc(comment.text)}</div>`;
+        const edited = comment.lastEdited ? ' · edited' : '';
+        return `
+            <div class="comment" data-comment-id="${esc(comment.id)}">
+                ${avatarHTML(comment.userId || comment.user, comment.user, 'sm')}
+                <div class="comment-main">
+                    <div class="comment-head">
+                        <span class="comment-user">${esc(comment.user)}</span>
+                        <span class="muted" title="${esc(new Date(comment.timestamp).toLocaleString())}">${relativeTime(comment.timestamp)}${edited}</span>
+                        ${tools}
+                    </div>
+                    ${body}
                 </div>
-                ${editedIndicator}
-                ${note.tags.length > 0 ? `<div class="note-tags">${tagElements}</div>` : ''}
-                ${commentsSection}
-                <div class="note-actions-row">
-                    ${editButton}
-                    ${editNoteButton}
+            </div>`;
+    }
+
+    function noteHTML(note) {
+        const comments = (note.comments || []).filter(c => !deletedComments.has(`${note.id}/${c.id}`));
+        const editing = noteEditDrafts.has(note.id);
+        const replying = openReplies.has(note.id);
+        const canEdit = isMine(note);
+        // Ownerless notes can be edited by anyone, but only deleted by whoever wrote them.
+        const canDelete = !!note.userId && canEdit;
+
+        const body = editing ? `
+            <div class="note-edit">
+                <textarea data-field="note-edit" aria-label="Edit note">${esc(noteEditDrafts.get(note.id))}</textarea>
+                <div class="edit-actions">
+                    <button type="button" class="btn ghost" data-action="cancel-note-edit">Cancel</button>
+                    <button type="button" class="btn primary" data-action="save-note">Save</button>
                 </div>
-            </div>
-        `;
+            </div>` : `<div class="note-text">${esc(note.text)}</div>`;
+
+        const edited = note.lastEdited
+            ? `<div class="note-edited">Edited by ${esc(note.lastEditedBy || 'unknown')} at ${clockTime(note.lastEdited)}</div>` : '';
+
+        const actions = `
+            <span class="row-actions">
+                ${iconButton('edit-tags', 'tag', note.tags.length ? 'Change tags' : 'Add a tag')}
+                ${iconButton('reply', 'reply', 'Reply')}
+                ${canEdit && !editing ? iconButton('edit-note', 'edit', 'Edit note') : ''}
+                ${canDelete && !editing ? iconButton('delete-note', 'trash', 'Delete note') : ''}
+            </span>`;
+
+        const foot = note.tags.length ? `<div class="note-foot">${tagChipsHTML(note, true)}</div>` : '';
+
+        const draft = commentDrafts.get(note.id) || '';
+        return `
+            <article class="note" data-note-id="${esc(note.id)}">
+                ${avatarHTML(note.userId || note.user, note.user)}
+                <div class="note-main">
+                    ${noteHeadHTML(note, note.user, actions)}
+                    ${body}${edited}
+                    ${foot}
+                    ${comments.length || replying ? `
+                    <div class="comments">
+                        ${comments.map(c => commentHTML(note, c)).join('')}
+                        ${replying ? `
+                        <div class="comment-input">
+                            ${avatarHTML(currentUser.sub || currentUser.name, currentUser.name, 'sm')}
+                            <div class="comment-box">
+                                <textarea rows="1" data-field="comment" placeholder="Write a reply…" aria-label="Write a reply">${esc(draft)}</textarea>
+                                <div class="comment-box-actions">
+                                    <button type="button" class="btn ghost" data-action="cancel-comment">Cancel</button>
+                                    <button type="button" class="btn primary" data-action="submit-comment" ${draft.trim() ? '' : 'disabled'}>Reply</button>
+                                </div>
+                            </div>
+                        </div>` : ''}
+                    </div>` : ''}
+                </div>
+            </article>`;
     }
 
     function createNoteElement(note) {
         const wrapper = document.createElement('div');
-        wrapper.innerHTML = getNoteHTML(note).trim();
+        wrapper.innerHTML = noteHTML(note).trim();
         const element = wrapper.firstChild;
         noteElements.set(note.id, element);
         return element;
+    }
+
+    function groupHeadElement(act) {
+        const head = document.createElement('div');
+        head.className = 'group-head';
+        head.dataset.act = act;
+        head.innerHTML = `<span>${esc(act)}</span><span class="muted group-count"></span>`;
+        return head;
+    }
+
+    // Puts focus and caret back where they were if the focused field was re-rendered.
+    function rerenderPreservingFocus(oldEl, newEl) {
+        const active = document.activeElement;
+        let field = null;
+        let caret = 0;
+        if (active && oldEl.contains(active) && active.dataset.field) {
+            field = `[data-field="${active.dataset.field}"]${active.dataset.commentId ? `[data-comment-id="${CSS.escape(active.dataset.commentId)}"]` : ''}`;
+            caret = active.selectionStart;
+        }
+        newEl.hidden = oldEl.hidden;
+        oldEl.replaceWith(newEl);
+        if (field) {
+            const input = newEl.querySelector(field);
+            if (input) {
+                input.focus();
+                input.setSelectionRange(caret, caret);
+            }
+        }
     }
 
     function updateNoteElement(note) {
         const oldElement = noteElements.get(note.id);
         if (!oldElement) return;
         const newElement = createNoteElement(note);
-        oldElement.replaceWith(newElement);
-        noteElements.set(note.id, newElement);
-        const shouldShow = (filterTag === 'all' || note.tags.includes(filterTag)) &&
-                           (filterAct === 'all' || (note.act || 'Preshow') === filterAct);
-        newElement.style.display = shouldShow ? 'block' : 'none';
+        rerenderPreservingFocus(oldElement, newElement);
+        if (tagPickerNoteId === note.id) renderTagPicker();
+        filterNotes();
     }
 
-    function insertNoteInOrder(noteElement, note) {
-        // Only for a note that is the newest; addNote rebuilds the list for one that isn't.
-        // Pending notes stay above every note the server has.
-        notesList.insertBefore(noteElement, notesList.querySelector('.note-item:not(.pending)'));
-        const shouldShow = (filterTag === 'all' || note.tags.includes(filterTag)) &&
-                           (filterAct === 'all' || (note.act || 'Preshow') === filterAct);
-        noteElement.style.display = shouldShow ? 'block' : 'none';
+    // Only for a note that is the newest; addNote rebuilds the list for one that isn't.
+    // Pending notes stay above every note the server has.
+    function insertNewestNote(element, note) {
+        const act = note.act || 'Preshow';
+        const firstHead = notesList.querySelector('.group-head');
+        if (firstHead && firstHead.dataset.act === act) {
+            firstHead.after(element);
+        } else {
+            const head = groupHeadElement(act);
+            notesList.insertBefore(head, firstHead);
+            head.after(element);
+        }
     }
 
     function rebuildFullNotesList() {
-        captureCommentInputs();                // Save any in‑progress comments
         notesList.innerHTML = '';
         noteElements.clear();
         for (const { element } of [...pendingNotes.values()].reverse()) notesList.appendChild(element);
+        let lastAct = null;
         for (const note of NoteOrder.newestFirst(allNotes)) {
-            const element = createNoteElement(note);
-            notesList.appendChild(element);
+            const act = note.act || 'Preshow';
+            if (act !== lastAct) {
+                notesList.appendChild(groupHeadElement(act));
+                lastAct = act;
+            }
+            notesList.appendChild(createNoteElement(note));
         }
         updateActFilter();
         filterNotes();
-        restoreCommentInputs();                // Restore comment text and focus
-        toggleScrollButton();
+        if (tagPickerNoteId) renderTagPicker();
     }
 
     function addNote(note) {
         if (noteElements.has(note.id)) return;
-        const wasNearTop = isNearTop();   // Check BEFORE insertion
         const index = NoteOrder.insertionIndex(allNotes, note);
         allNotes.splice(index, 0, note);
         if (index < allNotes.length - 1) {
             // A late note (written while disconnected) belongs below later ones.
             rebuildFullNotesList();
         } else {
-            insertNoteInOrder(createNoteElement(note), note);
+            const element = createNoteElement(note);
+            insertNewestNote(element, note);
             updateActFilter();
-        }
-        if (wasNearTop) {
-            scrollToTop();
-        } else {
-            toggleScrollButton();
+            filterNotes();
+            if (note.userId !== currentUser.sub) element.classList.add('flash');
         }
     }
 
@@ -608,27 +864,20 @@ document.addEventListener('DOMContentLoaded', function() {
     // one sent just before a drop may or may not have arrived, and the server
     // ignores a resend with a clientId it already has.
     function pendingBadgeText() {
-        return window.socket.connected ? 'Pending - sending...' : 'Pending - will send on reconnect';
+        return window.socket.connected ? 'Sending…' : 'Not sent yet · goes out when the connection is back';
     }
 
     function createPendingNoteElement(note) {
         const wrapper = document.createElement('div');
         wrapper.innerHTML = `
-            <div class="note-item pending" data-client-id="${note.clientId}">
-                <div class="note-pending-badge">${pendingBadgeText()}</div>
-                <div class="note-header">
-                    <span class="note-user">${escapeHtml(currentUser.name)}</span>
-                    <span class="note-timecode">
-                        ${formatNoteTimecode(note)}
-                        <span class="note-lx-cue">LX: ${escapeHtml(note.lxCue || 'N/A')}</span>
-                        @ ${note.frameRate || '30 fps'}
-                    </span>
+            <article class="note pending" data-client-id="${esc(note.clientId)}">
+                ${avatarHTML(currentUser.sub || currentUser.name, currentUser.name)}
+                <div class="note-main">
+                    ${noteHeadHTML(note, currentUser.name, `<span class="pending-badge">${pendingBadgeText()}</span>`)}
+                    <div class="note-text">${esc(note.text)}</div>
+                    ${note.tags.length ? `<div class="note-foot">${tagChipsHTML(note, false)}</div>` : ''}
                 </div>
-                <div class="note-text">
-                    <span class="note-text-display">${escapeHtml(note.text)}</span>
-                </div>
-                ${note.tags.length > 0 ? `<div class="note-tags">${getTagElements(note.tags)}</div>` : ''}
-            </div>
+            </article>
         `.trim();
         return wrapper.firstChild;
     }
@@ -636,7 +885,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function updatePendingBadges() {
         const text = pendingBadgeText();
         for (const { element } of pendingNotes.values()) {
-            element.querySelector('.note-pending-badge').textContent = text;
+            element.querySelector('.pending-badge').textContent = text;
         }
     }
 
@@ -655,25 +904,19 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!pending) return;
         pending.element.remove();
         pendingNotes.delete(clientId);
+        filterNotes();
     }
 
     function submitNote(data) {
         const clientId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
         const note = { ...data, clientId };
         const writtenAt = Date.now();
-        const wasNearTop = isNearTop();
         const element = createPendingNoteElement(note);
         pendingNotes.set(clientId, { note, element, writtenAt });
         // The newest pending note goes above the older ones.
         notesList.insertBefore(element, notesList.firstChild);
-        if (wasNearTop) scrollToTop();
-        else toggleScrollButton();
+        filterNotes();
         sendPendingNote(note, writtenAt);
-    }
-
-    function updateCommentsForNote(noteId) {
-        const note = allNotes.find(n => n.id === noteId);
-        if (note) updateNoteElement(note);
     }
 
     // --- Socket.io setup ---
@@ -705,35 +948,21 @@ document.addEventListener('DOMContentLoaded', function() {
         for (const { note, writtenAt } of pendingNotes.values()) sendPendingNote(note, writtenAt);
     });
 
+    let lastUsers = [];
     window.socket.on('current-user', (data) => {
         const changed = currentUser.sub !== data.sub;
         currentUser.name = data.name;
         currentUser.sub = data.sub;
         currentUserName.textContent = data.name;
-        updateChatUserName();
-        if (changed) rebuildFullNotesList(); // edit buttons depend on who we are, which may arrive after the notes
+        if (changed) {
+            rebuildFullNotesList(); // edit buttons depend on who we are, which may arrive after the notes
+            renderUsers(lastUsers);
+        }
     });
-
-    // Collapsing the online users list is remembered per browser (nice to have, so failures are ignored).
-    try {
-        if (localStorage.getItem('users-panel-collapsed') === '1') usersPanel.open = false;
-    } catch (e) { /* storage unavailable */ }
-    usersPanel.addEventListener('toggle', () => {
-        try { localStorage.setItem('users-panel-collapsed', usersPanel.open ? '0' : '1'); } catch (e) { /* ignore */ }
-    });
-
-    window.socket.on('user-joined', (data) => updateUserCount(data.userCount));
-    window.socket.on('user-left', (data) => updateUserCount(data.userCount));
 
     window.socket.on('users-update', (users) => {
-        updateUserCount(users.length);
-        usersList.innerHTML = '';
-        users.forEach(user => {
-            const userItem = document.createElement('li');
-            userItem.className = 'user-item';
-            userItem.innerHTML = `${escapeHtml(user.name)}${user.isTyping ? '<span class="user-typing"><span class="typing-indicator"></span>writing note</span>' : ''}`;
-            usersList.appendChild(userItem);
-        });
+        lastUsers = users;
+        renderUsers(users);
     });
 
     window.socket.on('act-update', (act) => {
@@ -749,7 +978,7 @@ document.addEventListener('DOMContentLoaded', function() {
     window.socket.on('lx-cue-update', (cue) => {
         currentGlobalLxCue = cue;
         updateGlobalLxCueDisplay(cue);
-        lxCueInput.value = cue;
+        if (document.activeElement !== lxCueInput) lxCueInput.value = cue;
         if (!currentUser.isTyping) updatePersonalLxCueDisplay(cue);
     });
 
@@ -768,13 +997,9 @@ document.addEventListener('DOMContentLoaded', function() {
             updateTimeModeDisplay();
             window.socket.emit('time-mode-change', 'realtime');
         }
-        if (data.oscAvailable) {
-            lxCueInput.disabled = true;
-            lxCueInput.placeholder = 'Auto-updated via OSC';
-        } else {
-            lxCueInput.disabled = false;
-            lxCueInput.placeholder = 'Cue Number';
-        }
+        // Without a cue feed from the desk the cue is typed in by hand.
+        lxCueInput.hidden = !!data.oscAvailable;
+        globalLxCueElement.hidden = !data.oscAvailable;
     });
 
     window.socket.on('network-timecode-status', (status) => {
@@ -788,7 +1013,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (timeMode === data.source) {
             currentGlobalTimecode = data;
             currentUser.currentFrameRate = data.frameRate;
-            globalFrameRateElement.textContent = `Frame Rate: ${data.frameRate} fps`;
+            globalTimecodeElement.title = `${data.frameRate} fps`;
             updateGlobalTimecodeDisplay(data);
             if (!currentUser.isTyping) updatePersonalTimecodeDisplay(data);
             if (data.source === 'midi' && !liveSources.midi) {
@@ -798,10 +1023,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    let isFirstLoad = true;
-
     window.socket.on('notes-update', (notes) => {
-        // Only rebuild if the notes array has changed (e.g., name change, import)
+        // Only rebuild if the notes array has changed (e.g., import)
         if (allNotes.length === notes.length && allNotes.every((n, i) => n.id === notes[i].id)) {
             return;
         }
@@ -840,28 +1063,51 @@ document.addEventListener('DOMContentLoaded', function() {
         if (note) {
             if (!note.comments) note.comments = [];
             note.comments.push(comment);
-            updateCommentsForNote(noteId);
+            updateNoteElement(note);
         }
     });
 
     window.socket.on('comment-edit', ({ noteId, commentId, newText, lastEditedBy, lastEdited }) => {
         const note = allNotes.find(n => n.id === noteId);
-        if (note && note.comments) {
-            const comment = note.comments.find(c => c.id === commentId);
-            if (comment) {
-                comment.text = newText;
-                comment.lastEdited = lastEdited;
-                comment.lastEditedBy = lastEditedBy;
-                updateCommentsForNote(noteId);
-            }
+        const comment = note && note.comments && note.comments.find(c => c.id === commentId);
+        if (comment) {
+            comment.text = newText;
+            comment.lastEdited = lastEdited;
+            comment.lastEditedBy = lastEditedBy;
+            updateNoteElement(note);
+        }
+    });
+
+    window.socket.on('note-delete', ({ noteId }) => {
+        deletedNotes.delete(noteId);
+        const index = allNotes.findIndex(n => n.id === noteId);
+        if (index === -1) return;
+        allNotes.splice(index, 1);
+        noteEditDrafts.delete(noteId);
+        commentDrafts.delete(noteId);
+        openReplies.delete(noteId);
+        if (tagPickerNoteId === noteId) closeTagPicker();
+        const element = noteElements.get(noteId);
+        noteElements.delete(noteId);
+        const before = element && element.previousElementSibling;
+        const after = element && element.nextElementSibling;
+        if (element) element.remove();
+        // A scene heading left with no notes could sit next to another for the same scene.
+        if (before && before.classList.contains('group-head') && (!after || after.classList.contains('group-head'))) {
+            rebuildFullNotesList();
+        } else {
+            updateActFilter();
+            filterNotes();
         }
     });
 
     window.socket.on('comment-delete', ({ noteId, commentId }) => {
+        deletedComments.delete(`${noteId}/${commentId}`);
         const note = allNotes.find(n => n.id === noteId);
         if (note && note.comments) {
             note.comments = note.comments.filter(c => c.id !== commentId);
-            updateCommentsForNote(noteId);
+            commentEditDrafts.delete(`${noteId}/${commentId}`);
+            updateNoteElement(note);
         }
     });
 
@@ -871,7 +1117,18 @@ document.addEventListener('DOMContentLoaded', function() {
         if (chatMessagesList.some((m) => m.id === msg.id)) return;
         chatMessagesList.push(msg);
         chatCopy.onMessageAdded(chatMessagesList);
-        updateChatMessages();
+        const mine = isMyChat(msg);
+        if (chatDrawer.hidden) {
+            if (!mine) unreadChat++;
+            updateUnread();
+            updateChatMessages();
+        } else {
+            const stick = mine || chatNearBottom();
+            if (chatMessagesList.length === 1) chatMessages.innerHTML = '';
+            chatMessages.insertAdjacentHTML('beforeend', renderChatMessage(msg, chatMessagesList[chatMessagesList.length - 2]));
+            chatCount.textContent = plural(chatMessagesList.length, 'message');
+            if (stick) chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
     });
 
     // The chat log kept in localStorage so it survives a reload. After a server
@@ -896,6 +1153,7 @@ document.addEventListener('DOMContentLoaded', function() {
         chatCopy.onReset();
         for (const { element } of pendingNotes.values()) element.remove();
         pendingNotes.clear();
+        filterNotes();
     });
 
     window.socket.on('export-data', (data) => {
@@ -908,48 +1166,111 @@ document.addEventListener('DOMContentLoaded', function() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+        showToast(`Downloaded ${data.filename}`);
     });
 
-    // --- Event listeners ---
+    // --- Event listeners: top bar ---
     lxCueInput.addEventListener('input', () => window.socket.emit('lx-cue-change', lxCueInput.value));
+    lxCueInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') lxCueInput.blur(); });
 
-    cancelEditTagsBtn.addEventListener('click', () => {
-        editTagsModal.style.display = 'none';
-        currentlyEditingNoteId = null;
-        editTagsSelected = [];
+    usersButton.addEventListener('click', (e) => { e.stopPropagation(); togglePopover(usersPopover, usersButton); });
+    menuButton.addEventListener('click', (e) => { e.stopPropagation(); togglePopover(menuPopover, menuButton); });
+    exportJsonBtn.addEventListener('click', () => {
+        closePopovers();
+        window.socket.emit('export-request', 'json');
     });
 
-    saveEditTagsBtn.addEventListener('click', () => {
-        if (currentlyEditingNoteId) {
-            window.socket.emit('note-update-tags', { noteId: currentlyEditingNoteId, tags: editTagsSelected });
-            editTagsModal.style.display = 'none';
-            currentlyEditingNoteId = null;
-            editTagsSelected = [];
-        }
+    chatToggle.addEventListener('click', () => {
+        setChatOpen(chatDrawer.hidden);
+        if (!chatDrawer.hidden) chatInput.focus();
     });
+    chatClose.addEventListener('click', () => setChatOpen(false));
 
-    noteInput.addEventListener('focus', startTyping);
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.popover') && !e.target.closest('[data-action="edit-tags"]')) closePopovers();
+    });
+    window.addEventListener('resize', closePopovers);
+
+    // --- Event listeners: note box ---
+    noteInput.addEventListener('focus', () => {
+        startTyping();
+        updateComposer();
+    });
     noteInput.addEventListener('input', () => {
         sendNoteBtn.disabled = noteInput.value.trim().length === 0;
         startAutoResumeTimer();
         if (!currentUser.isTyping && noteInput.value.length > 0) startTyping();
+        updateComposer();
     });
     noteInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
             e.preventDefault();
             if (!sendNoteBtn.disabled) sendNoteBtn.click();
         }
     });
-    noteInput.addEventListener('blur', startAutoResumeTimer);
+    noteInput.addEventListener('blur', () => {
+        startAutoResumeTimer();
+        updateComposer();
+    });
+
+    // Picking a tag keeps the cursor in the note box.
+    tagsContainer.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.chip') && document.activeElement === noteInput) e.preventDefault();
+    });
+    tagsContainer.addEventListener('click', (e) => {
+        const chip = e.target.closest('.chip');
+        if (!chip) return;
+        const id = chip.dataset.tag;
+        selectedTags = selectedTags.includes(id) ? selectedTags.filter(t => t !== id) : [...selectedTags, id];
+        chip.setAttribute('aria-pressed', String(selectedTags.includes(id)));
+        if (!needsTag()) showTagError(false);
+    });
+
+    sendNoteBtn.addEventListener('click', () => {
+        const text = noteInput.value.trim();
+        if (text && needsTag()) {
+            showTagError(true);
+            noteInput.focus();
+            return;
+        }
+        if (text && currentUser.frozenTimecode) {
+            submitNote({
+                text: text,
+                timecode: currentUser.frozenTimecode,
+                lxCue: currentUser.frozenLxCue,
+                frameRate: timeMode === 'realtime' ? 'ms' : currentUser.currentFrameRate,
+                tags: selectedTags,
+            });
+            resetComposer();
+            noteInput.focus(); // ready for the next one; the stamp locks again on the next key
+            currentUser.isTyping = false;
+            window.scrollTo({ top: 0 });
+        }
+    });
+
+    cancelNoteBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    cancelNoteBtn.addEventListener('click', discardNote);
 
     // Typing anywhere else on the page starts a note (see type-to-note.js).
     document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !e.defaultPrevented) {
+            if (closePopovers()) return;
+            if (!chatDrawer.hidden && chatDrawer.contains(document.activeElement)) {
+                setChatOpen(false);
+                chatToggle.focus();
+                return;
+            }
+        }
+
         const ctx = {
-            modalOpen: editTagsModal.style.display === 'flex',
+            modalOpen: !tagPicker.hidden,
             noteHasText: noteInput.value.length > 0,
             body: document.body
         };
-        if (typeToNote.shouldFocusNote(e, document.activeElement, ctx)) noteInput.focus();
+        if (typeToNote.shouldFocusNote(e, document.activeElement, ctx)) {
+            closePopovers();
+            noteInput.focus();
+        }
 
         // Escape leaves the note box; an empty note is also cancelled.
         const action = typeToNote.escapeAction(e, document.activeElement, {
@@ -963,193 +1284,245 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    sendNoteBtn.addEventListener('click', () => {
-        const text = noteInput.value.trim();
-        if (text && currentUser.frozenTimecode) {
-            submitNote({
-                text: text,
-                timecode: currentUser.frozenTimecode,
-                lxCue: currentUser.frozenLxCue,
-                frameRate: timeMode === 'realtime' ? 'ms' : currentUser.currentFrameRate,
-                tags: selectedTags,
-            });
-            noteInput.value = '';
-            sendNoteBtn.disabled = true;
-            currentUser.isTyping = false;
-            currentUser.frozenTimecode = null;
-            currentUser.frozenLxCue = null;
-            personalTimecodeContainer.classList.remove('frozen');
-            selectedTags = [];
-            document.querySelectorAll('.tag-checkbox:checked').forEach(cb => cb.checked = false);
-            window.socket.emit('typing-stop');
-            clearAutoResumeTimer();
-        }
+    // --- Event listeners: filters ---
+    searchInput.addEventListener('input', () => {
+        filters.search = searchInput.value.trim().toLowerCase();
+        filterNotes();
+    });
+    for (const [button, popover, key, update] of [[actFilter, actFilterPopover, 'act', updateActFilter], [tagFilter, tagFilterPopover, 'tag', updateFilterTags]]) {
+        button.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (togglePopover(popover, button, 'left')) popover.querySelector('[aria-selected="true"]')?.focus();
+        });
+        popover.addEventListener('click', (e) => {
+            const option = e.target.closest('[role="option"]');
+            if (!option) return;
+            filters[key] = option.dataset.value;
+            closePopovers();
+            update();
+            filterNotes();
+        });
+        popover.addEventListener('keydown', (e) => {
+            const options = [...popover.querySelectorAll('[role="option"]')];
+            const i = options.indexOf(document.activeElement);
+            const next = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: options.length - 1 }[e.key];
+            if (next === undefined) return;
+            e.preventDefault();
+            options[Math.max(0, Math.min(next, options.length - 1))].focus();
+        });
+    }
+    clearFiltersBtn.addEventListener('click', clearFilters);
+    notesNoMatch.addEventListener('click', (e) => {
+        if (e.target.closest('[data-action="clear-filters"]')) clearFilters();
     });
 
-    cancelNoteBtn.addEventListener('click', cancelNote);
-    exportJsonBtn.addEventListener('click', () => window.socket.emit('export-request', 'json'));
-
+    // --- Event listeners: chat ---
     chatInput.addEventListener('input', () => { sendChatBtn.disabled = chatInput.value.trim().length === 0; });
-    chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter' && e.ctrlKey) sendChatMessage(); });
+    chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+            e.preventDefault();
+            sendChatMessage();
+        }
+    });
     sendChatBtn.addEventListener('click', sendChatMessage);
 
-    // Delegated events for dynamic buttons
+    // --- Event listeners: the notes list (delegated) ---
+    function noteOf(el) {
+        const item = el.closest('.note[data-note-id]');
+        return item && allNotes.find(n => n.id === item.dataset.noteId);
+    }
+
+    function saveNoteEdit(note) {
+        const newText = (noteEditDrafts.get(note.id) || '').trim();
+        noteEditDrafts.delete(note.id);
+        if (newText && newText !== note.text) window.socket.emit('note-edit-text', { noteId: note.id, newText });
+        updateNoteElement(note);
+    }
+
+    function saveCommentEdit(note, commentId) {
+        const key = `${note.id}/${commentId}`;
+        const comment = (note.comments || []).find(c => c.id === commentId);
+        const newText = (commentEditDrafts.get(key) || '').trim();
+        commentEditDrafts.delete(key);
+        if (comment && newText && newText !== comment.text) {
+            window.socket.emit('comment-edit', { noteId: note.id, commentId, newText });
+        }
+        updateNoteElement(note);
+    }
+
+    function submitComment(note) {
+        const text = (commentDrafts.get(note.id) || '').trim();
+        if (!text) return;
+        window.socket.emit('comment-submit', { noteId: note.id, text });
+        commentDrafts.delete(note.id);
+        updateNoteElement(note);
+        noteElements.get(note.id)?.querySelector('[data-field="comment"]')?.focus();
+    }
+
+    // Throws the reply draft away and closes the reply box.
+    function cancelComment(note) {
+        commentDrafts.delete(note.id);
+        openReplies.delete(note.id);
+        updateNoteElement(note);
+        noteElements.get(note.id)?.querySelector('[data-action="reply"]')?.focus();
+    }
+
+    // A delete shows straight away but only reaches the server once its Undo
+    // toast has gone, so Undo just never sends it.
+    const pendingDeletes = new Map(); // key -> { send, timer }
+
+    function finishDelete(key) {
+        const pending = pendingDeletes.get(key);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        pendingDeletes.delete(key);
+        pending.send();
+    }
+
+    function deleteWithUndo(key, message, hide, unhide, send) {
+        hide();
+        pendingDeletes.set(key, { send, timer: setTimeout(() => finishDelete(key), TOAST_MS) });
+        showToast(message, 'Undo', () => {
+            const pending = pendingDeletes.get(key);
+            if (!pending) return;
+            clearTimeout(pending.timer);
+            pendingDeletes.delete(key);
+            unhide();
+        });
+    }
+
+    // Leaving the page doesn't undo a delete.
+    window.addEventListener('pagehide', () => {
+        for (const key of [...pendingDeletes.keys()]) finishDelete(key);
+    });
+
+    function deleteNote(note) {
+        const showNote = (hidden) => {
+            if (hidden) deletedNotes.add(note.id);
+            else deletedNotes.delete(note.id);
+            if (hidden && tagPickerNoteId === note.id) closeTagPicker();
+            updateActFilter();
+            filterNotes();
+        };
+        deleteWithUndo(`note:${note.id}`, 'Note deleted', () => showNote(true), () => showNote(false),
+            () => window.socket.emit('note-delete', { noteId: note.id }));
+    }
+
+    function deleteComment(note, commentId) {
+        const key = `${note.id}/${commentId}`;
+        deleteWithUndo(`comment:${key}`, 'Reply deleted',
+            () => { deletedComments.add(key); updateNoteElement(note); },
+            () => { deletedComments.delete(key); updateNoteElement(note); },
+            () => window.socket.emit('comment-delete', { noteId: note.id, commentId }));
+    }
+
     notesList.addEventListener('click', (e) => {
-        const button = e.target.closest('button');
+        const button = e.target.closest('button[data-action]');
         if (!button) return;
+        const note = noteOf(button);
+        if (!note) return;
         const action = button.dataset.action;
-        if (!action) return;
-        const noteId = button.dataset.noteId;
+        const commentId = button.dataset.commentId;
 
         if (action === 'edit-tags') {
-            const note = allNotes.find(n => n.id === noteId);
-            if (note) {
-                currentlyEditingNoteId = noteId;
-                updateEditTagsDisplay(note.tags);
-                editTagsModal.style.display = 'flex';
-            }
-        } else if (action === 'toggle-comments') {
-            const container = document.getElementById(`comments-${noteId}`);
-            const inputArea = document.getElementById(`comment-input-${noteId}`);
-            if (container.classList.contains('expanded')) {
-                container.classList.remove('expanded');
-                inputArea.classList.remove('expanded');
-                button.classList.remove('expanded');
-                expandedCommentSections.delete(noteId);
-            } else {
-                container.classList.add('expanded');
-                inputArea.classList.add('expanded');
-                button.classList.add('expanded');
-                expandedCommentSections.add(noteId);
-            }
-        } else if (action === 'edit-note') {
-            const noteItem = button.closest('.note-item');
-            const display = noteItem.querySelector('.note-text-display');
-            const textarea = noteItem.querySelector('.note-text-edit');
-            if (display.style.display !== 'none') {
-                display.style.display = 'none';
-                textarea.style.display = 'block';
-                textarea.focus();
-                button.textContent = 'Save Note';
-                button.dataset.action = 'save-note';
-            }
-        } else if (action === 'save-note') {
-            const noteItem = button.closest('.note-item');
-            const display = noteItem.querySelector('.note-text-display');
-            const textarea = noteItem.querySelector('.note-text-edit');
-            const newText = textarea.value.trim();
-            if (newText && newText !== display.textContent) {
-                window.socket.emit('note-edit-text', { noteId, newText });
-            }
-            display.textContent = newText || display.textContent;
-            display.style.display = 'block';
-            textarea.style.display = 'none';
-            button.textContent = 'Edit Note';
-            button.dataset.action = 'edit-note';
-        } else if (action === 'edit-comment') {
-            const commentId = button.dataset.commentId;
-            const commentItem = button.closest('.comment-item');
-            const display = commentItem.querySelector('.comment-text-display');
-            const textarea = commentItem.querySelector('.comment-text-edit');
-            const editBtn = commentItem.querySelector('[data-action="edit-comment"]');
-            const delBtn = commentItem.querySelector('[data-action="delete-comment"]');
-            const saveBtn = commentItem.querySelector('[data-action="save-comment"]');
-            const cancelBtn = commentItem.querySelector('[data-action="cancel-comment"]');
-            display.style.display = 'none';
-            textarea.style.display = 'block';
-            textarea.focus();
-            editBtn.style.display = 'none';
-            delBtn.style.display = 'none';
-            saveBtn.style.display = 'inline-block';
-            cancelBtn.style.display = 'inline-block';
-        } else if (action === 'save-comment') {
-            const commentId = button.dataset.commentId;
-            const commentItem = button.closest('.comment-item');
-            const display = commentItem.querySelector('.comment-text-display');
-            const textarea = commentItem.querySelector('.comment-text-edit');
-            const newText = textarea.value.trim();
-            if (newText) {
-                window.socket.emit('comment-edit', { noteId, commentId, newText });
-            }
-            display.style.display = 'block';
-            textarea.style.display = 'none';
-            const editBtn = commentItem.querySelector('[data-action="edit-comment"]');
-            const delBtn = commentItem.querySelector('[data-action="delete-comment"]');
-            const saveBtn = commentItem.querySelector('[data-action="save-comment"]');
-            const cancelBtn = commentItem.querySelector('[data-action="cancel-comment"]');
-            editBtn.style.display = 'inline-block';
-            delBtn.style.display = 'inline-block';
-            saveBtn.style.display = 'none';
-            cancelBtn.style.display = 'none';
+            if (tagPickerNoteId === note.id) closeTagPicker();
+            else openTagPicker(note.id, button);
+        } else if (action === 'reply') {
+            openReplies.add(note.id);
+            updateNoteElement(note);
+            noteElements.get(note.id).querySelector('[data-field="comment"]')?.focus();
         } else if (action === 'cancel-comment') {
-            const commentId = button.dataset.commentId;
-            const commentItem = button.closest('.comment-item');
-            const display = commentItem.querySelector('.comment-text-display');
-            const textarea = commentItem.querySelector('.comment-text-edit');
-            textarea.value = display.textContent;
-            display.style.display = 'block';
-            textarea.style.display = 'none';
-            const editBtn = commentItem.querySelector('[data-action="edit-comment"]');
-            const delBtn = commentItem.querySelector('[data-action="delete-comment"]');
-            const saveBtn = commentItem.querySelector('[data-action="save-comment"]');
-            const cancelBtn = commentItem.querySelector('[data-action="cancel-comment"]');
-            editBtn.style.display = 'inline-block';
-            delBtn.style.display = 'inline-block';
-            saveBtn.style.display = 'none';
-            cancelBtn.style.display = 'none';
-        } else if (action === 'delete-comment') {
-            const commentId = button.dataset.commentId;
-            if (confirm('Are you sure you want to delete this comment?')) {
-                window.socket.emit('comment-delete', { noteId, commentId });
-            }
+            cancelComment(note);
+        } else if (action === 'edit-note') {
+            noteEditDrafts.set(note.id, note.text);
+            updateNoteElement(note);
+            const textarea = noteElements.get(note.id).querySelector('[data-field="note-edit"]');
+            textarea.focus();
+            textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        } else if (action === 'save-note') {
+            saveNoteEdit(note);
+        } else if (action === 'cancel-note-edit') {
+            noteEditDrafts.delete(note.id);
+            updateNoteElement(note);
         } else if (action === 'submit-comment') {
-            const input = document.querySelector(`.comment-input[data-note-id="${noteId}"]`);
-            const text = input.value.trim();
-            if (text) {
-                window.socket.emit('comment-submit', { noteId, text });
-                input.value = '';
-                button.disabled = true;
-                expandedCommentSections.add(noteId);
-            }
-        } else if (action === 'cancel-comment-input') {
-            const input = document.querySelector(`.comment-input[data-note-id="${noteId}"]`);
-            input.value = '';
-            const submitBtn = document.querySelector(`[data-action="submit-comment"][data-note-id="${noteId}"]`);
-            if (submitBtn) submitBtn.disabled = true;
+            submitComment(note);
+        } else if (action === 'edit-comment') {
+            const comment = note.comments.find(c => c.id === commentId);
+            commentEditDrafts.set(`${note.id}/${commentId}`, comment ? comment.text : '');
+            updateNoteElement(note);
+            noteElements.get(note.id).querySelector(`[data-field="comment-edit"][data-comment-id="${CSS.escape(commentId)}"]`)?.focus();
+        } else if (action === 'save-comment') {
+            saveCommentEdit(note, commentId);
+        } else if (action === 'cancel-comment-edit') {
+            commentEditDrafts.delete(`${note.id}/${commentId}`);
+            updateNoteElement(note);
+        } else if (action === 'delete-note') {
+            deleteNote(note);
+        } else if (action === 'delete-comment') {
+            deleteComment(note, commentId);
         }
     });
 
     notesList.addEventListener('input', (e) => {
         const target = e.target;
-        if (target.dataset.action === 'comment-input') {
-            const noteId = target.dataset.noteId;
-            const submitBtn = document.querySelector(`[data-action="submit-comment"][data-note-id="${noteId}"]`);
-            if (submitBtn) submitBtn.disabled = target.value.trim().length === 0;
+        const note = noteOf(target);
+        if (!note) return;
+        const field = target.dataset.field;
+        if (field === 'comment') {
+            commentDrafts.set(note.id, target.value);
+            const submit = target.closest('.comment-box').querySelector('[data-action="submit-comment"]');
+            if (submit) submit.disabled = target.value.trim().length === 0;
+        } else if (field === 'note-edit') {
+            noteEditDrafts.set(note.id, target.value);
+        } else if (field === 'comment-edit') {
+            commentEditDrafts.set(`${note.id}/${target.dataset.commentId}`, target.value);
         }
     });
 
     notesList.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            const target = e.target;
-            if (target.dataset.action === 'comment-input') {
-                e.preventDefault();
-                const noteId = target.dataset.noteId;
-                const submitBtn = document.querySelector(`[data-action="submit-comment"][data-note-id="${noteId}"]`);
-                if (submitBtn && !submitBtn.disabled) submitBtn.click();
+        const target = e.target;
+        const field = target.dataset && target.dataset.field;
+        if (!field) return;
+        const note = noteOf(target);
+        if (!note) return;
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+            e.preventDefault();
+            if (field === 'comment') submitComment(note);
+            else if (field === 'note-edit') saveNoteEdit(note);
+            else if (field === 'comment-edit') saveCommentEdit(note, target.dataset.commentId);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            if (field === 'note-edit') {
+                noteEditDrafts.delete(note.id);
+                updateNoteElement(note);
+            } else if (field === 'comment-edit') {
+                commentEditDrafts.delete(`${note.id}/${target.dataset.commentId}`);
+                updateNoteElement(note);
+            } else if (field === 'comment') {
+                cancelComment(note);
             }
         }
     });
 
     scrollToTopBtn.addEventListener('click', scrollToTop);
     let scrollTimeout;
-    notesList.addEventListener('scroll', () => {
+    window.addEventListener('scroll', () => {
         clearTimeout(scrollTimeout);
-        scrollTimeout = setTimeout(() => toggleScrollButton(), 50);
-    });
+        scrollTimeout = setTimeout(toggleScrollButton, 50);
+        if (!tagPicker.hidden && !tagPicker.contains(document.activeElement)) closeTagPicker();
+        if (!actFilterPopover.hidden || !tagFilterPopover.hidden) closePopovers();
+    }, { passive: true });
 
     // --- Initialization ---
+    loadTagsFromStorage();
+    updateTagsDisplay();
+    updateFilterTags();
+    updateActFilter();
+    try { if (localStorage.getItem('chat-open') === '1') setChatOpen(true); } catch (e) { /* storage unavailable */ }
     updateGlobalTimecodeDisplay(currentGlobalTimecode);
     updatePersonalTimecodeDisplay(currentGlobalTimecode);
     updateGlobalLxCueDisplay(currentGlobalLxCue);
     updatePersonalLxCueDisplay(currentGlobalLxCue);
+    updateComposer();
+    filterNotes();
 });
