@@ -9,7 +9,9 @@ Playback has an explicit **Back to notes** link at the left of the top bar. Both
 
 When no recording is selected, playback already shows the notes, highlights the requested one, and asks only for the video. Vor's dated file name supplies alignment; Adjust timing handles other recordings. Returning to Notes preserves saved-show filters and highlights the selected note. Local notes files remain available between views in the same browser tab. A missing show, missing local file or unavailable note gives a recovery message rather than silently opening a different show.
 
-The source and selected note live in the URL. A local file URL is specific to the tab that opened it. Recordings remain on the device and are not stored or uploaded, so a new player page needs the recording chosen again; browser Back may retain an existing page. Live-source playback refreshes when notes change; saved-show playback stays on its saved snapshot.
+The source and selected note live in the URL. A local file URL is specific to the tab that opened it. Live-source playback refreshes when notes change; saved-show playback stays on its saved snapshot.
+
+A recording uploaded from the player (**Recording** → **Upload video**) is kept on the server with the live notes or the saved show, so everyone opening them watches it straight away; it goes with the live notes when the show is saved and leaves them on reset. A recording in several parts plays as one timeline: each part sits at its start time, the time between parts shows as hatched blank space with a countdown and **Skip to the next part**, and playback carries on across it. A video chosen from this device (one or several parts) stays on it and is chosen again on each new player page.
 
 ## Development examples
 
@@ -29,5 +31,7 @@ On this development host's Tailscale network:
 ## Validation
 
 The full 181-test suite passed. One earlier run timed out starting a chat-restore test server; the isolated chat suite and subsequent full run both passed. Focused tests cover HTTP-compatible local-file keys, URL encoding, safe return destinations, local-file storage failure, authenticated live snapshots, and preservation of typing times and the show log when saving.
+
+With shared recordings the suite is 193 tests, adding the part layout, the on-disk store, and the upload/stream/retime/remove and save/reset routes against the real server. A browser check uploaded a two-part recording to a saved show, removed the old part, played through the 58-second gap and skipped it, sought back across parts, chose the same parts locally and switched back, and checked the panel at phone width.
 
 Browser checks on the HTTP Tailscale address verified live and saved note shortcuts, the 3-second lead-in, saved filters on return, local-file handoff, pending note selection through the real video picker, return highlighting, and live note updates. Temporary update probes were removed. Desktop and phone layouts were inspected; physical touch devices and screen readers have not been tested.

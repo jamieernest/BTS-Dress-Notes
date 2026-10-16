@@ -48,6 +48,7 @@
 .saved-show:last-child { border-bottom: 0; }
 .saved-show:hover { background: var(--hover); }
 .saved-show-name { flex: 1; min-width: 200px; font-weight: 500; overflow-wrap: anywhere; }
+.saved-show-video { width: 13px; height: 13px; vertical-align: -2px; }
 
 .notes { margin-top: 8px; }
 

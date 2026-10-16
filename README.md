@@ -66,3 +66,9 @@ Notes are kept in server memory and saved to `backups/` about a second after eve
 Only the person who sent a note can edit it; backups record who wrote each note (by login), so this survives a restart or an export/import. Notes from a backup or file that has no author record, such as one made before this rule, can be edited by anyone.
 
 To clear the show, open `/config.html` and use **Reset all notes and chat** (it asks for confirmation). This empties notes and chat on the server and in every open browser, and a restart afterwards stays empty. Tags are kept.
+
+## Show recordings
+
+On the playback page (**Video** on the notes, or on a saved show in Past notes), **Recording** → **Upload video** puts the show's recording on the server so everyone who opens those notes can watch it without their own copy. A recording in several parts can be uploaded together or one at a time: the parts play as one timeline in start-time order, with blank time where the recording stopped. Start times come from Vor's dated file names (`Show.2026-10-07 19-30-00.mp4`) and can be adjusted under **Adjust timing**; parts without one play back to back. **Choose from this device** still plays a video only for you, without uploading it.
+
+Uploads are kept in `recordings/` (`RECORDINGS_DIR`), up to 32 GiB a file (`RECORDING_MAX_BYTES`, in bytes). The live notes' recording goes with them when the show is saved on `/config.html`, and is removed by **Reset all notes and chat** (the saved show keeps its copy). Anyone logged in can upload or remove a part. Leave room on the disk: a full-length HD recording is several gigabytes.

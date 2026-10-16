@@ -154,4 +154,7 @@ local-sessions.json.tmp
 
 # Shows saved from the config page
 saved-shows/
+
+# Videos uploaded for playback
+recordings/
 .playback-dev/

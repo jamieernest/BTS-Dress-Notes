@@ -17,6 +17,10 @@ const { authorsOf, applyAuthors, backupFilename, backupTime, checkBackup, findRe
 const savedShows = require('./saved-shows');
 const SAVED_SHOWS_DIR = process.env.SAVED_SHOWS_DIR || path.join(__dirname, 'saved-shows');
 const PLAYBACK_DEMO = process.env.PLAYBACK_DEMO === '1';
+const recordings = require('./recordings');
+const RECORDINGS_DIR = process.env.RECORDINGS_DIR || path.join(__dirname, 'recordings');
+// One uploaded part at most; a full dress from Vor is a few GB.
+const RECORDING_MAX_BYTES = Number(process.env.RECORDING_MAX_BYTES) || 32 * 1024 ** 3;
 const { sanitizeAge, insertionIndex } = require('./public/note-order');
 const { canEditNote } = require('./public/note-author');
 const input = require('./note-input');
@@ -27,6 +31,8 @@ const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } 
 
 const app = express();
 const server = http.createServer(app);
+// Node ends any request after 5 minutes; a video upload over venue Wi-Fi can take far longer.
+server.requestTimeout = 6 * 60 * 60 * 1000;
 // A restarted server is offered chat copies of up to ~5 MB (the browser's
 // localStorage quota), well above the 1 MB default for one incoming message.
 // A socket is only accepted from this app's own pages: a browser sends its
@@ -150,7 +156,7 @@ app.use(helmet({
             'style-src': ["'self'", "'unsafe-inline'"],
             'img-src': ["'self'", 'data:'],
             'connect-src': ["'self'"],
-            // playback.html plays a video opened locally, through a blob: URL.
+            // playback.html plays uploaded videos, or one opened locally through a blob: URL.
             'media-src': ["'self'", 'blob:'],
             'form-action': ["'self'", ...originOf(KEYCLOAK_ISSUER)],
             'upgrade-insecure-requests': null
@@ -375,13 +381,95 @@ app.get('/session', (req, res) => {
 // Saved shows for Past notes (saved from the config page, see saved-shows.js).
 app.get('/shows', async (req, res) => {
     res.set('Cache-Control', 'no-store');
-    res.json(await savedShows.listShows(SAVED_SHOWS_DIR));
+    const counts = recordings.partCounts(RECORDINGS_DIR);
+    res.json((await savedShows.listShows(SAVED_SHOWS_DIR)).map(show => ({ ...show, recordingParts: counts.get(show.id) || 0 })));
 });
 app.get('/shows/:id', async (req, res) => {
     res.set('Cache-Control', 'no-store');
     const show = await savedShows.readShow(SAVED_SHOWS_DIR, req.params.id);
     if (!show) return res.status(404).json({ error: 'not found' });
     res.json(show);
+});
+
+// Recordings uploaded for the live notes (`live`) or a saved show (its id),
+// played on playback.html by everyone who opens those notes (recordings.js).
+// Uploads are the raw file as the request body, details in the query; any
+// logged-in person may add, retime or remove a part, like the config page.
+const isCollection = (collection) => collection === 'live' || savedShows.isShowId(collection);
+const collectionExists = async (collection) => collection === 'live'
+    || (isCollection(collection) && !!(await savedShows.readShow(SAVED_SHOWS_DIR, collection)));
+const recordingsOf = (collection) => recordings.listParts(RECORDINGS_DIR, collection).map(part => ({
+    id: part.id, name: part.name, type: part.type, size: part.size, startAt: part.startAt,
+    duration: part.duration, uploadedAt: part.uploadedAt, uploadedBy: part.uploadedBy,
+    url: `/recordings/${collection}/${part.id}`
+}));
+function recordingsChanged(collection) {
+    io.emit('recordings-update', { collection, recordings: recordingsOf(collection) });
+}
+
+app.get('/recordings/:collection', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!isCollection(req.params.collection)) return res.status(404).json({ error: 'not found' });
+    res.json({ recordings: recordingsOf(req.params.collection) });
+});
+
+app.get('/recordings/:collection/:id', (req, res) => {
+    const file = isCollection(req.params.collection) && recordings.partFile(RECORDINGS_DIR, req.params.collection, req.params.id);
+    if (!file) return res.status(404).json({ error: 'not found' });
+    // A part's file never changes under its id. sendFile answers Range requests.
+    res.type(file.type);
+    res.sendFile(file.path, { headers: { 'Cache-Control': 'private, max-age=31536000, immutable' } }, (error) => {
+        if (error && !res.headersSent) res.status(404).json({ error: 'not found' });
+    });
+});
+
+app.post('/recordings/:collection', async (req, res) => {
+    const { collection } = req.params;
+    if (!sameOrigin(req)) return res.status(403).json({ error: 'forbidden' });
+    if (!(await collectionExists(collection))) return res.status(404).json({ error: 'Those notes no longer exist.' });
+    const info = recordings.cleanPartInfo({
+        name: req.query.name, type: req.get('content-type'), startAt: req.query.startAt, duration: req.query.duration
+    });
+    if (info.error) return res.status(400).json({ error: info.error });
+    const tooLarge = () => res.status(413).set('Connection', 'close').json({ error: 'The video is too large to upload.' });
+    if (Number(req.get('content-length')) > RECORDING_MAX_BYTES) return tooLarge();
+    let part;
+    try {
+        part = await recordings.addPart(RECORDINGS_DIR, collection, req, info, {
+            maxBytes: RECORDING_MAX_BYTES, uploadedBy: req.session.user.name
+        });
+    } catch (error) {
+        if (res.headersSent || req.destroyed) return;
+        if (error.status === 413) return tooLarge();
+        if (error.status) return res.status(error.status).json({ error: error.message });
+        console.log('Error saving an uploaded video:', error.message);
+        return res.status(500).json({ error: 'The video couldn\'t be saved.' });
+    }
+    console.log(`Video "${part.name}" (${Math.round(part.size / 1e6)} MB) uploaded to ${collection} by ${req.session.user.name}`);
+    recordingsChanged(collection);
+    res.status(201).json(recordingsOf(collection).find(p => p.id === part.id));
+});
+
+app.patch('/recordings/:collection/:id', express.json({ limit: '1kb' }), (req, res) => {
+    const { collection, id } = req.params;
+    if (!sameOrigin(req)) return res.status(403).json({ error: 'forbidden' });
+    if (!isCollection(collection)) return res.status(404).json({ error: 'not found' });
+    const part = recordings.setPartStart(RECORDINGS_DIR, collection, id, req.body && req.body.startAt);
+    if (part === undefined) return res.status(400).json({ error: 'That is not a time.' });
+    if (!part) return res.status(404).json({ error: 'not found' });
+    recordingsChanged(collection);
+    res.json(recordingsOf(collection).find(p => p.id === id));
+});
+
+app.delete('/recordings/:collection/:id', (req, res) => {
+    const { collection, id } = req.params;
+    if (!sameOrigin(req)) return res.status(403).json({ error: 'forbidden' });
+    if (!isCollection(collection) || !recordings.removePart(RECORDINGS_DIR, collection, id)) {
+        return res.status(404).json({ error: 'not found' });
+    }
+    console.log(`Video part ${id} removed from ${collection} by ${req.session.user.name}`);
+    recordingsChanged(collection);
+    res.status(204).end();
 });
 
 // Render the shared icon sprite with each page: an external <use> would
@@ -1022,6 +1110,14 @@ if (PLAYBACK_DEMO) {
     if (!fs.existsSync(path.join(SAVED_SHOWS_DIR, `${sampleId}.json`))) {
         savedShows.saveShow(SAVED_SHOWS_DIR, 'Sample dress rehearsal', { ...sample, totalNotes: sample.notes.length }, new Date('2026-10-07T19:00:00Z'));
     }
+    // The saved sample plays its recording from the server, as an uploaded one would.
+    if (!recordings.listParts(RECORDINGS_DIR, sampleId).length) {
+        const info = recordings.cleanPartInfo({
+            name: 'Sample Show.2026-10-07 19-30-00.mp4', startAt: Date.parse(sample.showLog[0].at), duration: 720
+        });
+        recordings.addPart(RECORDINGS_DIR, sampleId, fs.createReadStream(path.join(__dirname, 'public/playback-demo/recording.mp4')), info)
+            .catch(error => console.log('Sample recording not added:', error.message));
+    }
 }
 
 app.get('/playback/live', (req, res) => {
@@ -1494,9 +1590,16 @@ io.on('connection', (socket) => {
             console.log('Error saving show:', error.message);
             return respond({ error: "The notes couldn't be saved. Nothing was reset." });
         }
-        console.log(`Show "${name}" (${show.totalNotes} notes) saved by ${user.name}${data.reset ? ', then reset' : ''}`);
-        respond({ show });
-        if (data.reset) resetNotesAndChat();
+        // The live videos go with it; the reset (which removes them) waits for that.
+        recordings.copyCollection(RECORDINGS_DIR, 'live', show.id).then((parts) => {
+            if (parts) recordingsChanged(show.id);
+            console.log(`Show "${name}" (${show.totalNotes} notes, ${parts} video parts) saved by ${user.name}${data.reset ? ', then reset' : ''}`);
+            respond({ show: { ...show, recordingParts: parts } });
+            if (data.reset) resetNotesAndChat();
+        }, (error) => {
+            console.log(`Error keeping the videos with show "${name}":`, error.message);
+            respond({ error: `The notes were saved, but the videos couldn't be kept with them.${data.reset ? ' Nothing was reset.' : ''}` });
+        });
     });
 
     // Handle backup import (only for non-overlay users). The file gets the same
@@ -1575,6 +1678,8 @@ function resetNotesAndChat() {
     globalState.notes = [];
     globalState.chatMessages = [];
     globalState.showLog = [];
+    recordings.removeCollection(RECORDINGS_DIR, 'live');
+    recordingsChanged('live');
     chatRestore.close();
     io.emit('all-reset'); // each page also drops its saved chat copy and unsent notes
     io.emit('notes-update', globalState.notes);

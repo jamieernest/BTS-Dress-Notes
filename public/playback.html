@@ -21,7 +21,7 @@
                 </button>
                 <div id="playbackMenu" class="playback-menu" hidden>
                     <button type="button" id="openNotes">Open notes</button>
-                    <button type="button" id="openVideo">Choose video</button>
+                    <button type="button" id="recordingToggle" aria-expanded="false" aria-controls="recordingPanel">Recording</button>
                     <button type="button" id="timingToggle" aria-expanded="false" aria-controls="timingPanel" hidden>Adjust timing</button>
                     <button type="button" id="helpToggle" aria-expanded="false" aria-controls="helpPanel">Timeline help</button>
                 </div>
@@ -31,14 +31,15 @@
 
     <main class="page playback">
         <input type="file" id="notesInput" accept=".json,application/json" hidden>
-        <input type="file" id="videoInput" accept="video/*,.mov,.mp4" hidden>
+        <input type="file" id="videoInput" accept="video/*,.mov,.mp4,.m4v,.webm" multiple hidden>
+        <input type="file" id="uploadInput" accept="video/*,.mov,.mp4,.m4v,.webm" multiple hidden>
         <p id="fileError" class="field-error" role="alert" hidden></p>
         <div id="sourceLoading" class="loading-region is-loading" aria-busy="true"><div data-loading-placeholder class="skeleton"><span class="bone line w-60"></span><span class="bone line w-45"></span></div></div>
 
         <div id="helpPanel" class="help-panel" hidden>
             <button type="button" id="closeHelp" class="btn ghost">Close help</button>
             <p>Drag anywhere on the timeline to scrub. Click the video to play or pause.</p>
-            <p>Bars are notes; circles are recorded LX cues. Hover or tap for details. Clicking a note starts 3 seconds before it; a cue starts at its recorded time.</p>
+            <p>Bars are notes; circles are recorded LX cues. Hatched stretches are where the recording stopped between parts. Hover or tap for details. Clicking a note starts 3 seconds before it; a cue starts at its recorded time.</p>
             <dl>
                 <dt><kbd>Space</kbd></dt><dd>Play / pause</dd>
                 <dt><kbd>&larr;</kbd> <kbd>&rarr;</kbd></dt><dd>Back / forward 5 seconds</dd>
@@ -48,6 +49,8 @@
             </dl>
             <p class="muted">Keyboard seeking works while the timeline is focused. Escape closes details or help.</p>
         </div>
+
+        <div id="recordingPanel" class="recording-panel" hidden></div>
 
         <div id="dropZone" class="empty drop-zone">
             <p class="empty-title">Watch back a show with its notes</p>
@@ -64,10 +67,25 @@
             <div class="stage">
                 <div id="recordingPrompt" class="recording-prompt" hidden>
                     <p id="recordingTitle" class="empty-title">Choose the recording for this show</p>
-                    <p class="muted">Your notes are ready. The video stays on your device.</p>
-                    <button type="button" id="chooseRecording" class="btn primary">Choose video</button>
+                    <p id="recordingAbout" class="muted"></p>
+                    <div class="prompt-actions">
+                        <button type="button" id="promptUpload" class="btn primary">Upload video</button>
+                        <button type="button" id="chooseRecording" class="btn outline">Choose from this device</button>
+                    </div>
                 </div>
-                <video id="video" playsinline preload="metadata" tabindex="0" role="button" aria-label="Play video"></video>
+                <div id="screen" class="screen" hidden>
+                    <video id="video" playsinline preload="metadata" tabindex="0" role="button" aria-label="Play video"></video>
+                    <div id="gapNotice" class="gap-notice" hidden>
+                        <p id="gapText"></p>
+                        <p id="gapNext" class="muted"></p>
+                        <button type="button" id="skipGap" class="btn outline">Skip to the next part</button>
+                    </div>
+                </div>
+                <div id="uploadStatus" class="upload-status" role="status" hidden>
+                    <span id="uploadText"></span>
+                    <progress id="uploadProgress" max="1" value="0"></progress>
+                    <button type="button" id="cancelUpload" class="btn ghost">Cancel upload</button>
+                </div>
                 <div id="timingPanel" class="timing-panel" hidden>
                     <span class="nudge">
                         <span class="muted">Move notes</span>
@@ -82,7 +100,8 @@
                         </label>
                         <button type="submit" class="btn outline">Match</button>
                     </form>
-                    <p id="clockError" class="field-error" role="alert" hidden>Enter a clock time such as 19:47:58.</p>
+                    <p id="timingPart" class="muted" hidden></p>
+                    <p id="clockError" class="field-error" role="alert" hidden></p>
                 </div>
 
                 <div class="timeline">
@@ -122,6 +141,7 @@
     <script src="loading-state.js"></script>
     <script src="playback-context.js"></script>
     <script src="playback-timeline.js"></script>
+    <script src="playback-program.js"></script>
     <script src="playback.js"></script>
 </body>
 </html>

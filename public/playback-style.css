@@ -8,7 +8,8 @@
 .drop-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 20px; }
 .drop-actions a { text-decoration: none; }
 .recording-prompt { flex: 1 1 0 !important; min-height: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; padding: 24px; text-align: center; background: var(--surface); border: 1px dashed var(--border-strong); border-radius: var(--radius); }
-.recording-prompt .muted { max-width: 300px; font-size: 13px; }
+.recording-prompt .muted { max-width: 340px; font-size: 13px; }
+.prompt-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .options-wrap { position: relative; }
 .playback-menu {
     position: absolute;
@@ -92,13 +93,16 @@ body.playback-page {
     gap: 20px;
 }
 .stage { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.stage > :not(video) { flex: none; }
+.stage > * { flex: none; }
 
+/* The video, or the blank between two parts of the recording. */
+.stage > .screen { flex: 1 1 0; min-height: 160px; position: relative; }
 video {
+    position: absolute;
+    inset: 0;
     display: block;
-    flex: 1 1 0;
-    min-height: 160px;
     width: 100%;
+    height: 100%;
     object-fit: contain;
     background: #000;
     border-radius: var(--radius);
@@ -269,6 +273,36 @@ video {
 
 .dots { display: inline-flex; gap: 3px; align-items: center; }
 
+.gap-notice {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 16px;
+    text-align: center;
+    border-radius: var(--radius);
+    background: repeating-linear-gradient(135deg, #0b0b0c 0 10px, #111113 10px 20px);
+    color: var(--text-2);
+    font-size: 13px;
+}
+.gap-notice #gapText { color: var(--text); font-size: 14px; }
+
+.upload-status { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--text-2); }
+.upload-status #uploadText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.upload-status progress { flex: 1; min-width: 60px; height: 6px; accent-color: var(--accent); }
+
+/* Where the recording stopped between two parts. */
+.grid .gap {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--text) 8%, transparent) 0 3px, transparent 3px 7px);
+    pointer-events: none;
+}
+
 /* --- Timing, tucked away until needed --- */
 .timing-panel {
     position: fixed;
@@ -300,7 +334,33 @@ video {
     color: var(--text);
 }
 .clock-form input.invalid { border-color: var(--danger); }
-.timing-panel .field-error { flex-basis: 100%; }
+.timing-panel .field-error, .timing-panel > .muted { flex-basis: 100%; }
+
+/* --- The recording's parts --- */
+.recording-panel {
+    position: fixed;
+    top: calc(var(--topbar-h) + 8px);
+    right: 24px;
+    z-index: 50;
+    width: 440px;
+    max-width: calc(100vw - 24px);
+    max-height: calc(100dvh - var(--topbar-h) - 24px);
+    overflow-y: auto;
+    padding: 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    background: var(--surface-2);
+    box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+    font-size: 13px;
+}
+.recording-panel .about { margin-top: 4px; color: var(--text-2); }
+.recording-panel .parts { margin-top: 12px; list-style: none; border-top: 1px solid var(--border); }
+.recording-panel .part, .recording-panel .part-gap { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
+.recording-panel .part-gap { font-size: 12px; font-style: italic; }
+.recording-panel .part-name { flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; color: var(--text); }
+.recording-panel .part .btn { margin-left: auto; }
+.recording-panel .remove-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; color: var(--danger); }
+.recording-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 
 /* --- Notes beside the video --- */
 .side {
@@ -358,14 +418,14 @@ video {
         grid-template-rows: minmax(0, 1.2fr) minmax(0, 1fr);
         gap: 12px;
     }
-    video { min-height: 0; }
+    .stage > .screen { min-height: 0; }
     .clock-form, .clock-form label { flex-wrap: wrap; }
     .drop-zone { flex: 1; min-height: 0; margin-top: 0; padding: 24px 12px; }
 }
 
 @media (max-width: 480px) {
     .topbar { gap: 4px; padding-right: 8px; }
-    .help-panel { right: 12px; }
+    .help-panel, .recording-panel { right: 12px; }
     #demoBadge { font-size: 10px; padding: 0 6px; }
     .playback-title { font-size: 12px; }
     .recording-prompt { padding: 12px; gap: 8px; }
