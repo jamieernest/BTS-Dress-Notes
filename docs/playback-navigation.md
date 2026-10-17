@@ -22,16 +22,3 @@ npm run dev:playback
 ```
 
 The default port is 3030 (`PLAYBACK_PORT` overrides it). The launcher uses separate `.playback-dev/` storage, seeds 25 invented live notes only when empty, and adds **Sample dress rehearsal** to Past notes. Both examples automatically open the silent twelve-minute sample recording with 33 LX cues and six scenes. Normal instance data is separate.
-
-On this development host's Tailscale network:
-
-- [Live example notes](http://100.99.42.78:3030/)
-- [Saved example notes](http://100.99.42.78:3030/recall.html?show=2026-10-07T19-00-00-000Z-sample-dress-rehearsal)
-
-## Validation
-
-The full 181-test suite passed. One earlier run timed out starting a chat-restore test server; the isolated chat suite and subsequent full run both passed. Focused tests cover HTTP-compatible local-file keys, URL encoding, safe return destinations, local-file storage failure, authenticated live snapshots, and preservation of typing times and the show log when saving.
-
-With shared recordings the suite is 193 tests, adding the part layout, the on-disk store, and the upload/stream/retime/remove and save/reset routes against the real server. A browser check uploaded a two-part recording to a saved show, removed the old part, played through the 58-second gap and skipped it, sought back across parts, chose the same parts locally and switched back, and checked the panel at phone width.
-
-Browser checks on the HTTP Tailscale address verified live and saved note shortcuts, the 3-second lead-in, saved filters on return, local-file handoff, pending note selection through the real video picker, return highlighting, and live note updates. Temporary update probes were removed. Desktop and phone layouts were inspected; physical touch devices and screen readers have not been tested.
