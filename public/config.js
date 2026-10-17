@@ -229,6 +229,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const parts = reply.show.recordingParts;
             const video = parts ? ` and ${parts === 1 ? 'its video' : `${parts} video parts`}` : '';
             showSaveResult(`Saved “${reply.show.name}” (${notes}${video})${reset ? ' and reset everything' : ''}. `, link);
+            loadShows();
             showNameInput.value = '';
         });
     }
@@ -250,6 +251,220 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     byId('saveResetCancelButton').addEventListener('click', closeSaveReset);
     byId('saveResetConfirmButton').addEventListener('click', () => saveShow(true));
+
+    // Recordings for the live notes or a saved show, uploaded here for everyone
+    // to watch back on playback.html (recordings.js on the server).
+    const recordingNotesSelect = byId('recordingNotesSelect');
+    const recordingRows = byId('recordingRows');
+    const uploadRow = byId('uploadRow');
+    const recordingResult = byId('recordingResult');
+    const { isVideo, probeDuration } = VideoFile;
+    let recordingCollection = 'live';
+    let parts = [];
+    let confirmRemove = null;      // the part whose Remove asks to confirm
+    let uploading = null;          // { xhr, name, index, count, loaded, total }
+
+    function showRecordingResult(message) {
+        recordingResult.textContent = message;
+        recordingResult.hidden = !message;
+    }
+
+    async function getJson(url) {
+        const response = await fetch(url, { headers: { accept: 'application/json' }, cache: 'no-store' });
+        if (response.status === 401) { window.location.href = loginUrl(); throw new Error('Login required'); }
+        if (!response.ok) throw new Error('Unavailable');
+        return response.json();
+    }
+
+    // Live notes, then every saved show, newest first.
+    async function loadShows() {
+        try {
+            const shows = await getJson('/shows');
+            fillSelect(recordingNotesSelect, [['live', 'Live notes'], ...shows.map(show => [show.id, show.name])], recordingCollection);
+            if (recordingNotesSelect.value !== recordingCollection) chooseCollection('live');
+        } catch (_) { /* the select keeps what it has */ }
+    }
+
+    function chooseCollection(collection) {
+        recordingCollection = collection;
+        recordingNotesSelect.value = collection;
+        parts = [];
+        confirmRemove = null;
+        renderParts();
+        loadParts();
+    }
+
+    async function loadParts() {
+        const collection = recordingCollection;
+        try {
+            const result = await getJson(`/recordings/${encodeURIComponent(collection)}`);
+            if (collection === recordingCollection) applyParts(result.recordings);
+        } catch (_) { /* the next update or reconnect brings it */ }
+    }
+
+    function applyParts(list) {
+        parts = Array.isArray(list) ? list : [];
+        if (confirmRemove && !parts.some(p => p.id === confirmRemove)) confirmRemove = null;
+        renderParts();
+    }
+
+    const wallText = (iso) => TimecodeFormat.formatTimecode(TimecodeFormat.timeOfDay(new Date(iso))).slice(0, 8);
+
+    function partRow(part) {
+        const row = document.createElement('div');
+        row.className = 'row row-wrap part-row';
+        const text = document.createElement('div');
+        text.className = 'row-text';
+        const name = document.createElement('div');
+        name.className = 'row-label';
+        name.textContent = part.name;
+        const about = document.createElement('p');
+        about.className = 'section-note';
+        const start = part.startAt ? Date.parse(part.startAt) : null;
+        about.textContent = [
+            start ? `${wallText(start)}–${wallText(start + part.duration * 1000)}` : '',
+            TimecodeFormat.formatDuration(part.duration),
+            part.uploadedBy ? `added by ${part.uploadedBy}` : ''
+        ].filter(Boolean).join(' · ');
+        text.append(name, about);
+        row.append(text);
+        if (confirmRemove === part.id) {
+            const confirm = document.createElement('div');
+            confirm.className = 'reset-confirm';
+            const question = document.createElement('span');
+            question.textContent = 'Remove for everyone?';
+            confirm.append(question,
+                button('Cancel', 'btn ghost', { action: 'cancel-remove' }),
+                button('Remove', 'btn danger', { action: 'remove', id: part.id }));
+            row.append(confirm);
+        } else {
+            row.append(button('Remove', 'btn danger-outline', { action: 'ask-remove', id: part.id }));
+        }
+        return row;
+    }
+
+    function button(label, className, data) {
+        const element = document.createElement('button');
+        element.type = 'button';
+        element.className = className;
+        element.textContent = label;
+        Object.assign(element.dataset, data);
+        return element;
+    }
+
+    function renderParts() {
+        recordingRows.querySelectorAll('.part-row').forEach(row => row.remove());
+        parts.forEach(part => recordingRows.insertBefore(partRow(part), uploadRow));
+        showUploadStatus();
+    }
+
+    recordingRows.addEventListener('click', (e) => {
+        const target = e.target.closest('button[data-action]');
+        if (!target) return;
+        const action = target.dataset.action;
+        if (action === 'ask-remove' || action === 'cancel-remove') {
+            confirmRemove = action === 'ask-remove' ? target.dataset.id : null;
+            renderParts();
+            recordingRows.querySelector(confirmRemove ? '[data-action="cancel-remove"]' : '#uploadButton').focus();
+        } else if (action === 'remove') removePart(target.dataset.id);
+    });
+
+    async function removePart(id) {
+        const collection = recordingCollection;
+        try {
+            const response = await fetch(`/recordings/${encodeURIComponent(collection)}/${id}`, { method: 'DELETE' });
+            if (response.status === 401) { window.location.href = loginUrl(); return; }
+            if (!response.ok && response.status !== 404) throw new Error('Not removed');
+            confirmRemove = null;
+            showRecordingResult('');
+            await loadParts();
+        } catch (error) {
+            showRecordingResult('That part couldn\'t be removed. Try again.');
+        }
+    }
+
+
+    // Uploads one after another, each with its length and (from Vor's file
+    // name) start time; the parts appear for everyone as each one finishes.
+    async function uploadFiles(files) {
+        const collection = recordingCollection;
+        const list = [...files].filter(isVideo);
+        if (!list.length || uploading) return;
+        showRecordingResult('');
+        for (let i = 0; i < list.length; i++) {
+            const file = list[i];
+            const url = URL.createObjectURL(file);
+            let seconds;
+            try {
+                seconds = await probeDuration(url);
+            } catch (error) {
+                showRecordingResult(`This browser can't play "${file.name}", so it wasn't uploaded. Try Safari or Chrome.`);
+                continue;
+            } finally {
+                URL.revokeObjectURL(url);
+            }
+            if (await sendFile(collection, file, seconds, i, list.length) === 'cancelled') break;
+            if (collection === recordingCollection) loadParts();
+        }
+        uploading = null;
+        showUploadStatus();
+    }
+
+    function sendFile(collection, file, seconds, index, count) {
+        return new Promise((resolve) => {
+            const query = new URLSearchParams({ name: file.name, duration: String(seconds) });
+            const start = PlaybackTimeline.vorStartFromName(file.name);
+            if (start) query.set('startAt', String(start));
+            const xhr = new XMLHttpRequest();
+            uploading = { xhr, name: file.name, index, count, loaded: 0, total: file.size };
+            xhr.open('POST', `/recordings/${encodeURIComponent(collection)}?${query}`);
+            xhr.upload.addEventListener('progress', (e) => { uploading.loaded = e.loaded; showUploadStatus(); });
+            xhr.addEventListener('load', () => {
+                if (xhr.status === 401) { window.location.href = loginUrl(); resolve('failed'); return; }
+                if (xhr.status >= 200 && xhr.status < 300) { resolve('done'); return; }
+                let reason = '';
+                try { reason = JSON.parse(xhr.responseText).error || ''; } catch (error) { /* not JSON */ }
+                showRecordingResult(`"${file.name}" wasn't uploaded. ${/^[A-Z]/.test(reason) ? reason : 'Try again.'}`);
+                resolve('failed');
+            });
+            xhr.addEventListener('error', () => {
+                showRecordingResult(`"${file.name}" wasn't uploaded. Check the connection and try again.`);
+                resolve('failed');
+            });
+            xhr.addEventListener('abort', () => resolve('cancelled'));
+            xhr.send(file);
+            showUploadStatus();
+        });
+    }
+
+    function showUploadStatus() {
+        byId('uploadProgress').hidden = !uploading;
+        byId('cancelUpload').hidden = !uploading;
+        byId('uploadButton').hidden = !!uploading;
+        if (!uploading) {
+            byId('uploadText').textContent = parts.length ? '' : 'No recording yet';
+            return;
+        }
+        const { name, index, count, loaded, total } = uploading;
+        const share = total ? loaded / total : 0;
+        byId('uploadText').textContent = `Uploading ${count > 1 ? `part ${index + 1} of ${count}, ` : ''}“${name}” · ${Math.floor(share * 100)}%`;
+        byId('uploadProgress').value = share;
+    }
+
+    recordingNotesSelect.addEventListener('change', () => chooseCollection(recordingNotesSelect.value));
+    byId('uploadButton').addEventListener('click', () => byId('uploadInput').click());
+    byId('uploadInput').addEventListener('change', (e) => {
+        const files = [...e.target.files];
+        e.target.value = '';
+        uploadFiles(files);
+    });
+    byId('cancelUpload').addEventListener('click', () => { if (uploading) uploading.xhr.abort(); });
+    window.addEventListener('beforeunload', (e) => { if (uploading) e.preventDefault(); });
+    socket.on('recordings-update', (update) => {
+        if (update && update.collection === recordingCollection) applyParts(update.recordings);
+    });
+    socket.on('connect', () => { loadShows(); loadParts(); });
+    renderParts();
 
     timeModeButtons.forEach(button => button.addEventListener('click', () => {
         if (!button.disabled && button.dataset.mode !== timeMode) {

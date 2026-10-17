@@ -20,7 +20,7 @@
                     <svg class="icon" aria-hidden="true"><use href="icons.svg#i-more"/></svg>
                 </button>
                 <div id="playbackMenu" class="playback-menu" hidden>
-                    <button type="button" id="openNotes">Open notes</button>
+                    <button type="button" id="openNotes" hidden>Open notes</button>
                     <button type="button" id="recordingToggle" aria-expanded="false" aria-controls="recordingPanel">Recording</button>
                     <button type="button" id="timingToggle" aria-expanded="false" aria-controls="timingPanel" hidden>Adjust timing</button>
                     <button type="button" id="helpToggle" aria-expanded="false" aria-controls="helpPanel">Timeline help</button>
@@ -32,7 +32,6 @@
     <main class="page playback">
         <input type="file" id="notesInput" accept=".json,application/json" hidden>
         <input type="file" id="videoInput" accept="video/*,.mov,.mp4,.m4v,.webm" multiple hidden>
-        <input type="file" id="uploadInput" accept="video/*,.mov,.mp4,.m4v,.webm" multiple hidden>
         <p id="fileError" class="field-error" role="alert" hidden></p>
         <div id="sourceLoading" class="loading-region is-loading" aria-busy="true"><div data-loading-placeholder class="skeleton"><span class="bone line w-60"></span><span class="bone line w-45"></span></div></div>
 
@@ -66,12 +65,8 @@
         <section id="player" class="player" hidden>
             <div class="stage">
                 <div id="recordingPrompt" class="recording-prompt" hidden>
-                    <p id="recordingTitle" class="empty-title">Choose the recording for this show</p>
-                    <p id="recordingAbout" class="muted"></p>
-                    <div class="prompt-actions">
-                        <button type="button" id="promptUpload" class="btn primary">Upload video</button>
-                        <button type="button" id="chooseRecording" class="btn outline">Choose from this device</button>
-                    </div>
+                    <p class="empty-title">No recording yet</p>
+                    <button type="button" id="chooseRecording" class="btn primary">Choose from this device</button>
                 </div>
                 <div id="screen" class="screen" hidden>
                     <video id="video" playsinline preload="metadata" tabindex="0" role="button" aria-label="Play video"></video>
@@ -80,11 +75,6 @@
                         <p id="gapNext" class="muted"></p>
                         <button type="button" id="skipGap" class="btn outline">Skip to the next part</button>
                     </div>
-                </div>
-                <div id="uploadStatus" class="upload-status" role="status" hidden>
-                    <span id="uploadText"></span>
-                    <progress id="uploadProgress" max="1" value="0"></progress>
-                    <button type="button" id="cancelUpload" class="btn ghost">Cancel upload</button>
                 </div>
                 <div id="timingPanel" class="timing-panel" hidden>
                     <span class="nudge">
@@ -141,6 +131,7 @@
     <script src="loading-state.js"></script>
     <script src="playback-context.js"></script>
     <script src="playback-timeline.js"></script>
+    <script src="video-file.js"></script>
     <script src="playback-program.js"></script>
     <script src="playback.js"></script>
 </body>

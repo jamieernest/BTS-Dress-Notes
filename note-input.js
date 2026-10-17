@@ -130,9 +130,12 @@ function cleanCue(value) { return parse(cueSchema, value); }
 function cleanTag(value) { return parse(tagSchema, value); }
 
 // The notes of a backup that has passed checkBackup() (notes-backup.js),
-// rebuilt field by field; a note that cannot be rebuilt is left out.
+// rebuilt field by field; a note that cannot be rebuilt is left out. Put in
+// timestamp order, as new notes are inserted assuming it (note-order.js);
+// the sort is stable, so equal stamps keep their order.
 function cleanStoredNotes(notes) {
-    return notes.map((n) => parse(storedNoteSchema, n)).filter(Boolean);
+    const stamp = (n) => { const ms = Date.parse(n.timestamp); return Number.isNaN(ms) ? Infinity : ms; };
+    return notes.map((n) => parse(storedNoteSchema, n)).filter(Boolean).sort((a, b) => stamp(a) - stamp(b));
 }
 
 // A backup's tag list, keeping only well-formed tags with an id.

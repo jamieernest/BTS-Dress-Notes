@@ -33,6 +33,26 @@
             <p id="saveResult" class="section-note result" role="status" hidden></p>
         </section>
 
+        <section class="section" id="recordings" aria-labelledby="recordingsTitle">
+            <h2 id="recordingsTitle">Recordings</h2>
+            <input type="file" id="uploadInput" accept="video/*,.mov,.mp4,.m4v,.webm" multiple hidden>
+            <div class="rows" id="recordingRows">
+                <div class="row">
+                    <label class="row-label" for="recordingNotesSelect">Notes</label>
+                    <select id="recordingNotesSelect" class="select">
+                        <option value="live">Live notes</option>
+                    </select>
+                </div>
+                <div class="row" id="uploadRow">
+                    <span id="uploadText" class="row-value"></span>
+                    <progress id="uploadProgress" max="1" value="0" hidden></progress>
+                    <button type="button" id="cancelUpload" class="btn ghost" hidden>Cancel upload</button>
+                    <button type="button" id="uploadButton" class="btn outline">Upload video</button>
+                </div>
+            </div>
+            <p id="recordingResult" class="section-note result" role="alert" hidden></p>
+        </section>
+
         <section class="section" aria-labelledby="statusTitle">
             <h2 id="statusTitle">Status</h2>
             <div class="rows">
@@ -134,6 +154,8 @@
     <script src="/socket.io/socket.io.js"></script>
     <script src="keepalive.js"></script>
     <script src="timecode-format.js"></script>
+    <script src="playback-timeline.js"></script>
+    <script src="video-file.js"></script>
     <script src="config.js"></script>
 </body>
 </html>

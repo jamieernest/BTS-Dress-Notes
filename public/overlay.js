@@ -68,7 +68,6 @@ document.addEventListener('DOMContentLoaded', function() {
     socket.on('disconnect', function() {
         connectionStatus.textContent = 'Disconnected';
         connectionStatus.className = 'connection-status disconnected';
-        stopRealTimeMode();
     });
 
     socket.on('timecode-update', function(data) {
@@ -112,12 +111,6 @@ document.addEventListener('DOMContentLoaded', function() {
         realTimeInterval = setInterval(updateRealTimeDisplay, 10);
     }
 
-    function stopRealTimeMode() {
-        if (realTimeInterval) {
-            clearInterval(realTimeInterval);
-            realTimeInterval = null;
-        }
-    }
 
     function updateRealTimeDisplay() {
         realtimeValue.textContent = TimecodeFormat.formatTimecode(TimecodeFormat.timeOfDay());

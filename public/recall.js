@@ -117,7 +117,7 @@ document.addEventListener('DOMContentLoaded', function() {
         setHtml($('savedShowsList'), shows.map(show => `
             <a class="saved-show" href="?show=${encodeURIComponent(show.id)}">
                 <span class="saved-show-name">${NoteView.esc(show.name)}</span>
-                <span class="muted">${NoteView.esc(date(show.savedAt))} · ${plural(show.totalNotes, 'note')}${show.recordingParts ? ' · <i data-icon="video" data-class="saved-show-video"></i> Video' : ''}</span>
+                <span class="muted">${NoteView.esc(date(show.savedAt))} · ${NoteView.esc(plural(show.totalNotes, 'note'))}${show.recordingParts ? ' · <i data-icon="video" data-class="saved-show-video"></i> Video' : ''}</span>
             </a>`).join(''));
         savedShows.hidden = shows.length === 0;
     }

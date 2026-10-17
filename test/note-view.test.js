@@ -7,6 +7,8 @@ test('timecode is HH:MM:SS:FF and the time of day HH:MM:SS.cc, everywhere', () =
     assert.strictEqual(TimecodeFormat.formatTimecode({ hours: 1, minutes: 2, seconds: 3, frames: 4 }), '01:02:03:04');
     assert.strictEqual(TimecodeFormat.formatTimecode({ hours: 21, minutes: 5, seconds: 9, milliseconds: 456, displayMode: 'realtime' }), '21:05:09.45');
     assert.strictEqual(TimecodeFormat.formatTimecode(null), '00:00:00:00');
+    assert.strictEqual(TimecodeFormat.formatDuration(65.9), '1:05');
+    assert.strictEqual(TimecodeFormat.formatDuration(3725), '1:02:05');
     assert.strictEqual(TimecodeFormat.formatNoteTimecode({ frameRate: 'ms', timecode: { hours: 9, minutes: 0, seconds: 1, milliseconds: 990 } }), '09:00:01.99');
     assert.strictEqual(TimecodeFormat.formatNoteTimecode({ frameRate: 25, timecode: { hours: 9, minutes: 0, seconds: 1, frames: 24 } }), '09:00:01:24');
     assert.strictEqual(TimecodeFormat.formatNoteTimecode({ timecode: 'junk' }), '00:00:00:00');

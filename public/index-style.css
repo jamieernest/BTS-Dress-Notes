@@ -665,7 +665,7 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
     .live-value { overflow: hidden; text-overflow: ellipsis; }
     .signal { display: none; }
     .cue-input { width: 62px; height: 44px; }
-    .page { padding: 16px max(12px, env(safe-area-inset-right)) max(80px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
+    .page { padding: 12px max(12px, env(safe-area-inset-right)) max(80px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left)); }
 
     #noteInput { min-height: 56px; max-height: 35dvh; padding: 14px; }
     .composer-details { padding: 0 12px 12px; }

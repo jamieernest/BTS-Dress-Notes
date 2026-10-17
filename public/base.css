@@ -86,6 +86,10 @@ a.btn { text-decoration: none; }
 .btn.ghost[aria-expanded="true"] { background: var(--hover); color: var(--text); }
 .btn.outline { border-color: var(--border-strong); color: var(--text); }
 .btn.outline:hover { background: var(--hover); }
+.btn.danger-outline { border-color: color-mix(in srgb, var(--danger) 45%, var(--border-strong)); color: var(--danger); }
+.btn.danger-outline:hover { background: color-mix(in srgb, var(--danger) 12%, transparent); color: var(--danger); }
+.btn.danger { background: var(--danger); color: #fff; }
+.btn.danger:hover { background: color-mix(in srgb, var(--danger) 85%, #fff); color: #fff; }
 
 .link-btn { color: var(--accent); font-size: 13px; }
 .link-btn:hover { text-decoration: underline; }

@@ -1,14 +1,14 @@
 // Plays a Vor recording with the notes written during it. Notes come from the
 // live session, a saved show or a local file. The recording is either
-// uploaded for those notes (shared with everyone who opens them, recordings.js
-// on the server) or chosen from this device, and may come in several parts:
+// uploaded for those notes on the settings page (shared with everyone who
+// opens them, recordings.js on the server) or chosen from this device, and may come in several parts:
 // public/playback-program.js lays them out on one timeline with blank gaps
 // where the recording stopped. Timing: public/playback-timeline.js.
 document.addEventListener('DOMContentLoaded', function() {
     const $ = id => document.getElementById(id);
     const T = PlaybackTimeline;
     const P = PlaybackProgram;
-    const { esc, setHtml } = NoteView;
+    const { esc, setHtml, safeColor } = NoteView;
     const C = PlaybackContext;
     const params = new URLSearchParams(location.search);
     const demo = params.get('demo') === '1';
@@ -17,7 +17,6 @@ document.addEventListener('DOMContentLoaded', function() {
     let returnTo = params.get('returnTo');
     let requestedNoteId = params.get('note');
     let socket = null;
-    const safeColor = (color) => SafeHtml.safeColour(color, '#8a8f98');
 
     const video = $('video');
     const track = $('track');
@@ -45,9 +44,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const broken = new Set();      // parts this browser can't play, treated as gaps
     const pendingStarts = new Map(); // shared part id -> start being saved, not yet echoed back
     const startTimers = new Map();
-    let uploading = null;          // { xhr, name, index, count, loaded, total }
-    let confirmRemove = null;      // the shared part whose Remove asks to confirm
     let placed = [];               // notes in the video, in time order: { note, at }
+    let placedAt = new Map();      // note id -> at, for the per-frame update
     let scenes = [];               // scene changes: { value, at }
     let cues = [];                 // LX cues, only when the file has them exactly
     let shownTags = new Set();     // tag filter; empty shows everything
@@ -73,16 +71,19 @@ document.addEventListener('DOMContentLoaded', function() {
     // Where these notes' uploaded recording lives: 'live', a saved show's id,
     // or null for a local notes file (nothing to share it with).
     const collection = () => (source.show ? source.show : source.source === 'live' && !demo ? 'live' : null);
-    const isVideo = (file) => /^video\//.test(file.type) || /\.(mov|mp4|m4v|webm)$/i.test(file.name);
+    const { isVideo, probeDuration } = VideoFile;
+    // Live notes and saved shows stay what they are; another notes file only
+    // opens over a local one, or when nothing could be loaded.
+    const canOpenNotes = () => !data || !!source.file;
 
     function openFiles(files) {
         $('demoBadge').hidden = true;
         $('fileError').hidden = true;
         const videos = [];
         for (const file of files) {
-            if (/\.json$/i.test(file.name)) openNotes(file);
+            if (/\.json$/i.test(file.name) && canOpenNotes()) openNotes(file);
             else if (isVideo(file)) videos.push(file);
-            else showError(`"${file.name}" isn't a notes file or a video.`);
+            else showError(canOpenNotes() ? `"${file.name}" isn't a notes file or a video.` : `"${file.name}" isn't a video.`);
         }
         if (videos.length) openLocalVideos(videos);
     }
@@ -123,25 +124,8 @@ document.addEventListener('DOMContentLoaded', function() {
         cues = lx.exact ? lx.list : [];
         if (!preserveFilters) shownTags = new Set();
         setStatus('notesStatus', `${data.notes.length} notes`);
+        $('openNotes').hidden = !canOpenNotes();
         ready();
-    }
-
-    // A video's length, read from its metadata without playing it.
-    function probeDuration(url) {
-        return new Promise((resolve, reject) => {
-            const probe = document.createElement('video');
-            probe.preload = 'metadata';
-            probe.muted = true;
-            probe.addEventListener('loadedmetadata', () => {
-                const seconds = probe.duration;
-                probe.removeAttribute('src');
-                probe.load();
-                if (Number.isFinite(seconds) && seconds > 0) resolve(seconds);
-                else reject(new Error('No length'));
-            }, { once: true });
-            probe.addEventListener('error', () => reject(new Error('Unplayable')), { once: true });
-            probe.src = url;
-        });
     }
 
     // Videos from this device, as the parts of one recording. Vor's file
@@ -316,7 +300,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function applyShared(list) {
         sharedParts = list.map(fromServer);
-        if (confirmRemove && !sharedParts.some(p => p.id === confirmRemove)) confirmRemove = null;
         if (recording.kind !== 'local') setParts('shared', sharedParts);
         else renderRecordingPanel();
     }
@@ -361,139 +344,42 @@ document.addEventListener('DOMContentLoaded', function() {
         }, SAVE_TIMING_MS));
     }
 
-    // Uploads one after another, each with its length and (from Vor's file
-    // name) start time; the parts appear for everyone as each one finishes.
-    async function uploadFiles(files) {
-        const col = collection();
-        const list = [...files].filter(isVideo);
-        if (!col || !list.length) return;
-        if (uploading) { showError('Wait for the current upload to finish.'); return; }
-        $('fileError').hidden = true;
-        for (let i = 0; i < list.length; i++) {
-            const file = list[i];
-            const url = URL.createObjectURL(file);
-            let seconds;
-            try {
-                seconds = await probeDuration(url);
-            } catch (error) {
-                showError(`This browser can't play "${file.name}", so it wasn't uploaded. Try Safari or Chrome.`);
-                continue;
-            } finally {
-                URL.revokeObjectURL(url);
-            }
-            if (await sendFile(col, file, seconds, i, list.length) === 'cancelled') break;
-            refreshShared();
-        }
-        uploading = null;
-        showUploadStatus();
-    }
-
-    function sendFile(col, file, seconds, index, count) {
-        return new Promise((resolve) => {
-            const query = new URLSearchParams({ name: file.name, duration: String(seconds) });
-            const start = T.vorStartFromName(file.name);
-            if (start) query.set('startAt', String(start));
-            const xhr = new XMLHttpRequest();
-            uploading = { xhr, name: file.name, index, count, loaded: 0, total: file.size };
-            xhr.open('POST', `/recordings/${encodeURIComponent(col)}?${query}`);
-            xhr.upload.addEventListener('progress', (e) => { uploading.loaded = e.loaded; showUploadStatus(); });
-            xhr.addEventListener('load', () => {
-                if (xhr.status === 401) { window.location.href = loginUrl(); resolve('failed'); return; }
-                if (xhr.status >= 200 && xhr.status < 300) { resolve('done'); return; }
-                let reason = '';
-                try { reason = JSON.parse(xhr.responseText).error || ''; } catch (error) { /* not JSON */ }
-                showError(`"${file.name}" wasn't uploaded. ${/^[A-Z]/.test(reason) ? reason : 'Try again.'}`);
-                resolve('failed');
-            });
-            xhr.addEventListener('error', () => {
-                showError(`"${file.name}" wasn't uploaded. Check the connection and try again.`);
-                resolve('failed');
-            });
-            xhr.addEventListener('abort', () => resolve('cancelled'));
-            xhr.send(file);
-            showUploadStatus();
-        });
-    }
-
-    function showUploadStatus() {
-        $('uploadStatus').hidden = !uploading;
-        if (!uploading) return;
-        const { name, index, count, loaded, total } = uploading;
-        const share = total ? loaded / total : 0;
-        $('uploadText').textContent = `Uploading ${count > 1 ? `part ${index + 1} of ${count}, ` : ''}“${name}” · ${Math.floor(share * 100)}%`;
-        $('uploadProgress').value = share;
-    }
-    $('cancelUpload').addEventListener('click', () => { if (uploading) uploading.xhr.abort(); });
-    window.addEventListener('beforeunload', (e) => { if (uploading) e.preventDefault(); });
-
-    async function removeShared(id) {
-        const col = recording.kind === 'shared' ? recording.collection : collection();
-        try {
-            const response = await fetch(`/recordings/${encodeURIComponent(col)}/${id}`, { method: 'DELETE' });
-            if (response.status === 401) { window.location.href = loginUrl(); return; }
-            if (!response.ok && response.status !== 404) throw new Error('Not removed');
-            confirmRemove = null;
-            await refreshShared();
-        } catch (error) {
-            showError('That part couldn\'t be removed. Try again.');
-        }
-    }
-
     // --- The recording panel ---
     const wallText = (ms) => clockText(ms).slice(0, 8);
 
     function renderRecordingPanel() {
-        const col = collection();
         const kind = recording.kind;
-        const segments = program.segments;
         const heading = kind === 'shared' ? 'Recording for these notes' : kind === 'local' ? 'Video from this device' : 'No recording yet';
-        const about = kind === 'shared' ? 'Everyone who opens these notes watches this recording. Parts play in order, with blank time where the recording stopped.'
-            : kind === 'local' ? 'Only you can see this video; it stays on this device.'
-            : col ? 'Upload the recording so everyone who opens these notes can watch it, or choose one from this device.'
-            : 'Choose the recording from this device. Choose every part at once if it is in several.';
         const gapBefore = new Map(P.gaps(program).map(g => [g.to, g]));
-        const rows = segments.map((s, i) => {
+        const rows = program.segments.map((s, i) => {
             const gap = gapBefore.get(s.offset);
             const when = s.start !== null ? `${wallText(s.start)}–${wallText(s.start + s.duration * 1000)}` : `Part ${i + 1}`;
             const by = s.uploadedBy ? ` · added by ${s.uploadedBy}` : '';
-            const remove = !s.shared ? ''
-                : confirmRemove === s.id ? `<span class="remove-confirm">Remove for everyone?
-                    <button type="button" class="btn ghost" data-action="cancel-remove">Cancel</button>
-                    <button type="button" class="btn danger" data-action="remove" data-id="${esc(s.id)}">Remove</button></span>`
-                : `<button type="button" class="btn ghost" data-action="ask-remove" data-id="${esc(s.id)}">Remove</button>`;
             return (gap ? `<li class="part-gap muted">No recording for ${esc(videoTimeText(gap.to - gap.from))}</li>` : '') +
                 `<li class="part"><span class="part-name">${esc(s.name)}</span>
                     <span class="muted mono">${esc(when)}</span>
-                    <span class="muted">${esc(videoTimeText(s.duration))}${esc(by)}${broken.has(s.id) ? ' · can\'t play here' : ''}</span>${remove}</li>`;
+                    <span class="muted">${esc(videoTimeText(s.duration))}${esc(by)}${broken.has(s.id) ? ' · can\'t play here' : ''}</span></li>`;
         }).join('');
         const actions = [
-            col ? '<button type="button" class="btn outline" data-action="upload">Upload video</button>' : '',
             '<button type="button" class="btn outline" data-action="choose">Choose from this device</button>',
             kind === 'local' && sharedParts.length ? '<button type="button" class="btn outline" data-action="use-shared">Watch the uploaded recording</button>' : ''
         ].join('');
-        setHtml($('recordingPanel'), `<strong>${esc(heading)}</strong><p class="about">${esc(about)}</p>
+        setHtml($('recordingPanel'), `<strong>${esc(heading)}</strong>
             ${rows ? `<ul class="parts">${rows}</ul>` : ''}
             <div class="recording-actions">${actions}</div>`);
     }
 
     $('recordingPanel').addEventListener('click', (e) => {
-        const button = e.target.closest('[data-action]');
+        const button = e.target.closest('button[data-action]');
         if (!button) return;
         const action = button.dataset.action;
-        if (action === 'upload') $('uploadInput').click();
-        else if (action === 'choose') $('videoInput').click();
+        if (action === 'choose') $('videoInput').click();
         else if (action === 'use-shared') setParts('shared', sharedParts);
-        else if (action === 'ask-remove' || action === 'cancel-remove') {
-            confirmRemove = action === 'ask-remove' ? button.dataset.id : null;
-            renderRecordingPanel();
-            $('recordingPanel').querySelector(confirmRemove ? '[data-action="cancel-remove"]' : 'button').focus();
-        } else if (action === 'remove') removeShared(button.dataset.id);
     });
 
     function setRecordingOpen(open) {
         $('recordingPanel').hidden = !open;
         $('recordingToggle').setAttribute('aria-expanded', String(open));
-        if (!open) confirmRemove = null;
     }
     $('recordingToggle').addEventListener('click', () => {
         setMenuOpen(false);
@@ -505,16 +391,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Keep the notes visible while the person chooses the recording.
     function ready() {
         const hasVideo = recording.parts.length > 0;
-        const col = collection();
         $('dropZone').hidden = !!data;
         $('player').hidden = !data;
         $('screen').hidden = !hasVideo;
         $('recordingPrompt').hidden = hasVideo;
-        $('recordingTitle').textContent = selectedId ? 'Add the recording to watch this note' : 'Add the recording for this show';
-        $('recordingAbout').textContent = col ? 'Upload it once and everyone who opens these notes can watch it. A video chosen from this device stays on it.'
-            : 'Your notes are ready. The video stays on your device.';
-        $('promptUpload').hidden = !col;
-        $('chooseRecording').className = col ? 'btn outline' : 'btn primary';
         track.closest('.timeline').hidden = !duration;
         $('timingToggle').hidden = !(data && hasVideo);
         if (!$('recordingPanel').hidden) renderRecordingPanel();
@@ -554,16 +434,9 @@ document.addEventListener('DOMContentLoaded', function() {
     $('closeHelp').addEventListener('click', () => { setHelpOpen(false); $('optionsToggle').focus(); });
     $('openNotes').addEventListener('click', () => { setMenuOpen(false); $('optionsToggle').focus(); $('notesInput').click(); });
     $('chooseRecording').addEventListener('click', () => $('videoInput').click());
-    $('promptUpload').addEventListener('click', () => $('uploadInput').click());
     for (const id of ['notesInput', 'videoInput']) {
         $(id).addEventListener('change', (e) => { openFiles([...e.target.files]); e.target.value = ''; });
     }
-    $('uploadInput').addEventListener('change', (e) => {
-        const files = [...e.target.files];
-        e.target.value = '';
-        setRecordingOpen(false);
-        uploadFiles(files);
-    });
     // Files dropped anywhere on the page open.
     document.addEventListener('dragover', (e) => { e.preventDefault(); document.body.classList.add('drag-over'); });
     document.addEventListener('dragleave', (e) => { if (!e.relatedTarget) document.body.classList.remove('drag-over'); });
@@ -645,6 +518,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (shared.length) applyShared(shared);
             else if (notes.demo) await loadSampleVideo();
         } catch (error) {
+            $('openNotes').hidden = false;
             showError(source.file ? 'That local notes file is no longer open in this tab. Open it again to continue.'
                 : source.show ? 'That saved show could not be opened. Choose another show from Past notes.'
                 : 'These notes could not be opened. Try again or choose a notes file.');
@@ -655,18 +529,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- Times ---
-    const pad = (n) => String(n).padStart(2, '0');
-
     function clockText(ms) {
         return TimecodeFormat.formatTimecode(TimecodeFormat.timeOfDay(new Date(ms)));
     }
 
-    function videoTimeText(seconds) {
-        const s = Math.max(0, Math.floor(seconds));
-        const h = Math.floor(s / 3600);
-        const m = Math.floor(s / 60) % 60;
-        return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
-    }
+    const videoTimeText = TimecodeFormat.formatDuration;
 
     const toVideo = (clock) => (clock - videoStart) / 1000;
     const nowClock = () => videoStart + position() * 1000;
@@ -753,6 +620,7 @@ document.addEventListener('DOMContentLoaded', function() {
             return { note, at: t.typed !== null ? t.typed : t.sent };
         }).filter(p => p.at !== null && (!timed() || (p.at >= videoStart && p.at <= end)))
             .sort((a, b) => a.at - b.at);
+        placedAt = new Map(placed.map(p => [p.note.id, p.at]));
         // A tag no note in this video has can't be filtered by.
         const used = new Set(placed.flatMap(p => tagIds(p.note)));
         shownTags = new Set([...shownTags].filter(id => used.has(id)));
@@ -779,10 +647,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function renderFilters(used) {
         const tags = (data.tags || []).filter(tag => used.has(tag.id));
-        const chip = (id, dot, name, color) =>
-            `<button type="button" class="chip" data-tag="${esc(id)}" aria-pressed="${shownTags.has(id)}"${color ? ` style="--tag:${safeColor(color)}"` : ''}><span class="${dot}"></span>${esc(name)}</button>`;
-        setHtml($('tagFilters'), tags.map(tag => chip(tag.id, 'dot', tag.name, tag.color)).join('') +
-            (used.has(NO_TAG) ? chip(NO_TAG, 'dot ring', 'No tag') : ''));
+        const attrs = (id) => `type="button" data-tag="${esc(id)}" aria-pressed="${shownTags.has(id)}"`;
+        setHtml($('tagFilters'), tags.map(tag => NoteView.tagChipHTML(tag, attrs(tag.id))).join('') +
+            (used.has(NO_TAG) ? `<button class="chip" ${attrs(NO_TAG)}>${NoteView.dotHTML('')}No tag</button>` : ''));
     }
 
     $('tagFilters').addEventListener('click', (e) => {
@@ -933,9 +800,8 @@ document.addEventListener('DOMContentLoaded', function() {
         track.querySelectorAll('.cue-mark').forEach(el =>
             el.classList.toggle('current', !!cue && Number(el.dataset.cue) === cue.at));
         let latest = null;
-        const atById = new Map(placed.map(p => [p.note.id, p.at]));
         $('sideList').querySelectorAll('.side-note').forEach(el => {
-            const past = atById.get(el.dataset.id) <= now;
+            const past = placedAt.get(el.dataset.id) <= now;
             el.classList.toggle('past', past);
             if (past) latest = el;
         });
@@ -1079,10 +945,7 @@ document.addEventListener('DOMContentLoaded', function() {
             $('fileError').hidden = true;
             seekClock(p.at - PREROLL_MS);
         }
-        else {
-            requestedNoteId = id;
-            $('recordingTitle').textContent = 'Add the recording to watch this note';
-        }
+        else requestedNoteId = id;
         const item = $('sideList').querySelector(`[data-id="${CSS.escape(id)}"]`);
         if (scroll && item) item.scrollIntoView({ block: 'nearest' });
     }

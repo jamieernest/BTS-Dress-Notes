@@ -8,8 +8,6 @@
 .drop-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 20px; }
 .drop-actions a { text-decoration: none; }
 .recording-prompt { flex: 1 1 0 !important; min-height: 0; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; padding: 24px; text-align: center; background: var(--surface); border: 1px dashed var(--border-strong); border-radius: var(--radius); }
-.recording-prompt .muted { max-width: 340px; font-size: 13px; }
-.prompt-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .options-wrap { position: relative; }
 .playback-menu {
     position: absolute;
@@ -290,9 +288,6 @@ video {
 }
 .gap-notice #gapText { color: var(--text); font-size: 14px; }
 
-.upload-status { display: flex; align-items: center; gap: 10px; margin-top: 8px; font-size: 12px; color: var(--text-2); }
-.upload-status #uploadText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.upload-status progress { flex: 1; min-width: 60px; height: 6px; accent-color: var(--accent); }
 
 /* Where the recording stopped between two parts. */
 .grid .gap {
@@ -353,13 +348,10 @@ video {
     box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
     font-size: 13px;
 }
-.recording-panel .about { margin-top: 4px; color: var(--text-2); }
 .recording-panel .parts { margin-top: 12px; list-style: none; border-top: 1px solid var(--border); }
 .recording-panel .part, .recording-panel .part-gap { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 10px; padding: 8px 0; border-bottom: 1px solid var(--border); }
 .recording-panel .part-gap { font-size: 12px; font-style: italic; }
 .recording-panel .part-name { flex: 1 1 100%; min-width: 0; overflow-wrap: anywhere; color: var(--text); }
-.recording-panel .part .btn { margin-left: auto; }
-.recording-panel .remove-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-left: auto; color: var(--danger); }
 .recording-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 
 /* --- Notes beside the video --- */

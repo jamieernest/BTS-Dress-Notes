@@ -37,11 +37,14 @@ function summary(id, data) {
 
 // Writes `exportData` (the JSON export's shape) as a new show named `name`
 // (already cleaned) and returns its summary. Synchronous, so a reset straight
-// afterwards cannot run before the show is on disk.
-function saveShow(dir, name, exportData, date = new Date()) {
+// afterwards cannot run before the show is on disk. Two saves in the same
+// millisecond get the next free one, so neither replaces the other; with
+// `replace` the show saved at exactly `date` is written over instead.
+function saveShow(dir, name, exportData, date = new Date(), replace = false) {
+    fs.mkdirSync(dir, { recursive: true });
+    while (!replace && fs.existsSync(path.join(dir, `${showId(name, date)}.json`))) date = new Date(date.getTime() + 1);
     const id = showId(name, date);
     const data = { name, savedAt: date.toISOString(), ...exportData };
-    fs.mkdirSync(dir, { recursive: true });
     writeBackupFile(dir, `${id}.json`, JSON.stringify(data, null, 2));
     return summary(id, data);
 }

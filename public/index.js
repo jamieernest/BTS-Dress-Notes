@@ -103,8 +103,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const tagDropdown = filterDropdown(tagFilter, tagFilterPopover, 'tag', updateFilterTags);
     const noteElements = new Map();
     // Notes submitted but not yet acknowledged by the server, keyed by the
-    // clientId sent with them: clientId -> { note, element, writtenAt }.
+    // clientId sent with them: clientId -> { note, element, writtenAt, sub }.
     const pendingNotes = new Map();
+    let identityConfirmed = false; // this connection has sent current-user
 
     // Per-note UI state lives here rather than in the DOM, so a note can be
     // re-rendered (tags changed, comment added...) without losing what
@@ -580,7 +581,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const head = cont ? '' : `
                 <div class="chat-msg-head">
                     ${mine ? '' : `<span class="chat-msg-user">${esc(msg.user)}</span>`}
-                    <span class="chat-msg-time">${clockTime(msg.timestamp)}</span>
+                    <span class="chat-msg-time">${esc(clockTime(msg.timestamp))}</span>
                 </div>`;
         const face = mine ? '' : (cont ? '<span class="avatar-gap"></span>' : avatarHTML(msg.userId || msg.user, msg.user, 'sm'));
         return `
@@ -691,7 +692,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function iconButton(action, icon, label, extra) {
-        return `<button type="button" class="icon-btn" data-action="${action}" aria-label="${label}" title="${label}"${extra || ''}><i data-icon="${icon}"></i></button>`;
+        return `<button type="button" class="icon-btn" data-action="${esc(action)}" aria-label="${esc(label)}" title="${esc(label)}"${extra || ''}><i data-icon="${icon}"></i></button>`;
     }
 
     function commentHTML(note, comment) {
@@ -699,12 +700,12 @@ document.addEventListener('DOMContentLoaded', function() {
         const editing = commentEditDrafts.has(key);
         const tools = isMine(comment) && !editing ? `
             <span class="row-actions">
-                ${iconButton('edit-comment', 'edit', 'Edit comment', ` data-comment-id="${esc(comment.id)}"`)}
+                ${iconButton('edit-comment', 'edit', 'Edit reply', ` data-comment-id="${esc(comment.id)}"`)}
                 ${iconButton('delete-comment', 'trash', 'Delete reply', ` data-comment-id="${esc(comment.id)}"`)}
             </span>` : '';
         const body = editing ? `
             <div class="comment-edit">
-                <textarea data-field="comment-edit" data-comment-id="${esc(comment.id)}" aria-label="Edit comment">${esc(commentEditDrafts.get(key))}</textarea>
+                <textarea data-field="comment-edit" data-comment-id="${esc(comment.id)}" aria-label="Edit reply">${esc(commentEditDrafts.get(key))}</textarea>
                 <div class="edit-actions">
                     <button type="button" class="btn ghost" data-action="cancel-comment-edit" data-comment-id="${esc(comment.id)}">Cancel</button>
                     <button type="button" class="btn primary" data-action="save-comment" data-comment-id="${esc(comment.id)}">Save</button>
@@ -931,17 +932,19 @@ document.addEventListener('DOMContentLoaded', function() {
     // server's, but how long ago the note was written (and started) is the
     // same on both.
     function sendPendingNote(note, writtenAt) {
-        if (!window.socket.connected) return;
+        const pending = pendingNotes.get(note.clientId);
+        if (!window.socket.connected || !identityConfirmed || !pending || pending.sub !== currentUser.sub) return;
         const { typingStartedAt, ...payload } = note;
         payload.ageMs = Math.max(0, Date.now() - writtenAt);
         if (typeof typingStartedAt === 'number') payload.startedAgeMs = Math.max(0, Date.now() - typingStartedAt);
         window.socket.emit('note-submit', payload, (stored) => {
+            // Already sent and deleted since (from another tab, say).
+            if (stored && stored.deleted) return clearPendingNote(note.clientId);
             if (!stored || stored.error) {
                 // Refused, so resending cannot help: say so on the note and stop trying.
-                const pending = pendingNotes.get(note.clientId);
-                if (!pending) return;
+                if (pendingNotes.get(note.clientId) !== pending) return;
                 pendingNotes.delete(note.clientId);
-                pendingStore.remove(currentUser.sub, note.clientId);
+                pendingStore.remove(pending.sub, note.clientId);
                 pending.element.querySelector('.pending-badge').textContent =
                     `Not added. ${(stored && stored.error) || 'Something went wrong. Write it again.'}`;
                 pending.element.classList.add('failed');
@@ -962,13 +965,14 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!pending) return;
         pending.element.remove();
         pendingNotes.delete(clientId);
-        pendingStore.remove(currentUser.sub, clientId);
+        pendingStore.remove(pending.sub, clientId);
         filterNotes();
     }
 
     function showPendingNote(note, writtenAt) {
         const element = createPendingNoteElement(note);
-        pendingNotes.set(note.clientId, { note, element, writtenAt });
+        // `sub` is whoever wrote it: it is only ever sent under their login.
+        pendingNotes.set(note.clientId, { note, element, writtenAt, sub: currentUser.sub });
         notesLoading.finish({ immediate: true });
         // The newest pending note goes above the older ones.
         notesList.insertBefore(element, notesList.firstChild);
@@ -1163,17 +1167,18 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     window.socket.on('disconnect', () => {
+        identityConfirmed = false;
         if (!loggingOut && !pageInCache) showConnectionProblem();
         updatePendingBadges();
     });
 
-    // The server sends full state on every connect, so only the banner and
-    // any unacknowledged notes need attention here.
+    // The server sends full state on every connect, so only the banner needs
+    // attention here. Unacknowledged notes wait for current-user: another tab
+    // may have signed in as someone else while this one was offline.
     window.socket.on('connect', () => {
         clearTimeout(connectionBannerTimer);
         connectionBanner.hidden = true;
         updatePendingBadges();
-        for (const { note, writtenAt } of pendingNotes.values()) sendPendingNote(note, writtenAt);
     });
 
     window.socket.on('current-user', (data) => {
@@ -1182,11 +1187,24 @@ document.addEventListener('DOMContentLoaded', function() {
         currentUser.sub = data.sub;
         currentUserName.textContent = data.name;
         currentUserName.classList.remove('awaiting-data');
+        identityConfirmed = true;
+        // Notes written before we knew who we are are ours; another person's
+        // stay in their own saved copy (pending-notes.js) for their next login.
+        for (const [clientId, pending] of pendingNotes) {
+            if (pending.sub === null) {
+                pending.sub = data.sub;
+                pendingStore.add(data.sub, { note: pending.note, writtenAt: pending.writtenAt });
+            } else if (pending.sub !== data.sub) {
+                pending.element.remove();
+                pendingNotes.delete(clientId);
+            }
+        }
         if (changed) {
             rebuildFullNotesList(); // edit buttons depend on who we are, which may arrive after the notes
             if (!usersButton.classList.contains('awaiting-data')) renderUsers(lastUsers);
             updateChatMessages();
         }
+        for (const { note, writtenAt } of pendingNotes.values()) sendPendingNote(note, writtenAt);
         restorePendingNotes();
     });
 
@@ -1365,19 +1383,19 @@ document.addEventListener('DOMContentLoaded', function() {
         chatMessagesList.push(msg);
         chatCopy.onMessageAdded(chatMessagesList);
         const mine = isMyChat(msg);
-        if (chatDrawer.hidden) {
-            if (!mine) unreadChat++;
+        if (chatDrawer.hidden && !mine) {
+            unreadChat++;
             updateUnread();
-            updateChatMessages();
-        } else {
-            const stick = mine || chatNearBottom();
-            if (chatMessagesList.length === 1) setHtml(chatMessages, '');
-            const holder = document.createElement('div');
-            setHtml(holder, renderChatMessage(msg, chatMessagesList[chatMessagesList.length - 2]));
-            chatMessages.append(...holder.childNodes);
-            chatCount.textContent = plural(chatMessagesList.length, 'message');
-            if (stick) chatMessages.scrollTop = chatMessages.scrollHeight;
         }
+        // Only the new message is drawn, open or not: redrawing the whole
+        // (uncapped) log per message gets slower as the log grows.
+        const stick = !chatDrawer.hidden && (mine || chatNearBottom());
+        if (chatMessagesList.length === 1) setHtml(chatMessages, '');
+        const holder = document.createElement('div');
+        setHtml(holder, renderChatMessage(msg, chatMessagesList[chatMessagesList.length - 2]));
+        chatMessages.append(...holder.childNodes);
+        chatCount.textContent = plural(chatMessagesList.length, 'message');
+        if (stick) chatMessages.scrollTop = chatMessages.scrollHeight;
     });
 
     // The chat log kept in localStorage so it survives a reload. After a server

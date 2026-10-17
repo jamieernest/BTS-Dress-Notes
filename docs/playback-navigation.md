@@ -11,7 +11,7 @@ When no recording is selected, playback already shows the notes, highlights the 
 
 The source and selected note live in the URL. A local file URL is specific to the tab that opened it. Live-source playback refreshes when notes change; saved-show playback stays on its saved snapshot.
 
-A recording uploaded from the player (**Recording** → **Upload video**) is kept on the server with the live notes or the saved show, so everyone opening them watches it straight away; it goes with the live notes when the show is saved and leaves them on reset. A recording in several parts plays as one timeline: each part sits at its start time, the time between parts shows as hatched blank space with a countdown and **Skip to the next part**, and playback carries on across it. A video chosen from this device (one or several parts) stays on it and is chosen again on each new player page.
+A recording uploaded on the settings page (**Recordings**) is kept on the server with the live notes or the saved show, so everyone opening them watches it straight away; it goes with the live notes when the show is saved and leaves them on reset. A recording in several parts plays as one timeline: each part sits at its start time, the time between parts shows as hatched blank space with a countdown and **Skip to the next part**, and playback carries on across it. A video chosen from this device (one or several parts) stays on it and is chosen again on each new player page.
 
 ## Development examples
 

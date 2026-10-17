@@ -36,8 +36,8 @@ function cleanPartInfo({ name, type, startAt, duration }) {
     if (!clean) return { error: 'The video needs a file name.' };
     const ext = (/\.([a-z0-9]+)$/i.exec(clean) || [])[1];
     const kind = ext && ext.toLowerCase();
-    if (!TYPES[kind]) return { error: 'Only .mp4, .mov, .m4v and .webm videos can be uploaded.' };
-    const seconds = Number(duration);
+    if (!kind || !Object.hasOwn(TYPES, kind)) return { error: 'Only .mp4, .mov, .m4v and .webm videos can be uploaded.' };
+    const seconds = typeof duration === 'string' || typeof duration === 'number' ? Number(duration) : NaN;
     if (!Number.isFinite(seconds) || seconds <= 0 || seconds > MAX_DURATION_S) return { error: 'The video\'s length could not be read.' };
     const start = cleanStart(startAt);
     if (start === undefined) return { error: 'The video\'s start time is not a time.' };
@@ -49,7 +49,7 @@ function cleanPartInfo({ name, type, startAt, duration }) {
 // An ISO start time, null for none, undefined when it is not a time.
 function cleanStart(startAt) {
     if (startAt === null || startAt === undefined || startAt === '') return null;
-    const ms = typeof startAt === 'number' ? startAt : Number(startAt);
+    const ms = typeof startAt === 'number' ? startAt : typeof startAt === 'string' ? Number(startAt) : NaN;
     const at = Number.isFinite(ms) ? new Date(ms) : new Date(NaN);
     return Number.isFinite(at.getTime()) && at.getFullYear() > 2000 && at.getFullYear() < 2200 ? at.toISOString() : undefined;
 }
@@ -161,7 +161,9 @@ async function copyCollection(dir, from, to) {
             await fs.promises.copyFile(source, target);
         }
     }
-    writeManifest(dir, to, [...readManifest(dir, to), ...parts]);
+    const kept = readManifest(dir, to);
+    const have = new Set(kept.map(p => p.id));
+    writeManifest(dir, to, [...kept, ...parts.filter(p => !have.has(p.id))]);
     return parts.length;
 }
 

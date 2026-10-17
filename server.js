@@ -439,7 +439,14 @@ app.get('/recordings/:collection/:id', (req, res) => {
     });
 });
 
-app.post('/recordings/:collection', async (req, res) => {
+// Express 4 doesn't catch a rejected async handler, and an unhandled rejection
+// stops the server; anything unexpected becomes a 500 instead.
+app.post('/recordings/:collection', (req, res) => uploadRecording(req, res).catch((error) => {
+    console.log('Error saving an uploaded video:', error.message);
+    if (!res.headersSent && !req.socket.destroyed) res.status(500).json({ error: 'The video couldn\'t be saved.' });
+}));
+
+async function uploadRecording(req, res) {
     const { collection } = req.params;
     if (!sameOrigin(req)) return res.status(403).json({ error: 'forbidden' });
     if (!(await collectionExists(collection))) return res.status(404).json({ error: 'Those notes no longer exist.' });
@@ -455,7 +462,9 @@ app.post('/recordings/:collection', async (req, res) => {
             maxBytes: RECORDING_MAX_BYTES, uploadedBy: req.session.user.name
         });
     } catch (error) {
-        if (res.headersSent || req.destroyed) return;
+        // req.destroyed is also true once the body has been read in full, so
+        // ask whether the connection itself is gone.
+        if (res.headersSent || req.socket.destroyed) return;
         if (error.status === 413) return tooLarge();
         if (error.status) return res.status(error.status).json({ error: error.message });
         console.log('Error saving an uploaded video:', error.message);
@@ -464,7 +473,7 @@ app.post('/recordings/:collection', async (req, res) => {
     console.log(`Video "${part.name}" (${Math.round(part.size / 1e6)} MB) uploaded to ${collection} by ${req.session.user.name}`);
     recordingsChanged(collection);
     res.status(201).json(recordingsOf(collection).find(p => p.id === part.id));
-});
+}
 
 app.patch('/recordings/:collection/:id', express.json({ limit: '1kb' }), (req, res) => {
     const { collection, id } = req.params;
@@ -964,13 +973,6 @@ function currentModeTimecode() {
     return globalState.timeMode === 'network' ? globalState.networkTimecode : globalState.timecode;
 }
 
-function formatTimecode(tc) {
-    if (!tc || typeof tc !== 'object') {
-        return '00:00:00:00';
-    }
-    return `${(tc.hours || 0).toString().padStart(2, '0')}:${(tc.minutes || 0).toString().padStart(2, '0')}:${(tc.seconds || 0).toString().padStart(2, '0')}:${(tc.frames || 0).toString().padStart(2, '0')}`;
-}
-
 function systemStatus() {
     return {
         midiAvailable: !!midiInput,
@@ -1214,6 +1216,18 @@ function newId() {
 }
 
 // WebSocket connections
+// Notes deleted since start, as `${userId} ${clientId}`, so a resend that was
+// still on its way (a lost ack, then a delete from another tab) doesn't bring
+// the note back. Oldest dropped past DELETED_SUBMISSIONS_MAX.
+const deletedSubmissions = new Set();
+const DELETED_SUBMISSIONS_MAX = 10000;
+
+function rememberDeleted(note) {
+    if (!note.clientId) return;
+    deletedSubmissions.add(`${note.userId} ${note.clientId}`);
+    if (deletedSubmissions.size > DELETED_SUBMISSIONS_MAX) deletedSubmissions.delete(deletedSubmissions.values().next().value);
+}
+
 io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
 
@@ -1343,7 +1357,7 @@ io.on('connection', (socket) => {
         user.currentTimecode = input.cleanTimecode(data && data.timecode) || {...currentModeTimecode()};
         user.currentLxCue = input.cleanCue(data && data.lxCue) || globalState.currentLxCue;
 
-        io.emit('users-update', listedUsers());
+        broadcastTyping();
     });
 
     // Handle user stopping typing (only for non-overlay users)
@@ -1354,7 +1368,7 @@ io.on('connection', (socket) => {
         user.currentTimecode = null;
         user.currentLxCue = null;
 
-        io.emit('users-update', listedUsers());
+        broadcastTyping();
     });
 
     // Handle time mode change (only for non-overlay users)
@@ -1429,6 +1443,7 @@ io.on('connection', (socket) => {
             // Only the sender's own notes: another person's note with the same clientId is not this one.
             const existing = globalState.notes.find(n => n.clientId === clientId && n.userId === user.id);
             if (existing) return respond(existing);
+            if (deletedSubmissions.has(`${user.id} ${clientId}`)) return respond({ deleted: true, clientId });
         }
         const text = input.cleanText(data.text, input.MAX_NOTE_LENGTH);
         if (!text) return respond({ error: 'A note needs some text.' });
@@ -1565,6 +1580,7 @@ io.on('connection', (socket) => {
         const note = globalState.notes.find(n => n.id === data.noteId);
         if (note && note.userId && canEditNote(note, user.id)) {
             globalState.notes = globalState.notes.filter(n => n !== note);
+            rememberDeleted(note);
             io.emit('note-delete', { noteId: note.id });
             scheduleBackup();
         }
@@ -1604,6 +1620,7 @@ io.on('connection', (socket) => {
         const name = savedShows.cleanShowName(data && data.name);
         if (!name) return respond({ error: 'Give the show a name first.' });
         if (globalState.notes.length === 0) return respond({ error: 'There are no notes to save.' });
+        const resetsBefore = resetCount;
         let show;
         try {
             show = savedShows.saveShow(SAVED_SHOWS_DIR, name, notesExport());
@@ -1614,9 +1631,22 @@ io.on('connection', (socket) => {
         // The live videos go with it; the reset (which removes them) waits for that.
         recordings.copyCollection(RECORDINGS_DIR, 'live', show.id).then((parts) => {
             if (parts) recordingsChanged(show.id);
-            console.log(`Show "${name}" (${show.totalNotes} notes, ${parts} video parts) saved by ${user.name}${data.reset ? ', then reset' : ''}`);
+            // Notes can arrive while the videos copy; write the show again (same
+            // id) straight before the reset so none of them are lost. If another
+            // reset came first, these notes are already gone from the live list:
+            // keep the show as first saved and don't reset what came after.
+            const reset = data.reset && resetCount === resetsBefore;
+            if (reset) {
+                try {
+                    show = savedShows.saveShow(SAVED_SHOWS_DIR, name, notesExport(), new Date(show.savedAt), true);
+                } catch (error) {
+                    console.log('Error saving show:', error.message);
+                    return respond({ error: "The latest notes couldn't be saved. Nothing was reset." });
+                }
+            }
+            console.log(`Show "${name}" (${show.totalNotes} notes, ${parts} video parts) saved by ${user.name}${reset ? ', then reset' : ''}`);
             respond({ show: { ...show, recordingParts: parts } });
-            if (data.reset) resetNotesAndChat();
+            if (reset) resetNotesAndChat();
         }, (error) => {
             console.log(`Error keeping the videos with show "${name}":`, error.message);
             respond({ error: `The notes were saved, but the videos couldn't be kept with them.${data.reset ? ' Nothing was reset.' : ''}` });
@@ -1700,7 +1730,12 @@ io.on('connection', (socket) => {
 // is the newest one, so a restart cannot bring the cleared notes back. Tags
 // are kept: they are the department list, not show data, and the notes that
 // are gone were the only things that used them.
+// Bumped by every reset, so a save that waited on its videos can tell whether
+// the notes it saved are still the live ones.
+let resetCount = 0;
+
 function resetNotesAndChat() {
+    resetCount++;
     globalState.notes = [];
     globalState.chatMessages = [];
     globalState.showLog = [];
@@ -1712,6 +1747,27 @@ function resetNotesAndChat() {
     io.emit('show-log-update', globalState.showLog);
     emitToChatClients('chat-messages-update', globalState.chatMessages);
     backup(true);
+}
+
+// Typing changes go to everyone with the whole list, so with a full room a
+// burst of them is sent as one: the first at once, the rest as a single
+// update USERS_UPDATE_MS later.
+const USERS_UPDATE_MS = 250;
+let typingTimer = null;
+let typingChanged = false;
+
+function broadcastTyping() {
+    if (typingTimer) {
+        typingChanged = true;
+        return;
+    }
+    io.emit('users-update', listedUsers());
+    typingTimer = setTimeout(() => {
+        typingTimer = null;
+        if (!typingChanged) return;
+        typingChanged = false;
+        broadcastTyping();
+    }, USERS_UPDATE_MS);
 }
 
 // Users shown in the online users list: one entry per person (Keycloak sub),

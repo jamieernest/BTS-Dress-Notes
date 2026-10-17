@@ -32,5 +32,13 @@
         };
     }
 
-    return { pad, formatTimecode, formatNoteTimecode, timeOfDay };
+    // A length of video, M:SS or H:MM:SS.
+    function formatDuration(seconds) {
+        const s = Math.max(0, Math.floor(seconds));
+        const h = Math.floor(s / 3600);
+        const m = Math.floor(s / 60) % 60;
+        return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
+    }
+
+    return { pad, formatTimecode, formatNoteTimecode, timeOfDay, formatDuration };
 }));
