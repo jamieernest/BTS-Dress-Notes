@@ -24,7 +24,7 @@ npm i
 
    (For Network TC) No extra MIDI interface is needed - see [Timecode modes](#timecode-modes) below
 
-7. Every page requires login via Keycloak SSO. Set `SESSION_SECRET` (required - the server won't start without it) and, to enable login, `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID` and `KEYCLOAK_CLIENT_SECRET` (one shared client covers every venue). See `AGENTS.md` for how these are used.
+7. Every page requires login via Keycloak SSO. Set `SESSION_SECRET` (required - the server won't start without it) and, to enable login, `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID` and `KEYCLOAK_CLIENT_SECRET` (one shared client covers every venue). See `AGENTS.md` for how these are used. Logins last 12 hours and are saved to `local-sessions.json` (git-ignored) so they survive a server restart; changing `SESSION_SECRET` or deleting that file logs everyone out.
 
 8. Run by running `npm start`
 
@@ -39,6 +39,8 @@ The three buttons on the Config & Status page (`/config.html`, linked from the m
 MIDI and network timecode are separate sources; each mode shows its own source's timecode.
 
 The Config & Status page also chooses the MIDI input and the network interface for network timecode. Changes apply immediately and are saved to `local-settings.json` (git-ignored) so they survive a restart. Until an input is chosen there, the app opens the second MIDI input if there is more than one, otherwise the first.
+
+The server connects to the Eos console over TCP (`EOS_HOST`, `EOS_PORT`) at start and does not retry on its own. If the console was off or the link dropped, press **Reconnect to Eos** on the Config & Status page; the connection state is shown next to the button.
 
 ## Network timecode
 
@@ -58,3 +60,11 @@ Observed on the gateway at 10.10.160.188: the group stayed at `239.194.242.66` a
 
 
 Have fun and enjoy :)
+
+## Notes backup, restart and reset
+
+Notes are kept in server memory and saved to `backups/` every minute and when the server stops or crashes. When the server starts it loads the newest backup under 2 hours old that is intact (valid JSON, well-formed notes, not cut short), trying older ones if the newest is damaged, and starts empty if none qualifies; the log says which. A restart after a dress, hours later, therefore starts clean.
+
+Only the person who sent a note can edit it; backups record who wrote each note (by login), so this survives a restart or an export/import. Notes from a backup or file that has no author record, such as one made before this rule, can be edited by anyone.
+
+To clear the show, open `/config.html` and use **Reset all notes and chat** (it asks for confirmation). This empties notes and chat on the server and in every open browser, and a restart afterwards stays empty. Tags are kept.

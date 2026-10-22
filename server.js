@@ -13,10 +13,17 @@ const { createMtcDecoder } = require('./mtc');
 const { listIpv4Interfaces, resolveInterface } = require('./net-iface');
 const { createGatewayLock } = require('./gateway-lock');
 const { loadSettings, saveSettings } = require('./settings');
+const { FileSessionStore } = require('./session-store');
+const { authorsOf, applyAuthors, backupFilename, findRestorableBackup, writeBackupFile } = require('./notes-backup');
+const { sanitizeAge, insertionIndex } = require('./public/note-order');
+const { canEditNote } = require('./public/note-author');
+const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
 
 const app = express();
 const server = http.createServer(app);
-const io = socketIo(server);
+// A restarted server is offered chat copies of up to ~5 MB (the browser's
+// localStorage quota), well above the 1 MB default for one incoming message.
+const io = socketIo(server, { maxHttpBufferSize: 16e6 });
 
 const eosHost = process.env.EOS_HOST || '10.10.160.143';
 const eosPort = process.env.EOS_PORT || 3037;
@@ -69,7 +76,10 @@ io.engine.trustProxy = true;
 // Session cookie is signed by this app; secure:false is intentional - the
 // venue LAN serves this app over plain HTTP, and the goal is to minimize
 // dependence on anything outside the venue LAN (see captain's decision).
+// Sessions are kept in git-ignored local-sessions.json so logins survive a
+// server restart.
 const sessionMiddleware = session({
+    store: new FileSessionStore({ file: process.env.SESSIONS_FILE || path.join(__dirname, 'local-sessions.json') }),
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
@@ -291,6 +301,20 @@ const globalState = {
     currentAct: 'Preshow'
 };
 
+// After a restart the chat is restored from client offers, but only while this
+// window (opened at start) is open; see chat-restore.js. Clients are told when
+// it closes so they can stop protecting their saved copy.
+function emitToChatClients(event, payload) {
+    for (const s of io.sockets.sockets.values()) {
+        const u = globalState.users.get(s.id);
+        if (u && !u.isOverlay) s.emit(event, payload);
+    }
+}
+const chatRestore = createChatRestore({
+    windowMs: Number(process.env.CHAT_RESTORE_WINDOW_MS) || DEFAULT_WINDOW_MS,
+    onClose: () => emitToChatClients('chat-restore-status', { open: false })
+});
+
 // Try to use EasyMIDI
 let easymidi = null;
 let midiInput = null;
@@ -401,13 +425,54 @@ function handleOscMessage(address, value) {
 const connectMessage = new Message('/eos/subscribe=1');
 const buffer = encode(connectMessage);
 
-function subscribeToEOS() {
-    let eosClient = new net.Socket();
-    eosClient.connect(eosPort, eosHost);
+// Eos TCP connection. connectToEOS() is called at start and from the config
+// page's reconnect button; there is never more than one socket, and each one
+// gets its own stream decoder. No automatic retry.
+const EOS_CONNECT_TIMEOUT_MS = Number(process.env.EOS_CONNECT_TIMEOUT_MS) || 10000;
+const eosStatus = { state: 'disconnected', error: null, host: eosHost, port: Number(eosPort) };
+let eosSocket = null;
 
-    eosClient.on('connect', function() {
+function setEosStatus(state, error = null) {
+    eosStatus.state = state;
+    eosStatus.error = error;
+    io.emit('eos-status', eosStatus);
+}
+
+function connectToEOS() {
+    // A press while an attempt is in progress does not stack another.
+    if (eosStatus.state === 'connecting') return;
+
+    if (eosSocket) {
+        const old = eosSocket;
+        eosSocket = null; // its handlers ignore everything from now on
+        old.removeAllListeners('data');
+        old.on('error', () => {});
+        old.destroy();
+    }
+
+    const sock = new net.Socket();
+    eosSocket = sock;
+    setEosStatus('connecting');
+    let failed = false;
+    const fail = (message) => {
+        if (eosSocket !== sock) return;
+        failed = true;
+        console.log('Error connecting to EOS via TCP:', message);
+        setEosStatus('failed', message);
+        sock.destroy();
+    };
+
+    sock.setTimeout(EOS_CONNECT_TIMEOUT_MS);
+    sock.on('timeout', () => {
+        if (eosStatus.state === 'connecting') fail(`timed out after ${EOS_CONNECT_TIMEOUT_MS / 1000}s`);
+    });
+
+    sock.on('connect', function() {
+        if (eosSocket !== sock) return;
         console.log('Connected to EOS');
-        eosClient.write(buffer);
+        sock.setTimeout(0);
+        sock.write(buffer);
+        setEosStatus('connected');
     });
 
     const pushSlip = createSlipDecoder(function(packet) {
@@ -418,12 +483,17 @@ function subscribeToEOS() {
             handleOscMessage(address, value);
         }
     });
+    sock.on('data', pushSlip);
 
-    eosClient.on('data', pushSlip);
+    sock.on('error', (err) => fail(err.code || err.message));
 
-    eosClient.on('error', function(err) {
-        console.log('Error connecting to EOS via TCP:', err);
+    sock.on('close', () => {
+        if (eosSocket !== sock) return;
+        eosSocket = null;
+        if (!failed) setEosStatus('disconnected');
     });
+
+    sock.connect(eosPort, eosHost);
 }
 
 // OSC Server for LX Cues and scenes from qlab
@@ -668,30 +738,40 @@ function settingsOptions() {
     };
 }
 
+const BACKUPS_DIR = process.env.BACKUPS_DIR || path.join(__dirname, 'backups');
+
+// Until the start-up restore below has run, the server's notes are not the
+// notes it should be backing up: an empty server must not write a backup that
+// outranks the good one from before the crash.
+let notesRestored = false;
+
 function backup(sync = false) {
-    let data;
+    if (!notesRestored) {
+        console.log('Backup skipped: notes not restored yet');
+        return;
+    }
     const exportData = {
         notes: globalState.notes,
         exportedAt: new Date().toISOString(),
         totalNotes: globalState.notes.length,
+        authors: authorsOf(globalState.notes),
         users: listedUsers().map(u => ({
             name: u.name,
             joinedAt: u.joinedAt
         })),
         tags: globalState.tags
     };
-    data = JSON.stringify(exportData, null, 2);
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filename = `backup-${timestamp}.json`;
+    const data = JSON.stringify(exportData, null, 2);
+    const filename = backupFilename();
     try {
-        fs.mkdirSync(path.join(__dirname, 'backups'), { recursive: true });
+        fs.mkdirSync(BACKUPS_DIR, { recursive: true });
         if (sync) {
             // Crash/shutdown handlers call process.exit() immediately after
             // backup(), so the write must complete before returning.
-            fs.writeFileSync(path.join(__dirname, 'backups', filename), data);
+            writeBackupFile(BACKUPS_DIR, filename, data);
             console.log(`Backup saved to backups/${filename}`);
         } else {
-            fs.writeFile(path.join(__dirname, 'backups', filename), data, (error) => {
+            writeBackupFile(BACKUPS_DIR, filename, data, (error) => {
                 if (error) {
                     console.log('Error saving backup file:', error.message);
                 } else {
@@ -704,12 +784,36 @@ function backup(sync = false) {
     }
 }
 
+// On start, load the notes and tags from the newest backup that is under two
+// hours old and passes the check (see notes-backup.js), so a crash does not
+// lose the dress notes while a restart days later starts clean. A bad backup
+// is skipped, never fatal.
+function restoreNotes() {
+    try {
+        const found = findRestorableBackup(BACKUPS_DIR);
+        for (const { file, reason } of found.skipped) {
+            console.log(`Notes restore: skipped backups/${file}: ${reason}`);
+        }
+        if (found.file) {
+            globalState.notes = applyAuthors(found.data.notes, found.data.authors);
+            if (found.data.tags) globalState.tags = found.data.tags;
+            console.log(`Notes restore: loaded ${found.data.notes.length} notes from backups/${found.file}`);
+        } else {
+            console.log(`Notes restore: starting empty (${found.reason})`);
+        }
+    } catch (error) {
+        console.log('Notes restore: starting empty (restore failed):', error.message);
+    }
+    notesRestored = true;
+}
+restoreNotes();
+
 // Schedule backups every minute
-setInterval(backup, 1 * 60 * 1000);
+setInterval(backup, Number(process.env.BACKUP_INTERVAL_MS) || 1 * 60 * 1000);
 
 // Delete backups older than 1 day
 setInterval(() => {
-    const backupDir = path.join(__dirname, 'backups');
+    const backupDir = BACKUPS_DIR;
     fs.readdir(backupDir, (err, files) => {
         if (err) return;
         const now = Date.now();
@@ -742,11 +846,13 @@ process.on('unhandledRejection', (reason, promise) => {
     process.exit(1);
 });
 
-process.on('SIGINT', () => {
-    console.log('Received SIGINT. Backing up and shutting down...');
-    backup(true);
-    process.exit(0);
-});
+for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, () => {
+        console.log(`Received ${signal}. Backing up and shutting down...`);
+        backup(true);
+        process.exit(0);
+    });
+}
 
 
 // Session is available during the WS handshake as socket.request.session.
@@ -796,6 +902,7 @@ io.on('connection', (socket) => {
     socket.emit('lx-cue-update', globalState.currentLxCue);
     socket.emit('system-status', systemStatus());
     socket.emit('network-timecode-status', networkStatus);
+    socket.emit('eos-status', eosStatus);
     socket.emit('settings-options', settingsOptions());
 
     // Only send user-related updates if this is NOT an overlay
@@ -933,8 +1040,19 @@ io.on('connection', (socket) => {
     });
     
     // Handle note submission (only for non-overlay users)
-    socket.on('note-submit', (data) => {
+    // The client resends a note it has no acknowledgement for after a
+    // reconnect, tagged with its own clientId, so a resend must not duplicate
+    // a note that already arrived. The ack carries the stored note.
+    // A late note carries ageMs (how long ago it was written); it is stamped
+    // and placed by that rather than by its arrival (see public/note-order.js).
+    socket.on('note-submit', (data, ack) => {
         if (user.isOverlay) return;
+        const respond = typeof ack === 'function' ? ack : () => {};
+        const clientId = typeof data.clientId === 'string' ? data.clientId : undefined;
+        if (clientId) {
+            const existing = globalState.notes.find(n => n.clientId === clientId);
+            if (existing) return respond(existing);
+        }
         
         const noteTimecode = data.timecode || {...currentModeTimecode()};
         
@@ -945,15 +1063,17 @@ io.on('connection', (socket) => {
             text: data.text,
             timecode: noteTimecode,
             lxCue: data.lxCue || globalState.currentLxCue,
-            timestamp: new Date().toISOString(),
+            timestamp: new Date(Date.now() - sanitizeAge(data.ageMs)).toISOString(),
             frameRate: data.frameRate || currentModeTimecode().frameRate,
             tags: data.tags || [],
             act: globalState.currentAct, // Use current act from OSC
             comments: []
         };
+        if (clientId) note.clientId = clientId;
         
-        globalState.notes.push(note);
+        globalState.notes.splice(insertionIndex(globalState.notes, note), 0, note);
         
+        respond(note);
         io.emit('note-added', note);
     });
 
@@ -979,28 +1099,32 @@ io.on('connection', (socket) => {
     // Handle chat message submission (only for non-overlay users)
     socket.on('chat-message', (data) => {
         if (user.isOverlay) return; // Overlay users can't chat
-        
+
+        const bounded = boundChatMessage({ user: user.name, userId: user.id, text: data && data.text });
+        if (!bounded) return;
+
         const chatMessage = {
             id: Date.now() + Math.random().toString(36).substr(2, 9),
-            user: user.name,
-            userId: user.id,
-            text: data.text,
+            ...bounded,
             timestamp: new Date().toISOString()
         };
         
         globalState.chatMessages.push(chatMessage);
-        
-        // Keep only last 100 messages to prevent memory issues
-        if (globalState.chatMessages.length > 100) {
-            globalState.chatMessages = globalState.chatMessages.slice(-100);
-        }
-        
         io.emit('chat-message-added', chatMessage);
-        io.emit('chat-messages-update', globalState.chatMessages);
+    });
+
+    // A client that still holds the chat log from before a restart offers it back
+    socket.on('chat-restore-offer', (log) => {
+        if (user.isOverlay || user.isConfig) return;
+        const restored = chatRestore.offer(user.id, log, globalState.chatMessages);
+        if (!restored) return;
+        globalState.chatMessages = mergeChatLogs(globalState.chatMessages, restored);
+        emitToChatClients('chat-messages-update', globalState.chatMessages);
     });
 
     // Send chat history to newly connected clients (only for non-overlay)
     if (!isOverlay) {
+        socket.emit('chat-restore-status', { open: !chatRestore.closed }); // before the log, so the client knows how to treat it
         socket.emit('chat-messages-update', globalState.chatMessages);
     }
 
@@ -1009,7 +1133,8 @@ io.on('connection', (socket) => {
         if (user.isOverlay) return;
         const { noteId, newText } = data;
         const note = globalState.notes.find(n => n.id === noteId);
-        if (note) {
+        // Only the author (by session identity) may edit; see public/note-author.js
+        if (note && canEditNote(note, user.id)) {
             note.text = newText;
             note.lastEdited = new Date().toISOString();
             note.lastEditedBy = user.name;
@@ -1053,13 +1178,31 @@ io.on('connection', (socket) => {
         }
     });
     
+    // Reconnect to the Eos console from the config page; same rule as the other controls.
+    socket.on('eos-reconnect', () => {
+        if (user.isOverlay) return;
+        console.log(`Eos TCP reconnect requested by ${user.name}`);
+        connectToEOS();
+    });
+
+    // Reset from the config page: empties the notes and the chat for everyone.
+    // Same rule as the other config page controls: any non-overlay user.
+    socket.on('reset-all', () => {
+        if (user.isOverlay) return;
+        console.log(`Reset of all notes and chat requested by ${user.name}`);
+        resetNotesAndChat();
+    });
+
     // Handle backup import (only for non‑overlay users)
     socket.on('import-backup', (data) => {
         if (user.isOverlay) return; // Overlay users can't import
 
         // Validate that the backup contains a notes array and optionally tags
         if (data && Array.isArray(data.notes)) {
-            globalState.notes = data.notes;
+            const authors = Array.isArray(data.authors)
+                ? data.authors.filter((a) => a && typeof a.userId === 'string' && typeof a.name === 'string')
+                : [];
+            globalState.notes = applyAuthors(data.notes.filter((n) => n && typeof n === 'object'), authors);
             
             // Restore tags if present in backup
             if (data.tags && Array.isArray(data.tags)) {
@@ -1090,6 +1233,7 @@ io.on('connection', (socket) => {
                 notes: globalState.notes,
                 exportedAt: new Date().toISOString(),
                 totalNotes: globalState.notes.length,
+                authors: authorsOf(globalState.notes),
                 users: listedUsers().map(u => ({
                     name: u.name,
                     joinedAt: u.joinedAt
@@ -1121,6 +1265,22 @@ io.on('connection', (socket) => {
         }
     });
 });
+
+// Clears every note and chat message on the server and in every connected
+// browser. Closing the chat restore window drops any offers and stops browsers
+// from offering their copy again, and the backup written straight afterwards
+// is the newest one, so a restart cannot bring the cleared notes back. Tags
+// are kept: they are the department list, not show data, and the notes that
+// are gone were the only things that used them.
+function resetNotesAndChat() {
+    globalState.notes = [];
+    globalState.chatMessages = [];
+    chatRestore.close();
+    io.emit('all-reset'); // each page also drops its saved chat copy and unsent notes
+    io.emit('notes-update', globalState.notes);
+    emitToChatClients('chat-messages-update', globalState.chatMessages);
+    backup(true);
+}
 
 // Users shown in the online users list: overlay and config pages are left out.
 function listedUsers() {
@@ -1154,7 +1314,7 @@ initKeycloak().finally(() => {
             console.log(`OSC Server listening for LX cues on port ${oscPort}`);
         }
 
-        subscribeToEOS();
+        connectToEOS();
         startNetworkTimecode();
     });
 });

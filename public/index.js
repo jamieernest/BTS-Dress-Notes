@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const lxCueInput = document.getElementById('lxCueInput');
     const sendNoteBtn = document.getElementById('sendNote');
     const cancelNoteBtn = document.getElementById('cancelNote');
+    const usersPanel = document.getElementById('usersPanel');
     const usersList = document.getElementById('usersList');
     const notesList = document.getElementById('notesList');
     const exportJsonBtn = document.getElementById('exportJson');
@@ -30,7 +31,8 @@ document.addEventListener('DOMContentLoaded', function() {
     const chatMessages = document.getElementById('chatMessages');
     const chatCount = document.getElementById('chatCount');
     const chatUserName = document.getElementById('chatUserName');
-    const scrollToBottomBtn = document.getElementById('scrollToBottomBtn');
+    const scrollToTopBtn = document.getElementById('scrollToTopBtn');
+    const connectionBanner = document.getElementById('connectionBanner');
 
     // --- State variables ---
     let currentUser = {
@@ -63,6 +65,9 @@ document.addEventListener('DOMContentLoaded', function() {
     let expandedCommentSections = new Set();
     let currentAct = 'Preshow';
     let noteElements = new Map();
+    // Notes submitted but not yet acknowledged by the server, keyed by the
+    // clientId sent with them: clientId -> { note, element }.
+    const pendingNotes = new Map();
 
     let savedCommentInputs = {};
     let focusedCommentNoteId = null;
@@ -103,16 +108,6 @@ document.addEventListener('DOMContentLoaded', function() {
     function formatTimecode(tc) {
         if (!tc || typeof tc !== 'object') return '00:00:00:00';
         return `${(tc.hours || 0).toString().padStart(2, '0')}:${(tc.minutes || 0).toString().padStart(2, '0')}:${(tc.seconds || 0).toString().padStart(2, '0')}:${(tc.frames || 0).toString().padStart(2, '0')}`;
-    }
-
-    function timecodeToSeconds(tc) {
-        if (!tc) return 0;
-        const hours = tc.hours || 0;
-        const minutes = tc.minutes || 0;
-        const seconds = tc.seconds || 0;
-        const frames = tc.frames || 0;
-        const frameRate = tc.frameRate || 30;
-        return hours * 3600 + minutes * 60 + seconds + frames / frameRate;
     }
 
     function formatCommentTime(timestamp) {
@@ -225,7 +220,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function filterNotes() {
-        const noteItems = document.querySelectorAll('.note-item');
+        const noteItems = document.querySelectorAll('.note-item:not(.pending)');
         noteItems.forEach(item => {
             let showNote = true;
             if (filterTag !== 'all') {
@@ -438,20 +433,18 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- Scroll button logic ---
-    function isNearBottom() {
-        const scrollHeight = notesList.scrollHeight;
-        const scrollTop = notesList.scrollTop;
-        const clientHeight = notesList.clientHeight;
-        return scrollHeight - (scrollTop + clientHeight) < 50;
+    // Newest notes are at the top of the list.
+    function isNearTop() {
+        return notesList.scrollTop < 50;
     }
 
     function toggleScrollButton() {
-        if (isNearBottom()) scrollToBottomBtn.style.display = 'none';
-        else scrollToBottomBtn.style.display = 'flex';
+        if (isNearTop()) scrollToTopBtn.style.display = 'none';
+        else scrollToTopBtn.style.display = 'flex';
     }
 
-    function scrollToBottom() {
-        notesList.scrollTo({ top: notesList.scrollHeight, behavior: 'smooth' });
+    function scrollToTop() {
+        notesList.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
     // --- Incremental DOM update functions ---
@@ -463,17 +456,19 @@ document.addEventListener('DOMContentLoaded', function() {
         }).join('');
     }
 
-    function getNoteHTML(note) {
-        let timecodeDisplay;
+    function formatNoteTimecode(note) {
         if (note.frameRate === 'ms') {
             const ms = Math.floor((note.timecode.milliseconds || 0) / 10);
-            timecodeDisplay = `${note.timecode.hours.toString().padStart(2, '0')}:${note.timecode.minutes.toString().padStart(2, '0')}:${note.timecode.seconds.toString().padStart(2, '0')}:${ms.toString().padStart(2, '0')}`;
-        } else {
-            timecodeDisplay = formatTimecode(note.timecode);
+            return `${note.timecode.hours.toString().padStart(2, '0')}:${note.timecode.minutes.toString().padStart(2, '0')}:${note.timecode.seconds.toString().padStart(2, '0')}:${ms.toString().padStart(2, '0')}`;
         }
+        return formatTimecode(note.timecode);
+    }
+
+    function getNoteHTML(note) {
+        const timecodeDisplay = formatNoteTimecode(note);
         const tagElements = getTagElements(note.tags);
         const editButton = `<button class="small edit-tags-btn" data-action="edit-tags" data-note-id="${note.id}">Edit Tags</button>`;
-        const editNoteButton = `<button class="small edit-note-btn" data-action="edit-note" data-note-id="${note.id}">Edit Note</button>`;
+        const editNoteButton = !NoteAuthor.canEditNote(note, currentUser.sub) ? '' : `<button class="small edit-note-btn" data-action="edit-note" data-note-id="${note.id}">Edit Note</button>`;
         const editedIndicator = note.lastEdited ? `<div class="note-edited">Last edited by ${escapeHtml(note.lastEditedBy || 'unknown')} at ${new Date(note.lastEdited).toLocaleTimeString()}</div>` : '';
         const isCommentsExpanded = expandedCommentSections.has(note.id);
         const commentCount = note.comments ? note.comments.length : 0;
@@ -564,9 +559,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function insertNoteInOrder(noteElement, note) {
-        // Relies on notes always being pushed/appended in chronological order
-        // (see 'note-added' handler) rather than re-sorting on every insert.
-        notesList.appendChild(noteElement);
+        // Only for a note that is the newest; addNote rebuilds the list for one that isn't.
+        // Pending notes stay above every note the server has.
+        notesList.insertBefore(noteElement, notesList.querySelector('.note-item:not(.pending)'));
         const shouldShow = (filterTag === 'all' || note.tags.includes(filterTag)) &&
                            (filterAct === 'all' || (note.act || 'Preshow') === filterAct);
         noteElement.style.display = shouldShow ? 'block' : 'none';
@@ -576,11 +571,8 @@ document.addEventListener('DOMContentLoaded', function() {
         captureCommentInputs();                // Save any in‑progress comments
         notesList.innerHTML = '';
         noteElements.clear();
-        const chronologicalNotes = [...allNotes].sort((a, b) => {
-            if (a.timestamp && b.timestamp) return new Date(a.timestamp) - new Date(b.timestamp);
-            return timecodeToSeconds(a.timecode) - timecodeToSeconds(b.timecode);
-        });
-        for (const note of chronologicalNotes) {
+        for (const { element } of [...pendingNotes.values()].reverse()) notesList.appendChild(element);
+        for (const note of NoteOrder.newestFirst(allNotes)) {
             const element = createNoteElement(note);
             notesList.appendChild(element);
         }
@@ -588,6 +580,95 @@ document.addEventListener('DOMContentLoaded', function() {
         filterNotes();
         restoreCommentInputs();                // Restore comment text and focus
         toggleScrollButton();
+    }
+
+    function addNote(note) {
+        if (noteElements.has(note.id)) return;
+        const wasNearTop = isNearTop();   // Check BEFORE insertion
+        const index = NoteOrder.insertionIndex(allNotes, note);
+        allNotes.splice(index, 0, note);
+        if (index < allNotes.length - 1) {
+            // A late note (written while disconnected) belongs below later ones.
+            rebuildFullNotesList();
+        } else {
+            insertNoteInOrder(createNoteElement(note), note);
+            updateActFilter();
+        }
+        if (wasNearTop) {
+            scrollToTop();
+        } else {
+            toggleScrollButton();
+        }
+    }
+
+    // --- Pending notes ---
+    // A note is shown as pending from Send until the server acknowledges it
+    // has stored it. While disconnected it is held here rather than in
+    // socket.io's send buffer, and every pending note is (re)sent on connect:
+    // one sent just before a drop may or may not have arrived, and the server
+    // ignores a resend with a clientId it already has.
+    function pendingBadgeText() {
+        return window.socket.connected ? 'Pending - sending...' : 'Pending - will send on reconnect';
+    }
+
+    function createPendingNoteElement(note) {
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = `
+            <div class="note-item pending" data-client-id="${note.clientId}">
+                <div class="note-pending-badge">${pendingBadgeText()}</div>
+                <div class="note-header">
+                    <span class="note-user">${escapeHtml(currentUser.name)}</span>
+                    <span class="note-timecode">
+                        ${formatNoteTimecode(note)}
+                        <span class="note-lx-cue">LX: ${escapeHtml(note.lxCue || 'N/A')}</span>
+                        @ ${note.frameRate || '30 fps'}
+                    </span>
+                </div>
+                <div class="note-text">
+                    <span class="note-text-display">${escapeHtml(note.text)}</span>
+                </div>
+                ${note.tags.length > 0 ? `<div class="note-tags">${getTagElements(note.tags)}</div>` : ''}
+            </div>
+        `.trim();
+        return wrapper.firstChild;
+    }
+
+    function updatePendingBadges() {
+        const text = pendingBadgeText();
+        for (const { element } of pendingNotes.values()) {
+            element.querySelector('.note-pending-badge').textContent = text;
+        }
+    }
+
+    // The age is recomputed on every send: the browser's clock is not the
+    // server's, but how long ago the note was written is the same on both.
+    function sendPendingNote(note, writtenAt) {
+        if (!window.socket.connected) return;
+        window.socket.emit('note-submit', { ...note, ageMs: Math.max(0, Date.now() - writtenAt) }, (stored) => {
+            clearPendingNote(stored.clientId);
+            addNote(stored);
+        });
+    }
+
+    function clearPendingNote(clientId) {
+        const pending = pendingNotes.get(clientId);
+        if (!pending) return;
+        pending.element.remove();
+        pendingNotes.delete(clientId);
+    }
+
+    function submitNote(data) {
+        const clientId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+        const note = { ...data, clientId };
+        const writtenAt = Date.now();
+        const wasNearTop = isNearTop();
+        const element = createPendingNoteElement(note);
+        pendingNotes.set(clientId, { note, element, writtenAt });
+        // The newest pending note goes above the older ones.
+        notesList.insertBefore(element, notesList.firstChild);
+        if (wasNearTop) scrollToTop();
+        else toggleScrollButton();
+        sendPendingNote(note, writtenAt);
     }
 
     function updateCommentsForNote(noteId) {
@@ -599,21 +680,46 @@ document.addEventListener('DOMContentLoaded', function() {
     window.socket = io();
 
     // The server refuses the socket handshake when the session is missing or
-    // expired (e.g. a server restart wiped the in-memory session store).
+    // expired (e.g. the 12-hour login ran out, or local-sessions.json was deleted).
     // That's distinct from an ordinary network blip - socket.io's normal
     // auto-reconnect can never succeed here, so send the user back through
     // the login flow instead of retrying forever.
     window.socket.on('connect_error', (err) => {
         if (err && err.message === 'unauthorized') {
             window.location.href = '/login';
+            return;
         }
+        connectionBanner.hidden = false;
+    });
+
+    window.socket.on('disconnect', () => {
+        connectionBanner.hidden = false;
+        updatePendingBadges();
+    });
+
+    // The server sends full state on every connect, so only the banner and
+    // any unacknowledged notes need attention here.
+    window.socket.on('connect', () => {
+        connectionBanner.hidden = true;
+        updatePendingBadges();
+        for (const { note, writtenAt } of pendingNotes.values()) sendPendingNote(note, writtenAt);
     });
 
     window.socket.on('current-user', (data) => {
+        const changed = currentUser.sub !== data.sub;
         currentUser.name = data.name;
         currentUser.sub = data.sub;
         currentUserName.textContent = data.name;
         updateChatUserName();
+        if (changed) rebuildFullNotesList(); // edit buttons depend on who we are, which may arrive after the notes
+    });
+
+    // Collapsing the online users list is remembered per browser (nice to have, so failures are ignored).
+    try {
+        if (localStorage.getItem('users-panel-collapsed') === '1') usersPanel.open = false;
+    } catch (e) { /* storage unavailable */ }
+    usersPanel.addEventListener('toggle', () => {
+        try { localStorage.setItem('users-panel-collapsed', usersPanel.open ? '0' : '1'); } catch (e) { /* ignore */ }
     });
 
     window.socket.on('user-joined', (data) => updateUserCount(data.userCount));
@@ -700,20 +806,15 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
         allNotes = notes;
+        for (const note of notes) {
+            if (note.clientId) clearPendingNote(note.clientId);
+        }
         rebuildFullNotesList();
     });
 
     window.socket.on('note-added', (note) => {
-        const wasNearBottom = isNearBottom();   // Check BEFORE insertion
-        allNotes.push(note);
-        const element = createNoteElement(note);
-        insertNoteInOrder(element, note);
-        updateActFilter();
-        if (wasNearBottom) {
-            scrollToBottom();
-        } else {
-            toggleScrollButton();
-        }
+        if (note.clientId) clearPendingNote(note.clientId);
+        addNote(note);
     });
 
     window.socket.on('note-edit-text', ({ noteId, newText, lastEditedBy, lastEdited }) => {
@@ -735,14 +836,11 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     window.socket.on('comment-submit', ({ noteId, comment }) => {
-        const wasNearBottom = isNearBottom();
         const note = allNotes.find(n => n.id === noteId);
         if (note) {
             if (!note.comments) note.comments = [];
             note.comments.push(comment);
             updateCommentsForNote(noteId);
-            if (wasNearBottom) scrollToBottom();
-            else toggleScrollButton();
         }
     });
 
@@ -767,14 +865,37 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    // The server sends each new message on its own, and the whole log only on
+    // connecting and after a restore.
     window.socket.on('chat-message-added', (msg) => {
+        if (chatMessagesList.some((m) => m.id === msg.id)) return;
         chatMessagesList.push(msg);
+        chatCopy.onMessageAdded(chatMessagesList);
         updateChatMessages();
     });
 
+    // The chat log kept in localStorage so it survives a reload. After a server
+    // restart this copy is offered back so the server can restore it, and it is
+    // not replaced by the server's log until the server says restoring is over.
+    const chatCopy = createChatCopy({
+        // reached inside chatCopy's try/catch, as merely touching localStorage can throw
+        getItem: (key) => localStorage.getItem(key),
+        setItem: (key, value) => localStorage.setItem(key, value)
+    });
+    window.socket.on('chat-restore-status', ({ open }) => chatCopy.onRestoreStatus(open));
     window.socket.on('chat-messages-update', (msgs) => {
+        const offer = chatCopy.onServerLog(msgs);
+        if (offer) window.socket.emit('chat-restore-offer', offer);
         chatMessagesList = msgs;
         updateChatMessages();
+    });
+
+    // The server was reset from the config page: forget the saved chat copy
+    // and the notes still waiting to be acknowledged, so neither comes back.
+    window.socket.on('all-reset', () => {
+        chatCopy.onReset();
+        for (const { element } of pendingNotes.values()) element.remove();
+        pendingNotes.clear();
     });
 
     window.socket.on('export-data', (data) => {
@@ -821,10 +942,31 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     noteInput.addEventListener('blur', startAutoResumeTimer);
 
+    // Typing anywhere else on the page starts a note (see type-to-note.js).
+    document.addEventListener('keydown', (e) => {
+        const ctx = {
+            modalOpen: editTagsModal.style.display === 'flex',
+            noteHasText: noteInput.value.length > 0,
+            body: document.body
+        };
+        if (typeToNote.shouldFocusNote(e, document.activeElement, ctx)) noteInput.focus();
+
+        // Escape leaves the note box; an empty note is also cancelled.
+        const action = typeToNote.escapeAction(e, document.activeElement, {
+            modalOpen: ctx.modalOpen,
+            noteInput,
+            noteValue: noteInput.value
+        });
+        if (action) {
+            noteInput.blur();
+            if (action === 'cancel') cancelNote();
+        }
+    });
+
     sendNoteBtn.addEventListener('click', () => {
         const text = noteInput.value.trim();
         if (text && currentUser.frozenTimecode) {
-            window.socket.emit('note-submit', {
+            submitNote({
                 text: text,
                 timecode: currentUser.frozenTimecode,
                 lxCue: currentUser.frozenLxCue,
@@ -998,7 +1140,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    scrollToBottomBtn.addEventListener('click', scrollToBottom);
+    scrollToTopBtn.addEventListener('click', scrollToTop);
     let scrollTimeout;
     notesList.addEventListener('scroll', () => {
         clearTimeout(scrollTimeout);

@@ -63,6 +63,7 @@
         </footer>
     </div>
 
+    <script src="note-order.js"></script>
     <script>
         // All the JavaScript code remains exactly the same as in the previous version
         // Only the CSS has been changed for the background
@@ -277,13 +278,8 @@
                         note.act === filterAct
                     );
                 }
-                // Sort by timestamp
-                const chronologicalNotes = [...filteredNotes].sort((a, b) => {
-                    if (a.timestamp && b.timestamp) {
-                        return new Date(a.timestamp) - new Date(b.timestamp);
-                    }
-                    return 0;
-                });
+                // Newest first, as on the main page (the exported file stays oldest first)
+                const chronologicalNotes = NoteOrder.newestFirst(filteredNotes);
                 
                 notesList.innerHTML = chronologicalNotes.map(note => {
                     const timecodeDisplay = formatTimecode(note.timecode);
