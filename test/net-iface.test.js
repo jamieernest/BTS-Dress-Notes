@@ -26,22 +26,12 @@ test('listIpv4Interfaces keeps external IPv4 addresses only', () => {
     ]);
 });
 
-test('automatic selection picks the interface on the gateway subnet', () => {
-    const result = resolveInterface('auto', '10.10.160.188', listIpv4Interfaces(OS_INTERFACES));
-    assert.strictEqual(result.address, '10.10.160.50');
-    assert.match(result.reason, /en7/);
-});
-
-test('automatic selection falls back to the system default when nothing matches', () => {
-    const result = resolveInterface('auto', '172.16.0.9', listIpv4Interfaces(OS_INTERFACES));
-    assert.strictEqual(result.address, undefined);
-    assert.match(result.reason, /system default/);
-});
-
-test('an explicit address wins over the subnet match', () => {
+test('an explicit address is used even when no interface has it', () => {
     const interfaces = listIpv4Interfaces(OS_INTERFACES);
-    assert.strictEqual(resolveInterface('192.168.75.175', '10.10.160.188', interfaces).address, '192.168.75.175');
-    const missing = resolveInterface('10.0.0.1', '10.10.160.188', interfaces);
+    const selected = resolveInterface('192.168.75.175', interfaces);
+    assert.strictEqual(selected.address, '192.168.75.175');
+    assert.match(selected.reason, /en0/);
+    const missing = resolveInterface('10.0.0.1', interfaces);
     assert.strictEqual(missing.address, '10.0.0.1');
     assert.match(missing.reason, /no interface/);
 });
