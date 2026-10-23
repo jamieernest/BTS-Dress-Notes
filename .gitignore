@@ -159,3 +159,6 @@ saved-shows/
 recordings/
 .playback-dev/
 .claude/worktrees/
+
+# Notes kept for a few days after a reset
+reset-notes/

@@ -113,17 +113,23 @@
                 <div class="row row-wrap">
                     <div class="row-text">
                         <div class="row-label">Reset all notes and chat</div>
-                        <p class="section-note">Deletes every note and chat message for everyone, including unsent notes in open browsers and videos uploaded for the live notes. Tags are kept. Use it after a dress.</p>
+                        <p class="section-note">Deletes every note and chat message for everyone, including unsent notes in open browsers and videos uploaded for the live notes. Tags are kept. Use it after a dress. The notes can be restored below for 3 days; chat and videos can't.</p>
                     </div>
                     <button type="button" id="resetButton" class="btn danger-outline">Reset</button>
                     <div id="resetConfirm" class="reset-confirm" role="alert" hidden>
-                        <span>Delete all notes and chat for everyone? This can't be undone.</span>
+                        <span>Delete all notes and chat for everyone? Notes can be restored for 3 days; chat and videos can't.</span>
                         <button type="button" id="resetCancelButton" class="btn ghost">Cancel</button>
                         <button type="button" id="resetConfirmButton" class="btn danger">Delete everything</button>
                     </div>
                 </div>
             </div>
             <p id="resetResult" class="section-note result" role="status" hidden></p>
+            <h3 class="subhead">Restore notes from a reset</h3>
+            <p class="section-note">Notes from each reset are kept for 3 days, then deleted. Restoring adds them back alongside any notes there are now.</p>
+            <div class="rows" id="resetRows">
+                <div class="row"><span class="row-value">Loading</span></div>
+            </div>
+            <p id="restoreResult" class="section-note result" role="status" hidden></p>
         </section>
 
         <details class="section debug">

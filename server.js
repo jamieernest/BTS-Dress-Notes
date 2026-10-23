@@ -16,6 +16,9 @@ const { loadSettings, saveSettings } = require('./settings');
 const { FileSessionStore } = require('./session-store');
 const { authorsOf, applyAuthors, backupFilename, backupTime, checkBackup, findRestorableBackup, writeBackupFile } = require('./notes-backup');
 const savedShows = require('./saved-shows');
+const resetNotes = require('./reset-notes');
+const RESETS_DIR = process.env.RESETS_DIR || path.join(__dirname, 'reset-notes');
+const RESET_KEEP_MS = Number(process.env.RESET_KEEP_MS) || resetNotes.KEEP_MS;
 const SAVED_SHOWS_DIR = process.env.SAVED_SHOWS_DIR || path.join(__dirname, 'saved-shows');
 const PLAYBACK_DEMO = process.env.PLAYBACK_DEMO === '1';
 const recordings = require('./recordings');
@@ -1203,6 +1206,24 @@ function deleteOldBackups() {
 deleteOldBackups();
 setInterval(deleteOldBackups, 60 * 60 * 1000).unref();
 
+// Notes kept from a reset go once their time runs out (reset-notes.js).
+function pruneResets() {
+    resetNotes.prune(RESETS_DIR, Date.now(), RESET_KEEP_MS).then((gone) => {
+        for (const id of gone) console.log(`Deleted notes kept from the reset at ${id}`);
+        if (gone.length) resetsChanged();
+    }, (error) => console.log('Error deleting old reset notes:', error.message));
+}
+pruneResets();
+setInterval(pruneResets, 10 * 60 * 1000).unref();
+
+function resetsList() {
+    return resetNotes.listResets(RESETS_DIR, Date.now(), RESET_KEEP_MS);
+}
+
+async function resetsChanged() {
+    io.emit('resets-update', await resetsList());
+}
+
 // Backups on errors and graceful shutdown
 process.on('uncaughtException', (err) => {
     console.error('Uncaught Exception:', err);
@@ -1298,10 +1319,12 @@ io.on('connection', (socket) => {
     // must not reach the uncaughtException handler, which exits the server.
     const on = (event, handler) => {
         socket.on(event, (...args) => {
+            const failed = (error) => console.error(`Socket ${event} from ${user.name} failed:`, error);
             try {
-                handler(...args);
+                const result = handler(...args);
+                if (result && typeof result.catch === 'function') result.catch(failed);
             } catch (error) {
-                console.error(`Socket ${event} from ${user.name} failed:`, error);
+                failed(error);
             }
         });
     };
@@ -1645,10 +1668,40 @@ io.on('connection', (socket) => {
 
     // Reset from the config page: empties the notes and the chat for everyone.
     // Same rule as the other config page controls: any non-overlay user.
-    on('reset-all', () => {
+    on('reset-all', (ack) => {
+        const respond = typeof ack === 'function' ? ack : () => {};
         if (user.isOverlay) return;
         console.log(`Reset of all notes and chat requested by ${user.name}`);
-        resetNotesAndChat();
+        respond(resetNotesAndChat(user.name) ? {} : { error: "The notes couldn't be kept, so nothing was reset." });
+    });
+
+    // Notes kept from recent resets, for the config page to restore.
+    on('resets-list', async (ack) => {
+        if (user.isOverlay || typeof ack !== 'function') return;
+        ack(await resetsList());
+    });
+
+    // Puts a kept reset's notes back alongside the live ones. Notes already
+    // live (same id) are left as they are, so restoring twice adds nothing.
+    // The kept copy stays until its time runs out.
+    on('restore-reset', async (data, ack) => {
+        const respond = typeof ack === 'function' ? ack : () => {};
+        if (user.isOverlay) return;
+        const kept = await resetNotes.readReset(RESETS_DIR, data && data.id, Date.now(), RESET_KEEP_MS);
+        if (!kept) return respond({ error: "Those notes are no longer kept." });
+        const live = new Set(globalState.notes.map(n => n.id));
+        const added = applyAuthors(input.cleanStoredNotes(kept.notes), kept.authors).filter(n => !live.has(n.id));
+        for (const note of added) globalState.notes.splice(insertionIndex(globalState.notes, note), 0, note);
+        const events = new Set(globalState.showLog.map(e => JSON.stringify(e)));
+        globalState.showLog = showLog.cleanShowLog([...globalState.showLog,
+            ...showLog.cleanShowLog(kept.showLog).filter(e => !events.has(JSON.stringify(e)))]);
+        console.log(`${added.length} notes restored from the reset at ${data.id} by ${user.name}`);
+        if (added.length) {
+            io.emit('notes-update', globalState.notes);
+            io.emit('show-log-update', globalState.showLog);
+            scheduleBackup();
+        }
+        respond({ restored: added.length });
     });
 
     // Save from the config page: the notes as they are now, under a name, for
@@ -1684,8 +1737,10 @@ io.on('connection', (socket) => {
                 }
             }
             console.log(`Show "${name}" (${show.totalNotes} notes, ${parts} video parts) saved by ${user.name}${reset ? ', then reset' : ''}`);
+            if (reset && !resetNotesAndChat(user.name)) {
+                return respond({ error: "The notes were saved, but couldn't be kept for undoing a reset. Nothing was reset." });
+            }
             respond({ show: { ...show, recordingParts: parts } });
-            if (reset) resetNotesAndChat();
         }, (error) => {
             console.log(`Error keeping the videos with show "${name}":`, error.message);
             respond({ error: `The notes were saved, but the videos couldn't be kept with them.${data.reset ? ' Nothing was reset.' : ''}` });
@@ -1773,7 +1828,18 @@ io.on('connection', (socket) => {
 // the notes it saved are still the live ones.
 let resetCount = 0;
 
-function resetNotesAndChat() {
+// The notes are kept first (reset-notes.js) so the reset can be undone for a
+// few days; if they can't be written nothing is reset, and this returns false.
+function resetNotesAndChat(resetBy) {
+    if (globalState.notes.length) {
+        try {
+            resetNotes.keepReset(RESETS_DIR, notesExport(), resetBy);
+        } catch (error) {
+            console.log('Error keeping the notes before a reset:', error.message);
+            return false;
+        }
+        resetsChanged();
+    }
     resetCount++;
     globalState.notes = [];
     globalState.chatMessages = [];
@@ -1786,6 +1852,7 @@ function resetNotesAndChat() {
     io.emit('show-log-update', globalState.showLog);
     emitToChatClients('chat-messages-update', globalState.chatMessages);
     backup(true);
+    return true;
 }
 
 // Typing changes go to everyone with the whole list, so with a full room a

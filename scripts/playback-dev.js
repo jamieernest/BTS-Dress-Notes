@@ -11,6 +11,7 @@ const child = spawn(process.execPath, ['--env-file-if-exists=.env', 'server.js']
         PLAYBACK_DEMO: '1',
         BACKUPS_DIR: path.join(state, 'backups'),
         SAVED_SHOWS_DIR: path.join(state, 'saved-shows'),
+        RESETS_DIR: path.join(state, 'reset-notes'),
         RECORDINGS_DIR: path.join(state, 'recordings'),
         TAGS_FILE: path.join(state, 'tags.json')
     }

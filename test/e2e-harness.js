@@ -98,6 +98,7 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
     const backupsDir = path.join(path.dirname(sessionsFile), 'backups');
     const savedShowsDir = path.join(path.dirname(sessionsFile), 'saved-shows');
     const recordingsDir = path.join(path.dirname(sessionsFile), 'recordings');
+    const resetsDir = path.join(path.dirname(sessionsFile), 'reset-notes');
     // A copy of the tags, so a test that changes them leaves the tracked tags.json alone.
     const tagsFile = path.join(path.dirname(sessionsFile), 'tags.json');
     if (!fs.existsSync(tagsFile)) fs.copyFileSync(path.join(ROOT, 'tags.json'), tagsFile);
@@ -114,6 +115,7 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
         backupsDir,
         savedShowsDir,
         recordingsDir,
+        resetsDir,
         // Kills the process without the shutdown backup, as a crash or power cut would.
         async kill() {
             await ended('SIGKILL');
@@ -124,7 +126,7 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
                 cwd: ROOT,
                 env: {
                     ...process.env, PORT: String(port), OSC_PORT: String(oscPort), SESSIONS_FILE: sessionsFile,
-                    BACKUPS_DIR: backupsDir, SAVED_SHOWS_DIR: savedShowsDir, RECORDINGS_DIR: recordingsDir, TAGS_FILE: tagsFile,
+                    BACKUPS_DIR: backupsDir, SAVED_SHOWS_DIR: savedShowsDir, RECORDINGS_DIR: recordingsDir, RESETS_DIR: resetsDir, TAGS_FILE: tagsFile,
                     SESSION_SECRET: 'test', KEYCLOAK_ISSUER: issuer, KEYCLOAK_CLIENT_ID: 'bts',
                     KEYCLOAK_CLIENT_SECRET: 'x', EOS_HOST: '127.0.0.1', EOS_PORT: String(await freePort()), ...env
                 },

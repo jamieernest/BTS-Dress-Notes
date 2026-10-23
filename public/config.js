@@ -200,13 +200,87 @@ document.addEventListener('DOMContentLoaded', function() {
         resetButton.hidden = false;
     });
     byId('resetConfirmButton').addEventListener('click', () => {
-        socket.emit('reset-all');
+        socket.timeout(10000).emit('reset-all', (err, reply) => {
+            if (!err && reply && !reply.error) return;
+            resetResult.textContent = err || !reply ? "Couldn't reset. Try again." : reply.error;
+            resetResult.hidden = false;
+        });
         resetConfirm.hidden = true;
         resetButton.hidden = false;
     });
     socket.on('all-reset', () => {
         resetResult.textContent = `All notes and chat were reset at ${new Date().toLocaleTimeString()}.`;
         resetResult.hidden = false;
+    });
+
+    // Notes kept from recent resets (reset-notes.js on the server), each with
+    // a button that adds them back to the live notes until it runs out.
+    const resetRows = byId('resetRows');
+    const restoreResult = byId('restoreResult');
+    const dateTimeText = (iso) => new Date(iso).toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    let resets = [];
+    let restoring = null;
+
+    function resetRow(kept) {
+        const row = document.createElement('div');
+        row.className = 'row row-wrap';
+        const text = document.createElement('div');
+        text.className = 'row-text';
+        const label = document.createElement('div');
+        label.className = 'row-label';
+        label.textContent = `Reset ${dateTimeText(kept.resetAt)}${kept.resetBy ? ` by ${kept.resetBy}` : ''}`;
+        const about = document.createElement('p');
+        about.className = 'section-note';
+        about.textContent = `${kept.totalNotes} note${kept.totalNotes === 1 ? '' : 's'} · kept until ${dateTimeText(kept.expiresAt)}`;
+        text.append(label, about);
+        const restore = button(restoring === kept.id ? 'Restoring' : 'Restore notes', 'btn outline', { id: kept.id });
+        restore.disabled = restoring !== null;
+        row.append(text, restore);
+        return row;
+    }
+
+    function renderResets() {
+        if (resets.length) {
+            resetRows.replaceChildren(...resets.map(resetRow));
+            return;
+        }
+        const row = document.createElement('div');
+        row.className = 'row';
+        const empty = document.createElement('span');
+        empty.className = 'row-value';
+        empty.textContent = 'Nothing has been reset in the last 3 days.';
+        row.append(empty);
+        resetRows.replaceChildren(row);
+    }
+
+    function loadResets() {
+        socket.timeout(10000).emit('resets-list', (err, list) => {
+            if (err || !Array.isArray(list)) return;
+            resets = list;
+            renderResets();
+        });
+    }
+    socket.on('connect', loadResets);
+    socket.on('resets-update', (list) => {
+        resets = Array.isArray(list) ? list : [];
+        renderResets();
+    });
+
+    resetRows.addEventListener('click', (e) => {
+        const target = e.target.closest('button[data-id]');
+        if (!target || restoring) return;
+        restoring = target.dataset.id;
+        restoreResult.hidden = true;
+        renderResets();
+        socket.timeout(30000).emit('restore-reset', { id: restoring }, (err, reply) => {
+            restoring = null;
+            renderResets();
+            restoreResult.textContent = err || !reply ? "The notes couldn't be restored. Try again."
+                : reply.error ? reply.error
+                : reply.restored ? `Restored ${reply.restored} note${reply.restored === 1 ? '' : 's'}.`
+                : 'Those notes are already in the live notes.';
+            restoreResult.hidden = false;
+        });
     });
 
     // Save notes under a name, optionally followed by the reset (two steps, like the reset).
