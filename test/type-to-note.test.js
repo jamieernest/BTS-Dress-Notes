@@ -75,7 +75,7 @@ test('Escape is left alone elsewhere', () => {
 
 test('an empty note box lets go of the frozen timecode, keeping the note if the box is still focused', () => {
     const { emptyBoxAction, EMPTY_RELEASE_MS } = require('../public/type-to-note.js');
-    assert.equal(EMPTY_RELEASE_MS, 15000);
+    assert.equal(EMPTY_RELEASE_MS, 5000);
     assert.equal(emptyBoxAction({ isTyping: true, noteValue: '', focused: true }), 'release');
     assert.equal(emptyBoxAction({ isTyping: true, noteValue: ' \n', focused: true }), 'release');
     assert.equal(emptyBoxAction({ isTyping: true, noteValue: '', focused: false }), 'cancel');

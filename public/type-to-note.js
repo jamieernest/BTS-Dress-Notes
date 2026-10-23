@@ -54,7 +54,7 @@
     }
 
     // How long the note box may sit empty before its frozen timecode is let go.
-    const EMPTY_RELEASE_MS = 15000;
+    const EMPTY_RELEASE_MS = 5000;
 
     // The note box has been empty for EMPTY_RELEASE_MS: null (there is text, or
     // nothing is frozen), 'release' (still focused: unfreeze the timecode and
