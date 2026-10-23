@@ -31,8 +31,8 @@
                 <span id="avatarStack" class="avatar-stack"></span>
                 <span id="userCount" class="avatars-count">0 online</span>
             </button>
-            <button type="button" id="chatToggle" class="btn ghost" aria-expanded="false">
-                <svg class="icon"><use href="icons.svg#i-chat"/></svg><span>Chat</span><span id="chatUnread" class="count-badge" hidden>0</span>
+            <button type="button" id="chatToggle" class="btn chat-toggle" aria-expanded="false" title="Shitposts: chat with everyone, kept out of the notes">
+                <svg class="icon"><use href="icons.svg#i-chat"/></svg><span>Shitposts</span><span id="chatUnread" class="count-badge" hidden>0</span>
             </button>
             <button type="button" id="menuButton" class="btn ghost icon-only" aria-label="More" aria-haspopup="true" aria-expanded="false"><svg class="icon"><use href="icons.svg#i-more"/></svg></button>
         </div>
@@ -150,11 +150,11 @@
         <div id="tagPickerHint" class="popover-foot muted" hidden>A note needs at least one tag</div>
     </div>
 
-    <aside id="chatDrawer" class="drawer loading-region is-loading" aria-busy="true" aria-label="Chat" hidden>
+    <aside id="chatDrawer" class="drawer loading-region is-loading" aria-busy="true" aria-label="Shitposts" hidden>
         <div class="drawer-head">
-            <h2 id="chatTitle">Chat</h2>
+            <h2 id="chatTitle">Shitposts</h2>
             <span id="chatCount" class="muted"></span>
-            <button type="button" id="chatClose" class="btn ghost icon-only" aria-label="Close chat"><svg class="icon"><use href="icons.svg#i-close"/></svg></button>
+            <button type="button" id="chatClose" class="btn ghost icon-only" aria-label="Close shitposts"><svg class="icon"><use href="icons.svg#i-close"/></svg></button>
         </div>
         <div id="chatMessages" class="chat-log" data-loading-content></div>
         <div class="chat-log skeleton" data-loading-placeholder aria-hidden="true">
@@ -164,7 +164,7 @@
             <div class="chat-msg skeleton"><span class="bone avatar-bone sm"></span><span class="bone bubble-bone w-70"></span></div>
         </div>
         <div class="chat-compose">
-            <textarea id="chatInput" rows="2" placeholder="Message everyone…" aria-label="Message everyone"></textarea>
+            <textarea id="chatInput" rows="2" placeholder="Shitpost here…" aria-label="Shitpost to everyone"></textarea>
             <div class="chat-compose-foot">
                 <button type="button" id="sendChat" class="btn primary" disabled>Send</button>
             </div>

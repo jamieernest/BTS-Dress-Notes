@@ -598,9 +598,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateChatMessages() {
-        chatCount.textContent = plural(chatMessagesList.length, 'message');
+        chatCount.textContent = plural(chatMessagesList.length, 'shitpost');
         if (chatMessagesList.length === 0) {
-            setHtml(chatMessages, '<div class="chat-empty">No messages yet. Chat here is for everyone online and isn\'t part of the notes.</div>');
+            setHtml(chatMessages, '<div class="chat-empty">No shitposts yet.</div>');
             return;
         }
         const sorted = [...chatMessagesList].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
@@ -624,7 +624,6 @@ document.addEventListener('DOMContentLoaded', function() {
             updateUnread();
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
-        try { localStorage.setItem('chat-open', open ? '1' : '0'); } catch (e) { /* ignore */ }
     }
 
     // On phones chat occupies the visible viewport, including while the
@@ -1394,7 +1393,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const holder = document.createElement('div');
         setHtml(holder, renderChatMessage(msg, chatMessagesList[chatMessagesList.length - 2]));
         chatMessages.append(...holder.childNodes);
-        chatCount.textContent = plural(chatMessagesList.length, 'message');
+        chatCount.textContent = plural(chatMessagesList.length, 'shitpost');
         if (stick) chatMessages.scrollTop = chatMessages.scrollHeight;
     });
 

@@ -531,6 +531,13 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
 .to-top:hover { background: var(--hover); }
 
 /* --- Chat drawer --- */
+/* Tinted so new people spot where chat goes, rather than posting it as a note. */
+.chat-toggle { background: var(--accent-soft); color: var(--text); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.chat-toggle:hover { background: color-mix(in srgb, var(--accent) 24%, transparent); }
+.chat-toggle[aria-expanded="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.chat-toggle .icon { color: var(--accent); }
+.chat-toggle[aria-expanded="true"] .icon { color: inherit; }
+
 .drawer {
     position: fixed;
     top: var(--topbar-h);
@@ -611,8 +618,6 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
     .notes-page .brand { display: none; }
     .live { gap: 12px; }
     .avatars-count { display: none; }
-    /* Hidden visually but still read out, so the icon-only button keeps its name. */
-    #chatToggle span:not(.count-badge) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
     .page { padding: 12px 12px 80px; }
     /* A draft must scroll away, even in a phone's short landscape viewport. */
     .composer { position: relative; top: auto !important; box-shadow: none; }
@@ -650,6 +655,8 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
 
 @media (max-width: 640px) {
     .mobile-only { display: inline-flex; }
+    /* Hidden visually but still read out, so the icon-only button keeps its name. */
+    #chatToggle span:not(.count-badge) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
     .menu-item.mobile-only { display: block; }
     .notes-page .topbar { gap: 8px; }
     .notes-page .topbar-actions { gap: 0; flex: none; }
