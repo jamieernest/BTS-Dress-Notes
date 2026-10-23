@@ -32,7 +32,7 @@ The CSP (helmet in `server.js`) allows only `'self'` scripts, so no inline handl
 
 Shared UI lives in `public/note-view.js` (note, reply, tag chip, avatar and scene-group templates; search/filter matching; the colourful filter dropdown `createDropdown()`) and `public/timecode-format.js` (every timecode and time-of-day display). The notes page and Past notes both draw through them; extend these rather than re-implementing a variant in a page script (`test/note-view.test.js`).
 
-`public/base.css` (tokens, buttons, topbar, chips, selects) is loaded by every page; each page's own CSS only adds its layout. A note always keeps at least one tag: the composer requires one, the tag picker (opened from the note's tag chips) won't untick the last, and the server's `note-update-tags` refuses an empty list. Keep backend detail (saving, servers, sockets) out of user-facing text.
+`public/base.css` (tokens, buttons, topbar, chips, selects) is loaded by every page; each page's own CSS only adds its layout. A note always keeps at least one tag: the composer requires one (and starts each note with the tags that person last sent, `last-tags:<sub>` in localStorage), the tag picker (opened from the note's tag chips) won't untick the last, and the server's `note-update-tags` refuses an empty list. Keep backend detail (saving, servers, sockets) out of user-facing text.
 
 Button and menu labels use plain action text without trailing ellipses.
 

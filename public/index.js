@@ -383,10 +383,34 @@ document.addEventListener('DOMContentLoaded', function() {
         updateComposer();
     }
 
+    // The tags a person last sent with start every new note, per person
+    // (localStorage, so all their tabs share them).
+    const lastTagsKey = () => `last-tags:${currentUser.sub}`;
+
+    function rememberedTags() {
+        if (!currentUser.sub) return [];
+        try {
+            const tags = JSON.parse(localStorage.getItem(lastTagsKey()));
+            return Array.isArray(tags) ? tags.filter(id => typeof id === 'string') : [];
+        } catch (e) { return []; }
+    }
+
+    function rememberTags(tags) {
+        if (!currentUser.sub) return;
+        try { localStorage.setItem(lastTagsKey(), JSON.stringify(tags)); } catch (e) { /* storage unavailable */ }
+    }
+
+    // Puts the remembered tags on a note that hasn't been started yet.
+    function applyRememberedTags() {
+        if (currentUser.isTyping || noteInput.value) return;
+        selectedTags = rememberedTags();
+        updateTagsDisplay();
+    }
+
     function resetComposer() {
         noteInput.value = '';
         sendNoteBtn.disabled = true;
-        selectedTags = [];
+        selectedTags = rememberedTags();
         setComposerTagsExpanded(false);
         updateTagsDisplay();
         showTagError(false);
@@ -1192,6 +1216,7 @@ document.addEventListener('DOMContentLoaded', function() {
         currentUserName.textContent = data.name;
         currentUserName.classList.remove('awaiting-data');
         identityConfirmed = true;
+        if (changed) applyRememberedTags();
         // Notes written before we knew who we are are ours; another person's
         // stay in their own saved copy (pending-notes.js) for their next login.
         for (const [clientId, pending] of pendingNotes) {
@@ -1242,7 +1267,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (JSON.stringify(tags) === JSON.stringify(availableTags)) return;
         availableTags = tags;
         saveTagsToStorage();
-        updateTagsDisplay();
+        if (selectedTags.length) updateTagsDisplay();
+        else applyRememberedTags();
         updateFilterTags();
         rebuildFullNotesList();
     });
@@ -1508,7 +1534,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 focusInComposer: composer.contains(document.activeElement),
                 pageFocused: document.hasFocus()
             });
-            if (action === 'cancel' && (currentUser.isTyping || selectedTags.length)) cancelNote();
+            const tagsChanged = JSON.stringify(selectedTags) !== JSON.stringify(rememberedTags().filter(id => availableTags.some(t => t.id === id)));
+            if (action === 'cancel' && (currentUser.isTyping || tagsChanged)) cancelNote();
         }, 0);
     });
 
@@ -1589,6 +1616,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 frameRate: timeMode === 'realtime' ? 'ms' : currentUser.currentFrameRate,
                 tags: selectedTags,
             });
+            rememberTags(selectedTags);
             resetComposer();
             // Dismiss the phone keyboard after sending; desktop stays ready to type.
             if (phoneLayout.matches || touchInput.matches) {
@@ -1869,4 +1897,5 @@ document.addEventListener('DOMContentLoaded', function() {
     updateComposer();
     filterNotes();
     restoreDraft();
+    applyRememberedTags();
 });
