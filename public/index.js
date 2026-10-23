@@ -59,6 +59,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const phoneLayout = matchMedia('(max-width: 640px)');
     const touchInput = matchMedia('(pointer: coarse)');
     const modalChatLayout = matchMedia('(max-width: 860px)');
+    const wideChatLayout = matchMedia('(min-width: 1100px)');
 
     // --- State variables ---
     let currentUser = {
@@ -653,6 +654,14 @@ document.addEventListener('DOMContentLoaded', function() {
             updateUnread();
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
+    }
+
+    // Opening or closing chat on a wide screen is remembered for the next
+    // load (index-boot.js); narrow screens always start with it closed.
+    function chooseChatOpen(open) {
+        setChatOpen(open);
+        if (!wideChatLayout.matches) return;
+        try { localStorage.setItem('shitposts-open', open ? '1' : '0'); } catch (e) { /* storage unavailable */ }
     }
 
     // On phones chat occupies the visible viewport, including while the
@@ -1481,10 +1490,10 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     chatToggle.addEventListener('click', () => {
-        setChatOpen(chatDrawer.hidden);
+        chooseChatOpen(chatDrawer.hidden);
         if (!chatDrawer.hidden) (modalChatLayout.matches ? chatClose : chatInput).focus();
     });
-    chatClose.addEventListener('click', () => { setChatOpen(false); chatToggle.focus(); });
+    chatClose.addEventListener('click', () => { chooseChatOpen(false); chatToggle.focus(); });
 
     chatDrawer.addEventListener('keydown', (e) => {
         if (!modalChatLayout.matches || e.key !== 'Tab') return;
@@ -1637,7 +1646,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.key === 'Escape' && !e.defaultPrevented) {
             if (closePopovers()) return;
             if (!chatDrawer.hidden && chatDrawer.contains(document.activeElement)) {
-                setChatOpen(false);
+                chooseChatOpen(false);
                 chatToggle.focus();
                 return;
             }
