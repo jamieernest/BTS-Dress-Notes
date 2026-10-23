@@ -26,7 +26,7 @@ The Eos TCP socket is owned by `connectToEOS()` in `server.js`: opened at start 
 
 ## Type to start a note
 
-`public/type-to-note.js` decides (unit-tested in `test/type-to-note.test.js`) when a keydown anywhere on `/` focuses `noteInput`; focus is what runs `startTyping`, and the browser delivers that same keystroke to the box, so don't `preventDefault` or insert the character yourself. Escape in the note box is `escapeAction()` in the same file: it blurs, and also calls `cancelNote` only when the box is empty (text, tags and frozen timecode are kept otherwise).
+`public/type-to-note.js` decides (unit-tested in `test/type-to-note.test.js`) when a keydown anywhere on `/` focuses `noteInput`; focus is what runs `startTyping`, and the browser delivers that same keystroke to the box, so don't `preventDefault` or insert the character yourself. Escape in the note box is `escapeAction()` in the same file: it blurs, and also calls `cancelNote` only when the box is empty (text, tags and frozen timecode are kept otherwise). An empty note box that loses focus is released by itself after `AUTO_RELEASE_MS` (3 s); `shouldAutoRelease()` keeps it if it has text or a tag is selected (tags live in the note form, so clicking one blurs the box).
 
 ## Timecode sources
 

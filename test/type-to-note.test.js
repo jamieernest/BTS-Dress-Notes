@@ -72,3 +72,13 @@ test('Escape is left alone elsewhere', () => {
     assert.equal(escapeAction(key('Escape', { isComposing: true }), noteInput, { noteInput, noteValue: '' }), null);
     assert.equal(escapeAction(key('a'), noteInput, { noteInput, noteValue: '' }), null);
 });
+
+test('an unfocused note box is released only while it has nothing in it', () => {
+    const { shouldAutoRelease, AUTO_RELEASE_MS } = require('../public/type-to-note');
+    assert.strictEqual(shouldAutoRelease({ noteValue: '', tagsSelected: false, noteFocused: false }), true);
+    assert.strictEqual(shouldAutoRelease({ noteValue: '   \n', tagsSelected: false, noteFocused: false }), true);
+    assert.strictEqual(shouldAutoRelease({ noteValue: 'half a note', tagsSelected: false, noteFocused: false }), false);
+    assert.strictEqual(shouldAutoRelease({ noteValue: '', tagsSelected: true, noteFocused: false }), false);
+    assert.strictEqual(shouldAutoRelease({ noteValue: '', tagsSelected: false, noteFocused: true }), false);
+    assert.ok(AUTO_RELEASE_MS >= 1000 && AUTO_RELEASE_MS <= 5000, 'a few seconds, not ~15');
+});
