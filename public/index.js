@@ -335,9 +335,14 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- Writing a note ---
+    // Set while a press below the note box is landing (see releaseComposer).
+    let composerHold = null;
+    let composerHoldTimer = null;
+    let composerHoldWatch = null;
     function updateComposer() {
-        const open = currentUser.isTyping || noteInput.value.length > 0 || document.activeElement === noteInput;
+        const open = currentUser.isTyping || noteInput.value.length > 0 || document.activeElement === noteInput || !!composerHold;
         composer.classList.toggle('open', open);
+        composer.classList.toggle('focused', composer.contains(document.activeElement) || !!composerHold);
         personalTimecodeContainer.classList.toggle('frozen', currentUser.isTyping);
         stampLabel.textContent = currentUser.isTyping ? 'Note taken at' : 'Taken when you start typing';
         personalTimecodeContainer.title = 'Locked when you start writing, so it matches the moment you saw';
@@ -1492,10 +1497,12 @@ document.addEventListener('DOMContentLoaded', function() {
         startAutoResumeTimer();
         updateComposer();
     });
+    composer.addEventListener('focusin', updateComposer);
     // Clicking or tabbing away from an empty note closes it (see type-to-note.js).
     // Checked once focus has landed, so a move to the note's own tags doesn't count.
     composer.addEventListener('focusout', () => {
         setTimeout(() => {
+            updateComposer();
             const action = typeToNote.leaveAction({
                 noteValue: noteInput.value,
                 focusInComposer: composer.contains(document.activeElement),
@@ -1504,6 +1511,50 @@ document.addEventListener('DOMContentLoaded', function() {
             if (action === 'cancel' && (currentUser.isTyping || selectedTags.length)) cancelNote();
         }, 0);
     });
+
+    // Leaving the note box shrinks it, which used to move whatever was pressed
+    // below it before the press ended, so the click missed. Hold its size until
+    // the click has landed and any popover it opened has closed, then shrink it
+    // without moving what was pressed (as far as the scroll position allows).
+    document.addEventListener('pointerdown', (e) => {
+        // A hold still set at the next press missed its click; let it go first.
+        if (composerHold && !composerHoldWatch) releaseComposer();
+        if (composerHold || composer.contains(e.target) || !composer.contains(document.activeElement)) return;
+        composerHold = { target: e.target };
+        updateComposer();
+    }, true);
+    // Touch can deliver the click a moment after the finger lifts.
+    for (const type of ['pointerup', 'pointercancel']) {
+        window.addEventListener(type, () => {
+            if (composerHold) composerHoldTimer = setTimeout(releaseComposer, 500);
+        }, true);
+    }
+    window.addEventListener('click', () => {
+        if (composerHold) setTimeout(releaseComposer, 0);
+    }, true);
+
+    function releaseComposer() {
+        if (!composerHold || composerHoldWatch) return;
+        clearTimeout(composerHoldTimer);
+        if (document.querySelector('.popover:not([hidden])')) {
+            composerHoldWatch = new MutationObserver(() => {
+                if (document.querySelector('.popover:not([hidden])')) return;
+                composerHoldWatch.disconnect();
+                composerHoldWatch = null;
+                releaseComposer();
+            });
+            composerHoldWatch.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+            return;
+        }
+        const { target } = composerHold;
+        const before = target.isConnected ? target.getBoundingClientRect().top : null;
+        composerHold = null;
+        updateComposer();
+        if (before !== null) {
+            const moved = target.getBoundingClientRect().top - before;
+            if (moved) window.scrollBy(0, moved);
+        }
+    }
 
     // Picking a tag keeps the cursor in the note box.
     tagsContainer.addEventListener('mousedown', (e) => {
