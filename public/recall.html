@@ -3,396 +3,110 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BTS Dress Notes - Recall</title>
+    <title>Past notes · BTS Dress Notes</title>
+    <link rel="stylesheet" href="base.css">
+    <link rel="stylesheet" href="index-style.css">
     <link rel="stylesheet" href="recall-style.css">
+    <script src="recall-boot.js"></script>
 </head>
 <body>
-    <div class="container">
-        <header>
-            <h1>BTS Dress Notes - Recall</h1>
-            <p class="subtitle">Review and filter exported notes from previous sessions</p>
-            <a href="/" class="back-link">← Back to Live Notes</a>
-        </header>
-        
-        <div class="upload-section">
-            <h2>Upload Exported File</h2>
-            <div class="upload-area" id="uploadArea">
-                <p>Drag and drop a JSON file here, or click to browse</p>
-                <input type="file" id="fileInput" class="file-input" accept=".json">
-                <label for="fileInput" class="file-label">Choose File</label>
-            </div>
-            <div class="file-info" id="fileInfo">
-                <strong>File:</strong> <span id="fileName">No file selected</span> | 
-                <strong>Type:</strong> <span id="fileType">-</span> | 
-                <strong>Notes:</strong> <span id="fileNotesCount">0</span>
-            </div>
+    <header class="topbar sub">
+        <a href="/" class="btn ghost back">&larr; Notes</a>
+        <div class="brand">Past notes<span id="showName" class="show-name" hidden></span></div>
+        <div class="topbar-actions">
+            <a id="playbackLink" href="/playback.html" class="btn ghost video-link" aria-label="Open video" title="Open video" hidden><svg class="icon" aria-hidden="true"><use href="icons.svg#i-video"/></svg><span>Video</span></a>
+            <a href="/recall.html" id="openAnother" class="btn ghost" hidden>Open another</a>
         </div>
-        
-        <div class="notes-section">
-            <div class="notes-header">
-                <h2>Imported Notes</h2>
-                <div class="stats">
-                    <span id="totalNotes">Total: 0 notes</span>
-                    <span id="filteredNotes">Showing: 0 notes</span>
-                </div>
-            </div>
-            
-            <div class="filter-section">
-                <div class="tags-label">Filter by Act:</div>
-                <div class="act-filter" id="recallActFilter">
-                    <div class="filter-tag active" data-act="all">All Acts</div>
-                    <div class="filter-tag" data-act="Preshow">Preshow</div>
-                </div>
-                
-                <div class="tags-label">Filter by Tags:</div>
-                <div class="filter-tags" id="filterTags">
-                    <div class="filter-tag active" data-tag="all">All Notes</div>
-                    <!-- Filter tags will be populated by JavaScript -->
-                </div>
-            </div>
-            
-            <div class="notes-list" id="notesList">
-                <div style="text-align: center; opacity: 0.7; padding: 2rem;">
-                    Upload a JSON file to view notes
-                </div>
-            </div>
-        </div>
-        
-        <footer>
-            <p>BTS Dress Notes &copy; 2025 | Vibecoded by Jamie with ❤️</p>
-        </footer>
-    </div>
+    </header>
 
+    <main class="page">
+        <input type="file" id="fileInput" accept=".json,application/json" hidden>
+        <p id="fileError" class="field-error" role="alert" hidden></p>
+
+        <div id="showLoading" class="notes loading-region is-loading" aria-busy="true">
+            <div class="toolbar skeleton" data-loading-placeholder aria-hidden="true"><span class="bone search-bone"></span></div>
+            <div id="showLoadingList" class="notes-list skeleton" data-loading-placeholder aria-hidden="true">
+                <div class="group-head"><span class="bone head-bone"></span></div>
+                <div class="note">
+                    <span class="bone avatar-bone"></span>
+                    <div class="note-main">
+                        <div class="note-head"><span class="bone meta-bone"></span></div>
+                        <span class="bone line w-80"></span>
+                        <span class="bone line w-45"></span>
+                        <div class="note-foot"><span class="bone chip-bone"></span></div>
+                    </div>
+                </div>
+                <div class="note">
+                    <span class="bone avatar-bone"></span>
+                    <div class="note-main">
+                        <div class="note-head"><span class="bone meta-bone"></span></div>
+                        <span class="bone line w-60"></span>
+                        <div class="note-foot"><span class="bone chip-bone"></span></div>
+                    </div>
+                </div>
+                <div class="note">
+                    <span class="bone avatar-bone"></span>
+                    <div class="note-main">
+                        <div class="note-head"><span class="bone meta-bone"></span></div>
+                        <span class="bone line w-90"></span>
+                        <span class="bone line w-30"></span>
+                        <div class="note-foot"><span class="bone chip-bone"></span></div>
+                    </div>
+                </div>
+                <div class="note">
+                    <span class="bone avatar-bone"></span>
+                    <div class="note-main">
+                        <div class="note-head"><span class="bone meta-bone"></span></div>
+                        <span class="bone line w-50"></span>
+                        <div class="note-foot"><span class="bone chip-bone"></span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="dropZone" class="empty drop-zone">
+            <p class="empty-title">Open a notes file</p>
+            <p class="muted">Choose a <strong>.json</strong> notes file from your device, or drop it here.</p>
+            <button type="button" id="chooseFile" class="btn primary">Choose file</button>
+        </div>
+
+        <section id="savedShows" class="saved-shows" aria-labelledby="savedShowsTitle" hidden>
+            <h2 id="savedShowsTitle" class="saved-shows-title">Saved shows</h2>
+            <div id="savedShowsList" class="saved-shows-list"></div>
+        </section>
+
+        <section id="notesSection" class="notes" aria-label="Notes" hidden>
+            <div class="toolbar">
+                <label class="search">
+                    <svg class="icon"><use href="icons.svg#i-search"/></svg>
+                    <input type="search" id="searchInput" placeholder="Search notes, people, cues" aria-label="Search notes">
+                </label>
+                <button type="button" id="actFilter" class="select" aria-haspopup="listbox" aria-expanded="false" title="Filter by scene"></button>
+                <button type="button" id="tagFilter" class="select" aria-haspopup="listbox" aria-expanded="false" title="Filter by tag"></button>
+                <button type="button" id="clearFilters" class="btn outline clear-filters" title="Show all notes again" hidden><svg class="icon" aria-hidden="true"><use href="icons.svg#i-close"/></svg>Clear filters</button>
+                <div class="toolbar-end">
+                    <span id="notesCount" class="muted"></span>
+                </div>
+            </div>
+            <div id="notesList" class="notes-list"></div>
+            <div id="notesNoMatch" class="empty" hidden>
+                <p class="empty-title">No notes match these filters</p>
+                <button type="button" class="btn outline" data-action="clear-filters"><svg class="icon" aria-hidden="true"><use href="icons.svg#i-close"/></svg>Clear filters</button>
+            </div>
+        </section>
+    </main>
+
+    <div id="actFilterPopover" class="popover filter-popover" role="listbox" aria-label="Filter by scene" hidden></div>
+    <div id="tagFilterPopover" class="popover filter-popover" role="listbox" aria-label="Filter by tag" hidden></div>
+
+    <script src="keepalive.js"></script>
     <script src="note-order.js"></script>
-    <script>
-        // All the JavaScript code remains exactly the same as in the previous version
-        // Only the CSS has been changed for the background
-        document.addEventListener('DOMContentLoaded', function() {
-            const uploadArea = document.getElementById('uploadArea');
-            const fileInput = document.getElementById('fileInput');
-            const fileInfo = document.getElementById('fileInfo');
-            const fileName = document.getElementById('fileName');
-            const fileType = document.getElementById('fileType');
-            const fileNotesCount = document.getElementById('fileNotesCount');
-            const filterTagsContainer = document.getElementById('filterTags');
-            const filterActContainer = document.getElementById('recallActFilter');
-            const notesList = document.getElementById('notesList');
-            const totalNotes = document.getElementById('totalNotes');
-            const filteredNotes = document.getElementById('filteredNotes');
-            
-            let allNotes = [];
-            let availableTags = [];
-            let filterTag = 'all';
-            let filterAct = 'all';
-            
-            // Drag and drop functionality
-            uploadArea.addEventListener('dragover', function(e) {
-                e.preventDefault();
-                uploadArea.classList.add('drag-over');
-            });
-            
-            uploadArea.addEventListener('dragleave', function() {
-                uploadArea.classList.remove('drag-over');
-            });
-            
-            uploadArea.addEventListener('drop', function(e) {
-                e.preventDefault();
-                uploadArea.classList.remove('drag-over');
-                
-                if (e.dataTransfer.files.length) {
-                    handleFile(e.dataTransfer.files[0]);
-                }
-            });
-            
-            uploadArea.addEventListener('click', function() {
-                fileInput.click();
-            });
-            
-            fileInput.addEventListener('change', function() {
-                if (fileInput.files.length) {
-                    handleFile(fileInput.files[0]);
-                }
-            });
-            recallActFilter.addEventListener('click', function(e) {
-                if (e.target.classList.contains('filter-tag')) {
-                    const actValue = e.target.getAttribute('data-act');
-                    filterAct = actValue;
-                    
-                    document.querySelectorAll('.act-filter .filter-tag').forEach(t => t.classList.remove('active'));
-                    e.target.classList.add('active');
-                    
-                    updateNotesList();
-                    updateStats();
-                }
-            });
-            
-            function handleFile(file) {
-                const fileExtension = file.name.split('.').pop().toLowerCase();
-                
-                if (fileExtension !== 'json') {
-                    alert('Please select a JSON file');
-                    return;
-                }
-                
-                fileName.textContent = file.name;
-                fileType.textContent = fileExtension.toUpperCase();
-                
-                const reader = new FileReader();
-                
-                reader.onload = function(e) {
-                    try {
-                        if (fileExtension === 'json') {
-                            const data = JSON.parse(e.target.result);
-                            processJsonData(data);
-                        }
-                    } catch (error) {
-                        alert('Error parsing file: ' + error.message);
-                    }
-                };
-                
-                reader.readAsText(file);
-            }
-            
-            function processJsonData(data) {
-                if (data.notes && Array.isArray(data.notes)) {
-                    allNotes = data.notes;
-                    fileNotesCount.textContent = allNotes.length;
-                    fileInfo.style.display = 'block';
-                    
-                    // Extract tags from notes
-                    extractTags();
-                    updateNotesList();
-                    updateFilterTags();
-                    updateFilterActs();
-                    updateStats();
-                } else {
-                    alert('Invalid JSON format: Expected "notes" array');
-                }
-            }
-            
-            function parseTimecode(timecodeStr) {
-                if (!timecodeStr) return { hours: 0, minutes: 0, seconds: 0, frames: 0 };
-                
-                const parts = timecodeStr.replace(/"/g, '').split(':');
-                if (parts.length === 4) {
-                    return {
-                        hours: parseInt(parts[0]) || 0,
-                        minutes: parseInt(parts[1]) || 0,
-                        seconds: parseInt(parts[2]) || 0,
-                        frames: parseInt(parts[3]) || 0
-                    };
-                }
-                
-                return { hours: 0, minutes: 0, seconds: 0, frames: 0 };
-            }
-            
-            function extractTags() {
-                availableTags = [];
-                const tagMap = new Map();
-                
-                allNotes.forEach(note => {
-                    if (note.tags && Array.isArray(note.tags)) {
-                        note.tags.forEach(tag => {
-                            if (typeof tag === 'string') {
-                                if (!tagMap.has(tag)) {
-                                    tagMap.set(tag, {
-                                        id: tag,
-                                        name: tag,
-                                        color: getRandomColor()
-                                    });
-                                }
-                            } else if (tag.id && tag.name) {
-                                if (!tagMap.has(tag.id)) {
-                                    tagMap.set(tag.id, {
-                                        id: tag.id,
-                                        name: tag.name,
-                                        color: tag.color || getRandomColor()
-                                    });
-                                }
-                            }
-                        });
-                    }
-                });
-                
-                availableTags = Array.from(tagMap.values());
-            }
-            
-            function updateFilterTags() {
-                filterTagsContainer.innerHTML = '<div class="filter-tag active" data-tag="all">All Notes</div>';
-                
-                availableTags.forEach(tag => {
-                    const filterTagElement = `
-                        <div class="filter-tag" data-tag="${tag.id}" style="background-color: ${tag.color}; color: #000;">
-                            ${tag.name}
-                        </div>
-                    `;
-                    filterTagsContainer.innerHTML += filterTagElement;
-                });
-                
-                document.querySelectorAll('.filter-tag').forEach(tag => {
-                    tag.addEventListener('click', function() {
-                        const tagId = this.getAttribute('data-tag');
-                        filterTag = tagId;
-                        
-                        document.querySelectorAll('.filter-tag').forEach(t => t.classList.remove('active'));
-                        this.classList.add('active');
-                        
-                        updateNotesList();
-                        updateStats();
-                        updateFilterActs();
-                    });
-                });
-            }
-
-            function updateFilterActs() {
-                // Get unique acts from imported notes
-                const uniqueActs = [...new Set(allNotes.map(note => note.act))];
-                
-                const actFilterContainer = document.getElementById('recallActFilter');
-                actFilterContainer.innerHTML = '<div class="filter-tag active" data-act="all">All Acts</div>';
-                
-                uniqueActs.forEach(act => {
-                    const actElement = `
-                        <div class="filter-tag" data-act="${act}">${act}</div>
-                    `;
-                    actFilterContainer.innerHTML += actElement;
-                });
-            }
-
-            function updateNotesList() {
-                if (allNotes.length === 0) {
-                    notesList.innerHTML = '<div style="text-align: center; opacity: 0.7; padding: 2rem;">No notes to display</div>';
-                    return;
-                }
-                
-                // Filter notes
-                let filteredNotes = allNotes;
-                if (filterTag !== 'all') {
-                    filteredNotes = allNotes.filter(note => 
-                        note.tags && note.tags.includes(filterTag)
-                    );
-                }
-                
-                if (filterAct !== 'all') {
-                    filteredNotes = filteredNotes.filter(note => 
-                        note.act === filterAct
-                    );
-                }
-                // Newest first, as on the main page (the exported file stays oldest first)
-                const chronologicalNotes = NoteOrder.newestFirst(filteredNotes);
-                
-                notesList.innerHTML = chronologicalNotes.map(note => {
-                    const timecodeDisplay = formatTimecode(note.timecode);
-                    
-                    const tagElements = (note.tags || []).map(tagId => {
-                        const tag = availableTags.find(t => t.id === tagId);
-                        if (tag) {
-                            return `<span class="note-tag" style="background-color: ${tag.color}; color: #000;">${tag.name}</span>`;
-                        }
-                        return `<span class="note-tag" style="background-color: #cccccc; color: #000;">${tagId}</span>`;
-                    }).join('');
-                    
-                    const commentElements = (note.comments || []).map(comment => {
-                        const commentTime = new Date(comment.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                        return `
-                            <div class="comment" style="background: rgba(255,255,255,0.1); padding: 0.5rem; border-radius: 5px; margin-top: 0.3rem; border-left: 2px solid rgba(76, 175, 80, 0.5);">
-                                <div style="display: flex; justify-content: space-between; font-size: 0.8rem; opacity: 0.8; margin-bottom: 0.2rem;">
-                                    <span style="font-weight: bold; color: #4CAF50;">${comment.user}</span>
-                                    <span>${commentTime}</span>
-                                </div>
-                                <div style="font-size: 0.9rem;">${comment.text}</div>
-                            </div>
-                        `;
-                    }).join('');
-                    
-                    return `
-                        <div class="note-item" data-tags="${(note.tags || []).join(',')}" data-act="${note.act || 'Act 1'}">
-                            <div class="note-header">
-                                <span class="note-user">${note.user}</span>
-                                <span class="note-timecode">
-                                    ${timecodeDisplay} 
-                                    <span class="note-lx-cue">LX: ${note.lxCue || 'N/A'}</span>
-                                    @ ${note.frameRate || '30 fps'}
-                                </span>
-                                <span class="note-act">${note.act || 'Act 1'}</span>
-                            </div>
-                            <div class="note-text">${note.text}</div>
-                            ${(note.tags || []).length > 0 ? `<div class="note-tags">${tagElements}</div>` : ''}
-                            ${(note.comments || []).length > 0 ? `
-                                <div class="comments-section" style="margin-top: 1rem;">
-                                    <div style="font-size: 0.9rem; opacity: 0.8; margin-bottom: 0.5rem;">Comments:</div>
-                                    ${commentElements}
-                                </div>
-                            ` : ''}
-                        </div>
-                    `;
-                }).join('');
-            }
-            
-            function updateStats() {
-                totalNotes.textContent = `Total: ${allNotes.length} notes`;
-                
-                let filteredNotes = allNotes;
-                if (filterTag !== 'all') {
-                    filteredNotes = filteredNotes.filter(note => 
-                        note.tags && note.tags.includes(filterTag)
-                    );
-                }
-                if (filterAct !== 'all') {
-                    filteredNotes = filteredNotes.filter(note => 
-                        note.act === filterAct
-                    );
-                }
-                
-                filteredNotes.textContent = `Showing notes`;
-            }
-            
-            function formatTimecode(tc) {
-                if (!tc || typeof tc !== 'object') {
-                    return '00:00:00:00';
-                }
-                return `${(tc.hours || 0).toString().padStart(2, '0')}:${(tc.minutes || 0).toString().padStart(2, '0')}:${(tc.seconds || 0).toString().padStart(2, '0')}:${(tc.frames || 0).toString().padStart(2, '0')}`;
-            }
-
-            function updateActFilter() {
-                // Get unique acts from imported notes
-                const uniqueActs = [...new Set(allNotes.map(note => note.act))];
-                
-                const actFilterContainer = document.getElementById('recallActFilter');
-                actFilterContainer.innerHTML = '<div class="filter-tag active" data-act="all">All Acts</div>';
-                
-                uniqueActs.forEach(act => {
-                    const actElement = `
-                        <div class="filter-tag" data-act="${act}">${act}</div>
-                    `;
-                    actFilterContainer.innerHTML += actElement;
-                });
-                
-                // Re-attach event listeners
-                document.querySelectorAll('.act-filter .filter-tag').forEach(tag => {
-                    tag.addEventListener('click', function() {
-                        const actValue = this.getAttribute('data-act');
-                        filterAct = actValue;
-                        
-                        document.querySelectorAll('.act-filter .filter-tag').forEach(t => t.classList.remove('active'));
-                        this.classList.add('active');
-                        
-                        updateNotesList();
-                        updateStats();
-                    });
-                });
-            }
-            
-            function getRandomColor() {
-                const colors = [
-                    '#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', 
-                    '#FFEAA7', '#DDA0DD', '#98D8C8', '#F7DC6F',
-                    '#E63946', '#F4A261', '#9B5DE5', '#00B4D8',
-                    '#06D6A0', '#118AB2', '#8AC926', '#FF6F91'
-                ];
-                return colors[Math.floor(Math.random() * colors.length)];
-            }
-        });
-    </script>
+    <script src="vendor/purify.min.js"></script>
+    <script src="safe-html.js"></script>
+    <script src="timecode-format.js"></script>
+    <script src="note-view.js"></script>
+    <script src="loading-state.js"></script>
+    <script src="playback-context.js"></script>
+    <script src="recall.js"></script>
 </body>
 </html>

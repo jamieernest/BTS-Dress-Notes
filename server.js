@@ -14,16 +14,49 @@ const { listIpv4Interfaces, resolveInterface } = require('./net-iface');
 const { createGatewayLock } = require('./gateway-lock');
 const { loadSettings, saveSettings } = require('./settings');
 const { FileSessionStore } = require('./session-store');
-const { authorsOf, applyAuthors, backupFilename, findRestorableBackup, writeBackupFile } = require('./notes-backup');
+const { authorsOf, applyAuthors, backupFilename, backupTime, checkBackup, findRestorableBackup, writeBackupFile } = require('./notes-backup');
+const savedShows = require('./saved-shows');
+const resetNotes = require('./reset-notes');
+const RESETS_DIR = process.env.RESETS_DIR || path.join(__dirname, 'reset-notes');
+const RESET_KEEP_MS = Number(process.env.RESET_KEEP_MS) || resetNotes.KEEP_MS;
+const SAVED_SHOWS_DIR = process.env.SAVED_SHOWS_DIR || path.join(__dirname, 'saved-shows');
+const PLAYBACK_DEMO = process.env.PLAYBACK_DEMO === '1';
+const recordings = require('./recordings');
+const RECORDINGS_DIR = process.env.RECORDINGS_DIR || path.join(__dirname, 'recordings');
+// One uploaded part at most; a full dress from Vor is a few GB.
+const RECORDING_MAX_BYTES = Number(process.env.RECORDING_MAX_BYTES) || 32 * 1024 ** 3;
 const { sanitizeAge, insertionIndex } = require('./public/note-order');
 const { canEditNote } = require('./public/note-author');
+const input = require('./note-input');
+const showLog = require('./show-log');
+const crypto = require('crypto');
+const helmet = require('helmet');
 const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
 
 const app = express();
 const server = http.createServer(app);
+// Node ends any request after 5 minutes; a video upload over venue Wi-Fi can take far longer.
+server.requestTimeout = 6 * 60 * 60 * 1000;
 // A restarted server is offered chat copies of up to ~5 MB (the browser's
 // localStorage quota), well above the 1 MB default for one incoming message.
-const io = socketIo(server, { maxHttpBufferSize: 16e6 });
+// A socket is only accepted from this app's own pages: a browser sends its
+// page's Origin on the handshake, and one from another site is refused (on top
+// of the SameSite=Lax login cookie, which such a handshake does not carry).
+// Clients that send no Origin (scripts, the tests) are not browsers on another site.
+function sameOrigin(req) {
+    const origin = req.headers.origin;
+    if (!origin) return true;
+    const host = String(req.headers['x-forwarded-host'] || req.headers.host || '').split(',')[0].trim();
+    try {
+        return new URL(origin).host === host;
+    } catch (error) {
+        return false;
+    }
+}
+const io = socketIo(server, {
+    maxHttpBufferSize: 16e6,
+    allowRequest: (req, callback) => callback(null, sameOrigin(req))
+});
 
 const eosHost = process.env.EOS_HOST || '10.10.160.143';
 const eosPort = process.env.EOS_PORT || 3037;
@@ -73,23 +106,71 @@ if (!SESSION_SECRET) {
 app.set('trust proxy', true);
 io.engine.trustProxy = true;
 
-// Session cookie is signed by this app; secure:false is intentional - the
-// venue LAN serves this app over plain HTTP, and the goal is to minimize
-// dependence on anything outside the venue LAN (see captain's decision).
+const PORT = process.env.PORT || 80;
+
+// Session cookie is signed by this app. The venue LAN serves this app over
+// plain HTTP, and the goal is to minimize dependence on anything outside the
+// venue LAN (see captain's decision), so the cookie is only marked Secure when
+// the request itself came over HTTPS.
 // Sessions are kept in git-ignored local-sessions.json so logins survive a
 // server restart.
+// The login lasts SESSION_IDLE_MS since the browser last talked to the server
+// (rolling), not since login: open pages keep it alive (see /session), so a
+// long tech day does not log everyone out mid-show.
+// Cookies are shared by every port on a host, so the default name carries the
+// port: two instances (or another Express app's connect.sid) on one machine
+// would otherwise overwrite each other's login.
+const SESSION_IDLE_MS = 12 * 60 * 60 * 1000;
+const sessionStore = new FileSessionStore({ file: process.env.SESSIONS_FILE || path.join(__dirname, 'local-sessions.json') });
 const sessionMiddleware = session({
-    store: new FileSessionStore({ file: process.env.SESSIONS_FILE || path.join(__dirname, 'local-sessions.json') }),
+    name: process.env.SESSION_COOKIE_NAME || `bts-notes.sid.${PORT}`,
+    store: sessionStore,
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
+    rolling: true,
     cookie: {
-        secure: false,
+        secure: 'auto', // only when the request came over HTTPS (directly or via a trusted proxy)
         httpOnly: true,
         sameSite: 'lax',
-        maxAge: 12 * 60 * 60 * 1000 // 12 hours - long enough to cover a show
+        maxAge: SESSION_IDLE_MS
     }
 });
+app.disable('x-powered-by');
+
+function originOf(url) {
+    try {
+        return url ? [new URL(url).origin] : [];
+    } catch (error) {
+        return [];
+    }
+}
+
+// Security headers. The Content-Security-Policy only lets the pages run
+// scripts served from this app (no inline scripts or event handlers, which is
+// what an injected note would need), so keep all JavaScript in .js files.
+// Inline style attributes are still allowed: the templates use them, and tag
+// colours are checked before they go into one (public/safe-html.js).
+// The app is served over plain HTTP on the venue LAN, so nothing may push
+// browsers to HTTPS: no HSTS and no upgrade-insecure-requests.
+// form-action also lists Keycloak, where /logout redirects the logout form.
+app.use(helmet({
+    contentSecurityPolicy: {
+        useDefaults: true,
+        directives: {
+            'script-src': ["'self'"],
+            'style-src': ["'self'", "'unsafe-inline'"],
+            'img-src': ["'self'", 'data:'],
+            'connect-src': ["'self'"],
+            // playback.html plays uploaded videos, or one opened locally through a blob: URL.
+            'media-src': ["'self'", 'blob:'],
+            'form-action': ["'self'", ...originOf(KEYCLOAK_ISSUER)],
+            'upgrade-insecure-requests': null
+        }
+    },
+    strictTransportSecurity: false
+}));
+
 app.use(sessionMiddleware);
 
 // openid-client v6 is ESM-only; loaded once via dynamic import at startup.
@@ -130,24 +211,75 @@ function currentUrlFor(req) {
     return new URL(req.originalUrl, `${req.protocol}://${req.get('host')}`);
 }
 
-// Authorization Code + PKCE redirect to Keycloak.
-app.get('/login', async (req, res) => {
-    if (!oidcConfig) {
-        return res.status(503).send('Keycloak SSO is not configured or unreachable. Set KEYCLOAK_ISSUER, KEYCLOAK_CLIENT_ID, KEYCLOAK_CLIENT_SECRET and SESSION_SECRET, then restart the server.');
+function isLoggedIn(req) {
+    return !!(req.session && req.session.user && req.session.user.sub);
+}
+
+// Only a path on this site may be returned to after login (no open redirect).
+function safeReturnTo(value) {
+    return typeof value === 'string' && value.startsWith('/') && !value.startsWith('//') && !value.includes('\\')
+        ? value
+        : '/';
+}
+
+// Logins in progress, keyed by their OAuth state. Kept here rather than in the
+// session: the session is saved whole, last write wins, so two tabs bounced to
+// /login at once (or a stale request finishing after /callback) used to
+// overwrite each other's login, failing it or dropping the user who had just
+// logged in. Lost on restart, which only means that login starts again.
+const LOGIN_TTL_MS = 10 * 60 * 1000;
+const MAX_PENDING_LOGINS = 1000;
+const pendingLogins = new Map(); // state -> { codeVerifier, returnTo, browserKey, createdAt }
+
+// Each login is also tied to the browser that started it, by a cookie named
+// for its state (one per login, so parallel tabs don't overwrite each other).
+// Without it, someone could start a login, sign in as themselves and hand
+// their /callback URL to someone else, whose browser would then be signed in
+// as them, and what they wrote would be stored under the wrong name.
+const loginCookieName = (state) => `bts-notes.login.${PORT}.${state}`;
+function loginCookieOf(req, state) {
+    const prefix = `${loginCookieName(state)}=`;
+    const found = (req.headers.cookie || '').split(/;\s*/).find((c) => c.startsWith(prefix));
+    return found ? found.slice(prefix.length) : '';
+}
+
+function prunePendingLogins(now = Date.now()) {
+    for (const [state, pending] of pendingLogins) {
+        if (now - pending.createdAt > LOGIN_TTL_MS || pendingLogins.size > MAX_PENDING_LOGINS) {
+            pendingLogins.delete(state); // oldest first: a Map keeps insertion order
+        } else {
+            break;
+        }
     }
-    const codeVerifier = oidc.randomPKCECodeVerifier();
-    const codeChallenge = await oidc.calculatePKCECodeChallenge(codeVerifier);
-    const state = oidc.randomState();
-    req.session.oidc = { codeVerifier, state };
-    const redirectUri = `${req.protocol}://${req.get('host')}/callback`;
-    const authUrl = oidc.buildAuthorizationUrl(oidcConfig, {
-        redirect_uri: redirectUri,
-        scope: 'openid profile email',
-        code_challenge: codeChallenge,
-        code_challenge_method: 'S256',
-        state
-    });
-    res.redirect(authUrl.href);
+}
+
+// Authorization Code + PKCE redirect to Keycloak.
+app.get('/login', async (req, res, next) => {
+    try {
+        const returnTo = safeReturnTo(req.query.returnTo);
+        if (isLoggedIn(req)) return res.redirect(returnTo);
+        if (!oidcConfig) {
+            return res.status(503).send('Keycloak SSO is not configured or unreachable. Set KEYCLOAK_ISSUER, KEYCLOAK_CLIENT_ID, KEYCLOAK_CLIENT_SECRET and SESSION_SECRET, then restart the server.');
+        }
+        const codeVerifier = oidc.randomPKCECodeVerifier();
+        const codeChallenge = await oidc.calculatePKCECodeChallenge(codeVerifier);
+        const state = oidc.randomState();
+        prunePendingLogins();
+        const browserKey = crypto.randomBytes(18).toString('base64url');
+        pendingLogins.set(state, { codeVerifier, returnTo, browserKey, createdAt: Date.now() });
+        res.cookie(loginCookieName(state), browserKey, { httpOnly: true, sameSite: 'lax', secure: req.secure, path: '/callback', maxAge: LOGIN_TTL_MS });
+        const redirectUri = `${req.protocol}://${req.get('host')}/callback`;
+        const authUrl = oidc.buildAuthorizationUrl(oidcConfig, {
+            redirect_uri: redirectUri,
+            scope: 'openid profile email',
+            code_challenge: codeChallenge,
+            code_challenge_method: 'S256',
+            state
+        });
+        res.redirect(authUrl.href);
+    } catch (error) {
+        next(error);
+    }
 });
 
 // Exchanges the authorization code, populates req.session.user from the
@@ -156,100 +288,262 @@ app.get('/callback', async (req, res) => {
     if (!oidcConfig) {
         return res.status(503).send('Keycloak SSO is not configured or unreachable.');
     }
-    const pending = req.session.oidc;
-    if (!pending || !pending.codeVerifier || !pending.state) {
-        return res.redirect('/login');
+    const state = typeof req.query.state === 'string' ? req.query.state : '';
+    const pending = pendingLogins.get(state);
+    if (!pending || Date.now() - pending.createdAt > LOGIN_TTL_MS || loginCookieOf(req, state) !== pending.browserKey) {
+        pendingLogins.delete(state);
+        // A reused or expired callback URL (back button, server restart mid-login),
+        // or one from a login started in another browser.
+        return res.redirect(isLoggedIn(req) ? '/' : '/login');
     }
+    pendingLogins.delete(state); // single use
+    res.clearCookie(loginCookieName(state), { httpOnly: true, sameSite: 'lax', secure: req.secure, path: '/callback' });
     try {
         const tokens = await oidc.authorizationCodeGrant(oidcConfig, currentUrlFor(req), {
             pkceCodeVerifier: pending.codeVerifier,
-            expectedState: pending.state
+            expectedState: state
         });
         const claims = tokens.claims();
         if (!claims || !claims.sub) {
             throw new Error('Keycloak did not return identity claims');
         }
+        // A fresh session id on login (no session fixation), saved before the
+        // redirect so the next page load already sees the user.
+        await new Promise((resolve, reject) => req.session.regenerate((err) => (err ? reject(err) : resolve())));
         req.session.user = {
             sub: claims.sub,
             name: claims.name || claims.preferred_username || claims.email || claims.sub,
             email: claims.email || null,
             idToken: tokens.id_token || null
         };
-        delete req.session.oidc;
-        const returnTo = req.session.returnTo || '/';
-        delete req.session.returnTo;
-        res.redirect(returnTo);
+        await new Promise((resolve, reject) => req.session.save((err) => (err ? reject(err) : resolve())));
+        res.redirect(pending.returnTo);
     } catch (error) {
         console.error('Keycloak callback failed:', error.message);
-        res.status(401).send('Login failed. Please try again.');
+        res.status(401).send('Login failed. <a href="/login">Try again</a>.');
     }
 });
 
+// Where a logout ends up (straight from /logout, or back from Keycloak's
+// end-session page, so its URL must be one of the Keycloak client's "Valid post
+// logout redirect URIs"), and where a page goes when its login was logged out
+// elsewhere. Without it a logout went on to /login, and Keycloak (whose own
+// login can outlive ours) could sign the person straight back in.
+// `returnTo` is the page "Log in again" goes back to.
+const loggedOutPage = fs.readFileSync(path.join(__dirname, 'views', 'logged-out.html'), 'utf8');
+app.get('/logged-out', (req, res) => {
+    const returnTo = safeReturnTo(req.query.returnTo);
+    if (isLoggedIn(req)) return res.redirect(returnTo);
+    const loginUrl = returnTo === '/' ? '/login' : `/login?returnTo=${encodeURIComponent(returnTo)}`;
+    res.set('Cache-Control', 'no-store');
+    res.type('html').send(loggedOutPage.replace('{{loginUrl}}', loginUrl));
+});
+// The page's stylesheet and icon, the only files served without a login.
+for (const file of ['base.css', 'favicon.ico']) {
+    app.get(`/${file}`, (req, res) => res.sendFile(path.join(__dirname, 'public', file)));
+}
+
 // Destroys the local session and redirects to Keycloak's end-session endpoint.
-app.get('/logout', (req, res) => {
-    const idToken = req.session.user && req.session.user.idToken;
-    req.session.destroy(() => {
+// POST only (the pages use a form), so a link or image on another site cannot
+// log anyone out; the SameSite=Lax cookie is not sent on a cross-site POST.
+app.get('/logout', (req, res) => res.redirect('/'));
+app.post('/logout', (req, res) => {
+    const idToken = req.session && req.session.user && req.session.user.idToken;
+    const finish = () => {
         if (oidcConfig) {
             try {
                 const endSessionUrl = oidc.buildEndSessionUrl(oidcConfig, {
-                    post_logout_redirect_uri: `${req.protocol}://${req.get('host')}/login`,
+                    post_logout_redirect_uri: `${req.protocol}://${req.get('host')}/logged-out`,
                     ...(idToken ? { id_token_hint: idToken } : {})
                 });
                 return res.redirect(endSessionUrl.href);
             } catch (error) {
-                // Issuer has no end_session_endpoint configured - fall through to /login.
+                // Issuer has no end_session_endpoint configured - only our login ends.
             }
         }
-        res.redirect('/login');
-    });
+        res.redirect('/logged-out');
+    };
+    if (!req.session) return finish();
+    // Pages of this login still open on a socket are logged out too (they
+    // were authenticated at their handshake) and go to /logged-out.
+    for (const socket of io.sockets.sockets.values()) {
+        if (socket.request.sessionID !== req.sessionID) continue;
+        socket.emit('logged-out');
+        socket.disconnect(true);
+    }
+    req.session.destroy(finish);
 });
 
 // Auth guard - no page is exempt, including static assets, overlay/cast
-// pages and the recall/backup-viewer page. /login, /callback and /logout
-// above are registered before this and stay reachable without a session.
+// pages and the recall/backup-viewer page. /login, /callback, /logout and
+// /logged-out (with base.css and the favicon) above are registered before
+// this and stay reachable without a session.
+// It never writes the session: a page navigation is sent to /login with the
+// page to come back to in the URL, and anything else (scripts, fetches) just
+// gets a 401, so a stray asset request cannot become the post-login page.
 function requireAuth(req, res, next) {
-    if (req.session && req.session.user && req.session.user.sub) {
+    if (isLoggedIn(req)) {
         return next();
     }
-    req.session.returnTo = req.originalUrl;
-    res.redirect('/login');
+    if (req.method === 'GET' && req.accepts(['json', 'html']) === 'html') {
+        return res.redirect(`/login?returnTo=${encodeURIComponent(req.originalUrl)}`);
+    }
+    res.status(401).json({ error: 'unauthorized' });
 }
 
 app.use(requireAuth);
 
+// Open pages call this every few minutes. Every response renews the rolling
+// session cookie, and a page on a WebSocket otherwise makes no HTTP requests.
+app.get('/session', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ name: req.session.user.name, sub: req.session.user.sub });
+});
+
+// Saved shows for Past notes (saved from the config page, see saved-shows.js).
+app.get('/shows', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const counts = recordings.partCounts(RECORDINGS_DIR);
+    res.json((await savedShows.listShows(SAVED_SHOWS_DIR)).map(show => ({ ...show, recordingParts: counts.get(show.id) || 0 })));
+});
+app.get('/shows/:id', async (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const show = await savedShows.readShow(SAVED_SHOWS_DIR, req.params.id);
+    if (!show) return res.status(404).json({ error: 'not found' });
+    res.json(show);
+});
+
+// Recordings uploaded for the live notes (`live`) or a saved show (its id),
+// played on playback.html by everyone who opens those notes (recordings.js).
+// Uploads are the raw file as the request body, details in the query; any
+// logged-in person may add, retime or remove a part, like the config page.
+const isCollection = (collection) => collection === 'live' || savedShows.isShowId(collection);
+const collectionExists = async (collection) => collection === 'live'
+    || (isCollection(collection) && !!(await savedShows.readShow(SAVED_SHOWS_DIR, collection)));
+const recordingsOf = (collection) => recordings.listParts(RECORDINGS_DIR, collection).map(part => ({
+    id: part.id, name: part.name, type: part.type, size: part.size, startAt: part.startAt,
+    duration: part.duration, uploadedAt: part.uploadedAt, uploadedBy: part.uploadedBy,
+    url: `/recordings/${collection}/${part.id}`
+}));
+function recordingsChanged(collection) {
+    io.emit('recordings-update', { collection, recordings: recordingsOf(collection) });
+}
+
+app.get('/recordings/:collection', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    if (!isCollection(req.params.collection)) return res.status(404).json({ error: 'not found' });
+    res.json({ recordings: recordingsOf(req.params.collection) });
+});
+
+app.get('/recordings/:collection/:id', (req, res) => {
+    const file = isCollection(req.params.collection) && recordings.partFile(RECORDINGS_DIR, req.params.collection, req.params.id);
+    if (!file) return res.status(404).json({ error: 'not found' });
+    // A part's file never changes under its id. sendFile answers Range requests.
+    res.type(file.type);
+    res.sendFile(file.path, { headers: { 'Cache-Control': 'private, max-age=31536000, immutable' } }, (error) => {
+        if (error && !res.headersSent) res.status(404).json({ error: 'not found' });
+    });
+});
+
+// Express 4 doesn't catch a rejected async handler, and an unhandled rejection
+// stops the server; anything unexpected becomes a 500 instead.
+app.post('/recordings/:collection', (req, res) => uploadRecording(req, res).catch((error) => {
+    console.log('Error saving an uploaded video:', error.message);
+    if (!res.headersSent && !req.socket.destroyed) res.status(500).json({ error: 'The video couldn\'t be saved.' });
+}));
+
+async function uploadRecording(req, res) {
+    const { collection } = req.params;
+    if (!sameOrigin(req)) return res.status(403).json({ error: 'forbidden' });
+    if (!(await collectionExists(collection))) return res.status(404).json({ error: 'Those notes no longer exist.' });
+    const info = recordings.cleanPartInfo({
+        name: req.query.name, type: req.get('content-type'), startAt: req.query.startAt, duration: req.query.duration
+    });
+    if (info.error) return res.status(400).json({ error: info.error });
+    const tooLarge = () => res.status(413).set('Connection', 'close').json({ error: 'The video is too large to upload.' });
+    if (Number(req.get('content-length')) > RECORDING_MAX_BYTES) return tooLarge();
+    let part;
+    try {
+        part = await recordings.addPart(RECORDINGS_DIR, collection, req, info, {
+            maxBytes: RECORDING_MAX_BYTES, uploadedBy: req.session.user.name
+        });
+    } catch (error) {
+        // req.destroyed is also true once the body has been read in full, so
+        // ask whether the connection itself is gone.
+        if (res.headersSent || req.socket.destroyed) return;
+        if (error.status === 413) return tooLarge();
+        if (error.status) return res.status(error.status).json({ error: error.message });
+        console.log('Error saving an uploaded video:', error.message);
+        return res.status(500).json({ error: 'The video couldn\'t be saved.' });
+    }
+    console.log(`Video "${part.name}" (${Math.round(part.size / 1e6)} MB) uploaded to ${collection} by ${req.session.user.name}`);
+    recordingsChanged(collection);
+    res.status(201).json(recordingsOf(collection).find(p => p.id === part.id));
+}
+
+app.patch('/recordings/:collection/:id', express.json({ limit: '1kb' }), (req, res) => {
+    const { collection, id } = req.params;
+    if (!sameOrigin(req)) return res.status(403).json({ error: 'forbidden' });
+    if (!isCollection(collection)) return res.status(404).json({ error: 'not found' });
+    const part = recordings.setPartStart(RECORDINGS_DIR, collection, id, req.body && req.body.startAt);
+    if (part === undefined) return res.status(400).json({ error: 'That is not a time.' });
+    if (!part) return res.status(404).json({ error: 'not found' });
+    recordingsChanged(collection);
+    res.json(recordingsOf(collection).find(p => p.id === id));
+});
+
+app.delete('/recordings/:collection/:id', (req, res) => {
+    const { collection, id } = req.params;
+    if (!sameOrigin(req)) return res.status(403).json({ error: 'forbidden' });
+    if (!isCollection(collection) || !recordings.removePart(RECORDINGS_DIR, collection, id)) {
+        return res.status(404).json({ error: 'not found' });
+    }
+    console.log(`Video part ${id} removed from ${collection} by ${req.session.user.name}`);
+    recordingsChanged(collection);
+    res.status(204).end();
+});
+
+// Render the shared icon sprite with each page: an external <use> would
+// otherwise leave icons blank until another request finishes. Read the source
+// files per request so frontend edits still work without a dev-server restart.
+const htmlPages = {
+    '/': 'index.html', '/index.html': 'index.html', '/recall.html': 'recall.html',
+    '/config.html': 'config.html', '/overlay.html': 'overlay.html', '/overlay-cast.html': 'overlay-cast.html',
+    '/playback.html': 'playback.html'
+};
+app.get(Object.keys(htmlPages), async (req, res, next) => {
+    try {
+        const page = htmlPages[req.path.toLowerCase().replace(/\/$/, '') || '/'];
+        const [html, icons] = await Promise.all([
+            fs.promises.readFile(path.join(__dirname, 'public', page), 'utf8'),
+            fs.promises.readFile(path.join(__dirname, 'public', 'icons.svg'), 'utf8')
+        ]);
+        const sprite = icons.replace('<svg ', '<svg id="app-icons" class="icon-sprite" aria-hidden="true" ');
+        const rendered = html.replaceAll('icons.svg#', '#').replace(/<body\b[^>]*>/,
+            body => `${PLAYBACK_DEMO ? body.replace('>', ' data-playback-demo="true">') : body}\n${sprite}`);
+        res.set('Cache-Control', 'private, no-cache');
+        res.type('html').send(rendered);
+    } catch (error) {
+        next(error);
+    }
+});
+
 // Serve static files from public directory
 app.use(express.static(path.join(__dirname, 'public')));
-
-// Add explicit route for root
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-// Add route for recall page
-app.get('/recall.html', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'recall.html'));
-});
-
-app.get('/config.html', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'config.html'));
-});
-
-app.get('/overlay.html', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'overlay.html'));
-});
-
-app.get('/overlay-cast.html', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'overlay-cast.html'));
+// Browser libraries, served from node_modules so they are pinned by package-lock.json.
+app.get('/vendor/purify.min.js', (req, res) => {
+    res.sendFile(require.resolve('dompurify/dist/purify.min.js'));
 });
 
 app.get('/favicon.ico', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'favicon.ico'));
 });
 
-// Load tags from JSON file
+// Load tags from JSON file (TAGS_FILE is for the tests, which must not change the tracked one)
+const TAGS_FILE = process.env.TAGS_FILE || path.join(__dirname, 'tags.json');
 let tags = [];
 try {
-    const tagsData = fs.readFileSync(path.join(__dirname, 'tags.json'), 'utf8');
+    const tagsData = fs.readFileSync(TAGS_FILE, 'utf8');
     const tagsConfig = JSON.parse(tagsData);
     tags = tagsConfig.tags;
     console.log(`Loaded ${tags.length} tags from tags.json`);
@@ -265,10 +559,11 @@ try {
     ];
 }
 
-// Function to save tags to file
+// Saves the current tags. globalState.tags, not the list loaded at start:
+// deleting a tag or importing a backup replaces the array.
 function saveTagsToFile() {
     try {
-        fs.writeFileSync(path.join(__dirname, 'tags.json'), JSON.stringify({ tags: tags }, null, 2));
+        fs.writeFileSync(TAGS_FILE, JSON.stringify({ tags: globalState.tags }, null, 2));
     } catch (error) {
         console.log('Error saving tags to file:', error.message);
     }
@@ -298,7 +593,8 @@ const globalState = {
     timeMode: 'midi',
     tags: tags,
     currentLxCue: '1',
-    currentAct: 'Preshow'
+    currentAct: 'Preshow',
+    showLog: [] // every scene change and LX cue, with the time (show-log.js)
 };
 
 // After a restart the chat is restored from client offers, but only while this
@@ -398,6 +694,10 @@ function handleOscMessage(address, value) {
             
             // Update global state
             globalState.currentLxCue = cueName;
+            if (showLog.record(globalState.showLog, 'cue', cueName)) {
+                scheduleBackup();
+                io.emit('show-log-update', globalState.showLog);
+            }
             
             // Notify all clients
             io.emit('lx-cue-update', cueName);
@@ -416,6 +716,10 @@ function handleOscMessage(address, value) {
         const act = value;
         if (act && act !== globalState.currentAct) {
             globalState.currentAct = act;
+            if (showLog.record(globalState.showLog, 'scene', act)) {
+                scheduleBackup();
+                io.emit('show-log-update', globalState.showLog);
+            }
             console.log(`Updated current act to: ${act}`);
             io.emit('act-update', act);
         }
@@ -711,13 +1015,6 @@ function currentModeTimecode() {
     return globalState.timeMode === 'network' ? globalState.networkTimecode : globalState.timecode;
 }
 
-function formatTimecode(tc) {
-    if (!tc || typeof tc !== 'object') {
-        return '00:00:00:00';
-    }
-    return `${(tc.hours || 0).toString().padStart(2, '0')}:${(tc.minutes || 0).toString().padStart(2, '0')}:${(tc.seconds || 0).toString().padStart(2, '0')}:${(tc.frames || 0).toString().padStart(2, '0')}`;
-}
-
 function systemStatus() {
     return {
         midiAvailable: !!midiInput,
@@ -745,12 +1042,19 @@ const BACKUPS_DIR = process.env.BACKUPS_DIR || path.join(__dirname, 'backups');
 // outranks the good one from before the crash.
 let notesRestored = false;
 
-function backup(sync = false) {
-    if (!notesRestored) {
-        console.log('Backup skipped: notes not restored yet');
-        return;
-    }
-    const exportData = {
+// A change (note, comment, edit, tag) is backed up BACKUP_DELAY_MS later, so a
+// crash or power cut loses at most that much; the interval below is only a
+// safety net. One write runs at a time, and a newer file from the same minute
+// replaces the previous one, so the folder keeps about one backup per minute.
+const BACKUP_DELAY_MS = Number(process.env.BACKUP_DELAY_MS) || 1000;
+let backupTimer = null;
+let backupWriting = false;
+let backupAgain = false;
+let lastBackupFile = null;
+
+// What a backup, the JSON export and a saved show hold (Past notes reads all three).
+function notesExport() {
+    return {
         notes: globalState.notes,
         exportedAt: new Date().toISOString(),
         totalNotes: globalState.notes.length,
@@ -759,10 +1063,40 @@ function backup(sync = false) {
             name: u.name,
             joinedAt: u.joinedAt
         })),
-        tags: globalState.tags
+        tags: globalState.tags,
+        showLog: globalState.showLog,
+        ...(PLAYBACK_DEMO ? { demo: true } : {})
     };
-    const data = JSON.stringify(exportData, null, 2);
+}
+
+function scheduleBackup() {
+    if (backupTimer) return;
+    backupTimer = setTimeout(() => {
+        backupTimer = null;
+        backup();
+    }, BACKUP_DELAY_MS);
+}
+
+function backup(sync = false) {
+    if (!notesRestored) {
+        console.log('Backup skipped: notes not restored yet');
+        return;
+    }
+    if (!sync && backupWriting) {
+        backupAgain = true;
+        return;
+    }
+    const data = JSON.stringify(notesExport(), null, 2);
     const filename = backupFilename();
+    const previous = lastBackupFile;
+    const written = () => {
+        lastBackupFile = filename;
+        const prevTime = previous && backupTime(previous);
+        if (prevTime !== null && previous !== filename &&
+            Math.floor(prevTime / 60000) === Math.floor(backupTime(filename) / 60000)) {
+            fs.rm(path.join(BACKUPS_DIR, previous), { force: true }, () => {});
+        }
+    };
     try {
         fs.mkdirSync(BACKUPS_DIR, { recursive: true });
         if (sync) {
@@ -771,15 +1105,22 @@ function backup(sync = false) {
             writeBackupFile(BACKUPS_DIR, filename, data);
             console.log(`Backup saved to backups/${filename}`);
         } else {
+            backupWriting = true;
             writeBackupFile(BACKUPS_DIR, filename, data, (error) => {
+                backupWriting = false;
                 if (error) {
                     console.log('Error saving backup file:', error.message);
                 } else {
-                    console.log(`Backup saved to backups/${filename}`);
+                    written();
+                }
+                if (backupAgain) {
+                    backupAgain = false;
+                    backup();
                 }
             });
         }
     } catch (error) {
+        backupWriting = false;
         console.log('Error saving backup file:', error.message);
     }
 }
@@ -788,6 +1129,12 @@ function backup(sync = false) {
 // hours old and passes the check (see notes-backup.js), so a crash does not
 // lose the dress notes while a restart days later starts clean. A bad backup
 // is skipped, never fatal.
+// A backup's tags, rebuilt like a tag from the tag editor; one without a
+// valid colour gets a random one, as a new tag does.
+function storedTags(list) {
+    return input.cleanStoredTags(list).map(t => ({ ...t, color: t.color || getRandomColor() }));
+}
+
 function restoreNotes() {
     try {
         const found = findRestorableBackup(BACKUPS_DIR);
@@ -795,8 +1142,9 @@ function restoreNotes() {
             console.log(`Notes restore: skipped backups/${file}: ${reason}`);
         }
         if (found.file) {
-            globalState.notes = applyAuthors(found.data.notes, found.data.authors);
-            if (found.data.tags) globalState.tags = found.data.tags;
+            globalState.notes = applyAuthors(input.cleanStoredNotes(found.data.notes), found.data.authors);
+            if (found.data.tags) globalState.tags = storedTags(found.data.tags);
+            globalState.showLog = showLog.cleanShowLog(found.data.showLog);
             console.log(`Notes restore: loaded ${found.data.notes.length} notes from backups/${found.file}`);
         } else {
             console.log(`Notes restore: starting empty (${found.reason})`);
@@ -808,30 +1156,73 @@ function restoreNotes() {
 }
 restoreNotes();
 
-// Schedule backups every minute
+// Opt-in examples for the separate playback development instance only.
+// Refuse to seed over existing notes; other instances use their normal data.
+if (PLAYBACK_DEMO) {
+    const sample = JSON.parse(fs.readFileSync(path.join(__dirname, 'public/playback-demo/show.json'), 'utf8'));
+    if (!globalState.notes.length) {
+        globalState.notes = input.cleanStoredNotes(sample.notes);
+        globalState.tags = storedTags(sample.tags);
+        globalState.showLog = showLog.cleanShowLog(sample.showLog);
+        backup(true);
+    }
+    const sampleId = savedShows.showId('Sample dress rehearsal', new Date('2026-10-07T19:00:00Z'));
+    if (!fs.existsSync(path.join(SAVED_SHOWS_DIR, `${sampleId}.json`))) {
+        savedShows.saveShow(SAVED_SHOWS_DIR, 'Sample dress rehearsal', { ...sample, totalNotes: sample.notes.length }, new Date('2026-10-07T19:00:00Z'));
+    }
+    // The saved sample plays its recording from the server, as an uploaded one would.
+    if (!recordings.listParts(RECORDINGS_DIR, sampleId).length) {
+        const info = recordings.cleanPartInfo({
+            name: 'Sample Show.2026-10-07 19-30-00.mp4', startAt: Date.parse(sample.showLog[0].at), duration: 720
+        });
+        recordings.addPart(RECORDINGS_DIR, sampleId, fs.createReadStream(path.join(__dirname, 'public/playback-demo/recording.mp4')), info)
+            .catch(error => console.log('Sample recording not added:', error.message));
+    }
+}
+
+app.get('/playback/live', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ ...notesExport(), name: PLAYBACK_DEMO ? 'Sample live session' : 'Live notes' });
+});
+
+// Safety net: a backup every minute even if nothing called scheduleBackup().
 setInterval(backup, Number(process.env.BACKUP_INTERVAL_MS) || 1 * 60 * 1000);
 
-// Delete backups older than 1 day
-setInterval(() => {
-    const backupDir = BACKUPS_DIR;
-    fs.readdir(backupDir, (err, files) => {
+// Delete backups more than a day old, going by the time in the file name
+// (mtime can be off after a copy). Only backup files are touched.
+function deleteOldBackups() {
+    fs.readdir(BACKUPS_DIR, (err, files) => {
         if (err) return;
         const now = Date.now();
-        files.forEach(file => {
-            const filePath = path.join(backupDir, file);
-            fs.stat(filePath, (err, stats) => {
-                if (err) return;
-                const age = now - stats.mtimeMs;
-                if (age > 24 * 60 * 60 * 1000) {
-                    fs.unlink(filePath, (error) => {
-                        if (error) return;
-                        console.log(`Deleted old backup file: ${file}`);
-                    });
-                }
+        for (const file of files) {
+            const time = backupTime(file);
+            if (time === null || now - time <= 24 * 60 * 60 * 1000) continue;
+            fs.unlink(path.join(BACKUPS_DIR, file), (error) => {
+                if (!error) console.log(`Deleted old backup file: ${file}`);
             });
-        });
+        }
     });
-}, 24 * 60 * 60 * 1000);
+}
+deleteOldBackups();
+setInterval(deleteOldBackups, 60 * 60 * 1000).unref();
+
+// Notes kept from a reset go once their time runs out (reset-notes.js).
+function pruneResets() {
+    resetNotes.prune(RESETS_DIR, Date.now(), RESET_KEEP_MS).then((gone) => {
+        for (const id of gone) console.log(`Deleted notes kept from the reset at ${id}`);
+        if (gone.length) resetsChanged();
+    }, (error) => console.log('Error deleting old reset notes:', error.message));
+}
+pruneResets();
+setInterval(pruneResets, 10 * 60 * 1000).unref();
+
+function resetsList() {
+    return resetNotes.listResets(RESETS_DIR, Date.now(), RESET_KEEP_MS);
+}
+
+async function resetsChanged() {
+    io.emit('resets-update', await resetsList());
+}
 
 // Backups on errors and graceful shutdown
 process.on('uncaughtException', (err) => {
@@ -850,6 +1241,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {
         console.log(`Received ${signal}. Backing up and shutting down...`);
         backup(true);
+        sessionStore.close();
         process.exit(0);
     });
 }
@@ -867,17 +1259,44 @@ io.use((socket, next) => {
     next(new Error('unauthorized'));
 });
 
+// Which page a socket belongs to. Pages say so in the handshake
+// (io({ auth: { page } })); the Referer is the fallback for older tabs.
+function pageOf(socket) {
+    const page = socket.handshake.auth && socket.handshake.auth.page;
+    if (page === 'overlay' || page === 'config' || page === 'main') return page;
+    const referer = socket.handshake.headers.referer || '';
+    if (referer.includes('overlay.html') || referer.includes('overlay-cast.html')) return 'overlay';
+    if (referer.includes('config.html')) return 'config';
+    return 'main';
+}
+
+// Notes, comments and chat messages all get ids that cannot collide.
+function newId() {
+    return crypto.randomUUID();
+}
+
 // WebSocket connections
+// Notes deleted since start, as `${userId} ${clientId}`, so a resend that was
+// still on its way (a lost ack, then a delete from another tab) doesn't bring
+// the note back. Oldest dropped past DELETED_SUBMISSIONS_MAX.
+const deletedSubmissions = new Set();
+const DELETED_SUBMISSIONS_MAX = 10000;
+
+function rememberDeleted(note) {
+    if (!note.clientId) return;
+    deletedSubmissions.add(`${note.userId} ${note.clientId}`);
+    if (deletedSubmissions.size > DELETED_SUBMISSIONS_MAX) deletedSubmissions.delete(deletedSubmissions.values().next().value);
+}
+
 io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
 
     const sessionUser = socket.request.session.user;
-    const isOverlay = socket.handshake.headers.referer &&
-                     (socket.handshake.headers.referer.includes('overlay.html') || socket.handshake.headers.referer.includes('overlay-cast.html'));
+    const page = pageOf(socket);
+    const isOverlay = page === 'overlay';
     // The config page is left out of the online users list but, unlike
     // overlays, may still change settings such as the time mode.
-    const isConfig = !!socket.handshake.headers.referer &&
-                     socket.handshake.headers.referer.includes('config.html');
+    const isConfig = page === 'config';
 
     const user = {
         id: sessionUser.sub,
@@ -890,7 +1309,25 @@ io.on('connection', (socket) => {
         isConfig: isConfig
     };
 
+    // A person is listed once however many pages they have open; they only
+    // join with their first page and leave with their last.
+    const listed = !isOverlay && !isConfig;
+    const firstPage = listed && !isListed(user.id);
     globalState.users.set(socket.id, user);
+
+    // Every handler runs inside a try/catch: one bad message from one browser
+    // must not reach the uncaughtException handler, which exits the server.
+    const on = (event, handler) => {
+        socket.on(event, (...args) => {
+            const failed = (error) => console.error(`Socket ${event} from ${user.name} failed:`, error);
+            try {
+                const result = handler(...args);
+                if (result && typeof result.catch === 'function') result.catch(failed);
+            } catch (error) {
+                failed(error);
+            }
+        });
+    };
 
     // Send current state to newly connected client
     socket.emit('act-update', globalState.currentAct);
@@ -898,6 +1335,7 @@ io.on('connection', (socket) => {
     socket.emit('timecode-update', globalState.networkTimecode);
     socket.emit('notes-update', globalState.notes);
     socket.emit('tags-update', globalState.tags);
+    socket.emit('show-log-update', globalState.showLog);
     socket.emit('time-mode-update', globalState.timeMode);
     socket.emit('lx-cue-update', globalState.currentLxCue);
     socket.emit('system-status', systemStatus());
@@ -909,16 +1347,17 @@ io.on('connection', (socket) => {
     if (!isOverlay) {
         socket.emit('current-user', { name: user.name, sub: user.id });
 
-        // Send filtered users list (excluding overlay and config pages)
         const filteredUsers = listedUsers();
-        socket.emit('users-update', filteredUsers);
-        
-        // Notify about new user joining (only for listed users)
-        if (!isConfig) {
-            io.emit('user-joined', {
-                user: user.name,
-                userCount: filteredUsers.length
-            });
+        if (listed) {
+            io.emit('users-update', filteredUsers);
+            if (firstPage) {
+                io.emit('user-joined', {
+                    user: user.name,
+                    userCount: filteredUsers.length
+                });
+            }
+        } else {
+            socket.emit('users-update', filteredUsers);
         }
     } else {
         // Overlay users get minimal user info
@@ -926,72 +1365,78 @@ io.on('connection', (socket) => {
     }
 
     // Handle note tag updates
-    socket.on('note-update-tags', (data) => {
-        if (user.isOverlay) return;
-        const { noteId, tags } = data;
-        const note = globalState.notes.find(n => n.id === noteId);
+    on('note-update-tags', (data) => {
+        if (user.isOverlay || !data) return;
+        const note = globalState.notes.find(n => n.id === data.noteId);
         if (note) {
+            const tags = input.cleanTags(data.tags);
+            // Every note keeps at least one tag; put the sender's view back if it tried to clear them.
+            if (!tags.length) return socket.emit('note-update-tags', { noteId: note.id, tags: note.tags });
             note.tags = tags;
-            io.emit('note-update-tags', { noteId, tags });
+            io.emit('note-update-tags', { noteId: note.id, tags: note.tags });
+            scheduleBackup();
         }
     });
 
     // Handle tag creation/updates
-    socket.on('create-tag', (tagData) => {
+    on('create-tag', (tagData) => {
+        if (user.isOverlay) return;
+        const tag = input.cleanTag(tagData);
+        if (!tag) return;
+        const existingIndex = tag.id ? globalState.tags.findIndex(t => t.id === tag.id) : -1;
         const newTag = {
-            id: tagData.id || generateId(),
-            name: tagData.name,
-            color: tagData.color || getRandomColor()
+            id: tag.id || generateId(),
+            name: tag.name,
+            color: tag.color || (existingIndex >= 0 && globalState.tags[existingIndex].color) || getRandomColor()
         };
-        
-        const existingIndex = globalState.tags.findIndex(tag => tag.id === newTag.id);
         if (existingIndex >= 0) {
             globalState.tags[existingIndex] = newTag;
         } else {
             globalState.tags.push(newTag);
         }
-        
+
         saveTagsToFile();
         io.emit('tags-update', globalState.tags);
+        scheduleBackup();
     });
 
     // Handle tag deletion
-    socket.on('delete-tag', (tagId) => {
-        globalState.tags = globalState.tags.filter(tag => tag.id !== tagId);
+    on('delete-tag', (tagId) => {
+        if (user.isOverlay) return;
+        const id = input.cleanId(tagId);
+        if (!id) return;
+        globalState.tags = globalState.tags.filter(tag => tag.id !== id);
         saveTagsToFile();
         io.emit('tags-update', globalState.tags);
+        scheduleBackup();
     });
-    
+
     // Handle user starting to type (only for non-overlay users)
-    socket.on('typing-start', (data) => {
+    on('typing-start', (data) => {
         if (user.isOverlay) return; // Overlay users can't type
-        
+
         user.isTyping = true;
-        user.currentTimecode = data.timecode || {...currentModeTimecode()};
-        user.currentLxCue = data.lxCue || globalState.currentLxCue;
-        
-        // Send filtered users list (excluding overlay and config pages)
-        const filteredUsers = listedUsers();
-        io.emit('users-update', filteredUsers);
+        user.currentTimecode = input.cleanTimecode(data && data.timecode) || {...currentModeTimecode()};
+        user.currentLxCue = input.cleanCue(data && data.lxCue) || globalState.currentLxCue;
+
+        broadcastTyping();
     });
-    
+
     // Handle user stopping typing (only for non-overlay users)
-    socket.on('typing-stop', () => {
+    on('typing-stop', () => {
         if (user.isOverlay) return; // Overlay users can't type
-        
+
         user.isTyping = false;
         user.currentTimecode = null;
         user.currentLxCue = null;
-        
-        // Send filtered users list (excluding overlay and config pages)
-        const filteredUsers = listedUsers();
-        io.emit('users-update', filteredUsers);
+
+        broadcastTyping();
     });
-    
+
     // Handle time mode change (only for non-overlay users)
-    socket.on('time-mode-change', (newMode) => {
+    on('time-mode-change', (newMode) => {
         if (user.isOverlay) return; // Overlay users can't change time mode
-        
+
         if (newMode === 'midi' || newMode === 'network' || newMode === 'realtime') {
             globalState.timeMode = newMode;
             io.emit('time-mode-update', globalState.timeMode);
@@ -999,7 +1444,7 @@ io.on('connection', (socket) => {
     });
 
     // Handle MIDI input change from the config page ('' or null for none)
-    socket.on('midi-input-change', (inputName) => {
+    on('midi-input-change', (inputName) => {
         if (user.isOverlay) return; // Overlay users can't change settings
         const name = inputName || null;
         if (name !== null && !getMidiInputs().includes(name)) return;
@@ -1015,7 +1460,7 @@ io.on('connection', (socket) => {
     });
 
     // Handle network interface change from the config page ('auto' or a local IPv4 address)
-    socket.on('network-interface-change', (selection) => {
+    on('network-interface-change', (selection) => {
         if (user.isOverlay) return; // Overlay users can't change settings
         if (selection !== 'auto' && !listIpv4Interfaces().some(i => i.address === selection)) return;
         settings.networkInterface = selection;
@@ -1025,96 +1470,119 @@ io.on('connection', (socket) => {
     });
 
     // Handle LX Cue change (manual input - will be overridden by OSC)
-    socket.on('lx-cue-change', (newCue) => {
+    on('lx-cue-change', (newCue) => {
         if (user.isOverlay) return; // Overlay users can't change LX cues
-        
+        const cue = input.cleanCue(newCue);
+        if (!cue) return;
+
         // Only update if OSC is not available, or allow manual override
         if (!oscServer) {
-            globalState.currentLxCue = newCue;
+            globalState.currentLxCue = cue;
             io.emit('lx-cue-update', globalState.currentLxCue);
         } else {
             // OSC is available, so manual changes are temporary
-            // You could choose to still update or ignore manual changes
             console.log('Manual LX cue change ignored - OSC source is active');
         }
     });
-    
+
     // Handle note submission (only for non-overlay users)
     // The client resends a note it has no acknowledgement for after a
     // reconnect, tagged with its own clientId, so a resend must not duplicate
-    // a note that already arrived. The ack carries the stored note.
+    // a note that already arrived. The ack carries the stored note, or
+    // { error } for a note that can never be stored, so the browser stops
+    // resending it.
     // A late note carries ageMs (how long ago it was written); it is stamped
     // and placed by that rather than by its arrival (see public/note-order.js).
-    socket.on('note-submit', (data, ack) => {
-        if (user.isOverlay) return;
+    // startedAgeMs, how long ago its author started typing it, becomes
+    // startedAt on the server's clock whatever the timecode mode, which is what
+    // lines a note up with a recording (playback.html).
+    on('note-submit', (data, ack) => {
         const respond = typeof ack === 'function' ? ack : () => {};
-        const clientId = typeof data.clientId === 'string' ? data.clientId : undefined;
+        if (user.isOverlay) return respond({ error: 'Overlays cannot add notes.' });
+        if (!data || typeof data !== 'object') return respond({ error: 'Something went wrong. Write it again.' });
+        const clientId = input.cleanId(data.clientId) || undefined;
         if (clientId) {
-            const existing = globalState.notes.find(n => n.clientId === clientId);
+            // Only the sender's own notes: another person's note with the same clientId is not this one.
+            const existing = globalState.notes.find(n => n.clientId === clientId && n.userId === user.id);
             if (existing) return respond(existing);
+            if (deletedSubmissions.has(`${user.id} ${clientId}`)) return respond({ deleted: true, clientId });
         }
-        
-        const noteTimecode = data.timecode || {...currentModeTimecode()};
-        
+        const text = input.cleanText(data.text, input.MAX_NOTE_LENGTH);
+        if (!text) return respond({ error: 'A note needs some text.' });
+
+        // The composer requires a tag, and note-update-tags refuses an empty list.
+        const tags = input.cleanTags(data.tags);
+        if (!tags.length) return respond({ error: 'A note needs at least one tag.' });
+
+        const noteTimecode = input.cleanTimecode(data.timecode) || {...currentModeTimecode()};
+        const now = Date.now();
+        const ageMs = sanitizeAge(data.ageMs);
+
         const note = {
-            id: Date.now() + Math.random().toString(36).substr(2, 9),
+            id: newId(),
             user: user.name,
             userId: user.id,
-            text: data.text,
+            text,
             timecode: noteTimecode,
-            lxCue: data.lxCue || globalState.currentLxCue,
-            timestamp: new Date(Date.now() - sanitizeAge(data.ageMs)).toISOString(),
-            frameRate: data.frameRate || currentModeTimecode().frameRate,
-            tags: data.tags || [],
+            lxCue: input.cleanCue(data.lxCue) || globalState.currentLxCue,
+            timestamp: new Date(now - ageMs).toISOString(),
+            frameRate: input.cleanFrameRate(data.frameRate) || currentModeTimecode().frameRate,
+            tags,
             act: globalState.currentAct, // Use current act from OSC
             comments: []
         };
         if (clientId) note.clientId = clientId;
-        
+        // Older tabs don't send it; their notes have no startedAt.
+        if (typeof data.startedAgeMs === 'number') {
+            note.startedAt = new Date(now - Math.max(ageMs, sanitizeAge(data.startedAgeMs))).toISOString();
+        }
+
         globalState.notes.splice(insertionIndex(globalState.notes, note), 0, note);
-        
+
         respond(note);
         io.emit('note-added', note);
+        scheduleBackup();
     });
 
     // Handle comment submission (only for non-overlay users)
-    socket.on('comment-submit', (data) => {
-        if (user.isOverlay) return;
-        const { noteId, text } = data;
-        const note = globalState.notes.find(n => n.id === noteId);
-        if (note) {
+    on('comment-submit', (data) => {
+        if (user.isOverlay || !data) return;
+        const text = input.cleanText(data.text, input.MAX_COMMENT_LENGTH);
+        const note = globalState.notes.find(n => n.id === data.noteId);
+        if (note && text) {
             const comment = {
-                id: Date.now() + Math.random().toString(36).substr(2, 9),
+                id: newId(),
                 user: user.name,
                 userId: user.id,
-                text: text,
+                text,
                 timestamp: new Date().toISOString()
             };
             if (!note.comments) note.comments = [];
             note.comments.push(comment);
-            io.emit('comment-submit', { noteId, comment });
+            io.emit('comment-submit', { noteId: note.id, comment });
+            scheduleBackup();
         }
     });
 
     // Handle chat message submission (only for non-overlay users)
-    socket.on('chat-message', (data) => {
+    on('chat-message', (data) => {
         if (user.isOverlay) return; // Overlay users can't chat
 
         const bounded = boundChatMessage({ user: user.name, userId: user.id, text: data && data.text });
         if (!bounded) return;
 
         const chatMessage = {
-            id: Date.now() + Math.random().toString(36).substr(2, 9),
+            id: newId(),
             ...bounded,
             timestamp: new Date().toISOString()
         };
-        
+
         globalState.chatMessages.push(chatMessage);
         io.emit('chat-message-added', chatMessage);
     });
 
     // A client that still holds the chat log from before a restart offers it back
-    socket.on('chat-restore-offer', (log) => {
+    on('chat-restore-offer', (log) => {
         if (user.isOverlay || user.isConfig) return;
         const restored = chatRestore.offer(user.id, log, globalState.chatMessages);
         if (!restored) return;
@@ -1129,57 +1597,70 @@ io.on('connection', (socket) => {
     }
 
     // Handle note text editing (only for non-overlay users)
-    socket.on('note-edit-text', (data) => {
-        if (user.isOverlay) return;
-        const { noteId, newText } = data;
-        const note = globalState.notes.find(n => n.id === noteId);
+    on('note-edit-text', (data) => {
+        if (user.isOverlay || !data) return;
+        const newText = input.cleanText(data.newText, input.MAX_NOTE_LENGTH);
+        const note = globalState.notes.find(n => n.id === data.noteId);
         // Only the author (by session identity) may edit; see public/note-author.js
-        if (note && canEditNote(note, user.id)) {
+        if (note && newText && canEditNote(note, user.id)) {
             note.text = newText;
             note.lastEdited = new Date().toISOString();
             note.lastEditedBy = user.name;
-            io.emit('note-edit-text', { 
-                noteId, 
-                newText, 
-                lastEditedBy: user.name, 
-                lastEdited: note.lastEdited 
+            io.emit('note-edit-text', {
+                noteId: note.id,
+                newText,
+                lastEditedBy: user.name,
+                lastEdited: note.lastEdited
             });
+            scheduleBackup();
         }
     });
-    // Handle comment editing (only for non-overlay users)
-    socket.on('comment-edit', (data) => {
-        if (user.isOverlay) return;
-        const { noteId, commentId, newText } = data;
-        const note = globalState.notes.find(n => n.id === noteId);
-        if (note && note.comments) {
-            const comment = note.comments.find(c => c.id === commentId);
-            if (comment) {
-                comment.text = newText;
-                comment.lastEdited = new Date().toISOString();
-                comment.lastEditedBy = user.name;
-                io.emit('comment-edit', { 
-                    noteId, 
-                    commentId, 
-                    newText, 
-                    lastEditedBy: user.name, 
-                    lastEdited: comment.lastEdited 
-                });
-            }
+    // Handle comment editing: only its author, same rule as notes
+    on('comment-edit', (data) => {
+        if (user.isOverlay || !data) return;
+        const newText = input.cleanText(data.newText, input.MAX_COMMENT_LENGTH);
+        const note = globalState.notes.find(n => n.id === data.noteId);
+        const comment = note && Array.isArray(note.comments) && note.comments.find(c => c.id === data.commentId);
+        if (comment && newText && canEditNote(comment, user.id)) {
+            comment.text = newText;
+            comment.lastEdited = new Date().toISOString();
+            comment.lastEditedBy = user.name;
+            io.emit('comment-edit', {
+                noteId: note.id,
+                commentId: comment.id,
+                newText,
+                lastEditedBy: user.name,
+                lastEdited: comment.lastEdited
+            });
+            scheduleBackup();
         }
     });
-    // Handle comment deletion (only for non-overlay users)
-    socket.on('comment-delete', (data) => {
-        if (user.isOverlay) return;
-        const { noteId, commentId } = data;
-        const note = globalState.notes.find(n => n.id === noteId);
-        if (note && note.comments) {
-            note.comments = note.comments.filter(c => c.id !== commentId);
-            io.emit('comment-delete', { noteId, commentId });
+    // Handle note deletion: only its author, and only a note that has one
+    // (an ownerless note is editable by anyone but deletable by no one).
+    on('note-delete', (data) => {
+        if (user.isOverlay || !data) return;
+        const note = globalState.notes.find(n => n.id === data.noteId);
+        if (note && note.userId && canEditNote(note, user.id)) {
+            globalState.notes = globalState.notes.filter(n => n !== note);
+            rememberDeleted(note);
+            io.emit('note-delete', { noteId: note.id });
+            scheduleBackup();
         }
     });
-    
+    // Handle comment deletion: only its author, same rule as notes
+    on('comment-delete', (data) => {
+        if (user.isOverlay || !data) return;
+        const note = globalState.notes.find(n => n.id === data.noteId);
+        const comment = note && Array.isArray(note.comments) && note.comments.find(c => c.id === data.commentId);
+        if (comment && canEditNote(comment, user.id)) {
+            note.comments = note.comments.filter(c => c !== comment);
+            io.emit('comment-delete', { noteId: note.id, commentId: comment.id });
+            scheduleBackup();
+        }
+    });
+
     // Reconnect to the Eos console from the config page; same rule as the other controls.
-    socket.on('eos-reconnect', () => {
+    on('eos-reconnect', () => {
         if (user.isOverlay) return;
         console.log(`Eos TCP reconnect requested by ${user.name}`);
         connectToEOS();
@@ -1187,79 +1668,150 @@ io.on('connection', (socket) => {
 
     // Reset from the config page: empties the notes and the chat for everyone.
     // Same rule as the other config page controls: any non-overlay user.
-    socket.on('reset-all', () => {
+    on('reset-all', (ack) => {
+        const respond = typeof ack === 'function' ? ack : () => {};
         if (user.isOverlay) return;
         console.log(`Reset of all notes and chat requested by ${user.name}`);
-        resetNotesAndChat();
+        respond(resetNotesAndChat(user.name) ? {} : { error: "The notes couldn't be kept, so nothing was reset." });
     });
 
-    // Handle backup import (only for non‑overlay users)
-    socket.on('import-backup', (data) => {
+    // Notes kept from recent resets, for the config page to restore.
+    on('resets-list', async (ack) => {
+        if (user.isOverlay || typeof ack !== 'function') return;
+        ack(await resetsList());
+    });
+
+    // Puts a kept reset's notes back alongside the live ones. Notes already
+    // live (same id) are left as they are, so restoring twice adds nothing.
+    // The kept copy stays until its time runs out.
+    on('restore-reset', async (data, ack) => {
+        const respond = typeof ack === 'function' ? ack : () => {};
+        if (user.isOverlay) return;
+        const kept = await resetNotes.readReset(RESETS_DIR, data && data.id, Date.now(), RESET_KEEP_MS);
+        if (!kept) return respond({ error: "Those notes are no longer kept." });
+        const live = new Set(globalState.notes.map(n => n.id));
+        const added = applyAuthors(input.cleanStoredNotes(kept.notes), kept.authors).filter(n => !live.has(n.id));
+        for (const note of added) globalState.notes.splice(insertionIndex(globalState.notes, note), 0, note);
+        const events = new Set(globalState.showLog.map(e => JSON.stringify(e)));
+        globalState.showLog = showLog.cleanShowLog([...globalState.showLog,
+            ...showLog.cleanShowLog(kept.showLog).filter(e => !events.has(JSON.stringify(e)))]);
+        console.log(`${added.length} notes restored from the reset at ${data.id} by ${user.name}`);
+        if (added.length) {
+            io.emit('notes-update', globalState.notes);
+            io.emit('show-log-update', globalState.showLog);
+            scheduleBackup();
+        }
+        respond({ restored: added.length });
+    });
+
+    // Save from the config page: the notes as they are now, under a name, for
+    // Past notes; with `reset`, then the same reset as the button above.
+    on('save-show', (data, ack) => {
+        const respond = typeof ack === 'function' ? ack : () => {};
+        if (user.isOverlay) return;
+        const name = savedShows.cleanShowName(data && data.name);
+        if (!name) return respond({ error: 'Give the show a name first.' });
+        if (globalState.notes.length === 0) return respond({ error: 'There are no notes to save.' });
+        const resetsBefore = resetCount;
+        let show;
+        try {
+            show = savedShows.saveShow(SAVED_SHOWS_DIR, name, notesExport());
+        } catch (error) {
+            console.log('Error saving show:', error.message);
+            return respond({ error: "The notes couldn't be saved. Nothing was reset." });
+        }
+        // The live videos go with it; the reset (which removes them) waits for that.
+        recordings.copyCollection(RECORDINGS_DIR, 'live', show.id).then((parts) => {
+            if (parts) recordingsChanged(show.id);
+            // Notes can arrive while the videos copy; write the show again (same
+            // id) straight before the reset so none of them are lost. If another
+            // reset came first, these notes are already gone from the live list:
+            // keep the show as first saved and don't reset what came after.
+            const reset = data.reset && resetCount === resetsBefore;
+            if (reset) {
+                try {
+                    show = savedShows.saveShow(SAVED_SHOWS_DIR, name, notesExport(), new Date(show.savedAt), true);
+                } catch (error) {
+                    console.log('Error saving show:', error.message);
+                    return respond({ error: "The latest notes couldn't be saved. Nothing was reset." });
+                }
+            }
+            console.log(`Show "${name}" (${show.totalNotes} notes, ${parts} video parts) saved by ${user.name}${reset ? ', then reset' : ''}`);
+            if (reset && !resetNotesAndChat(user.name)) {
+                return respond({ error: "The notes were saved, but couldn't be kept for undoing a reset. Nothing was reset." });
+            }
+            respond({ show: { ...show, recordingParts: parts } });
+        }, (error) => {
+            console.log(`Error keeping the videos with show "${name}":`, error.message);
+            respond({ error: `The notes were saved, but the videos couldn't be kept with them.${data.reset ? ' Nothing was reset.' : ''}` });
+        });
+    });
+
+    // Handle backup import (only for non-overlay users). The file gets the same
+    // check as a backup loaded at start-up, so a bad one changes nothing.
+    on('import-backup', (data) => {
         if (user.isOverlay) return; // Overlay users can't import
 
-        // Validate that the backup contains a notes array and optionally tags
-        if (data && Array.isArray(data.notes)) {
-            const authors = Array.isArray(data.authors)
-                ? data.authors.filter((a) => a && typeof a.userId === 'string' && typeof a.name === 'string')
-                : [];
-            globalState.notes = applyAuthors(data.notes.filter((n) => n && typeof n === 'object'), authors);
-            
-            // Restore tags if present in backup
-            if (data.tags && Array.isArray(data.tags)) {
-                globalState.tags = data.tags;
-                saveTagsToFile(); // Save to tags.json
-            }
-
-            // Broadcast updates to all clients
-            io.emit('notes-update', globalState.notes);
-            io.emit('tags-update', globalState.tags);
-
-            // Notify the importer of success
-            socket.emit('import-success', 'Backup imported successfully.');
-        } else {
-            socket.emit('import-error', 'Invalid backup format (missing notes array).');
+        const problem = checkBackup(data);
+        if (problem) {
+            socket.emit('import-error', `Invalid backup: ${problem}.`);
+            return;
         }
+        console.log(`Backup with ${data.notes.length} notes imported by ${user.name}`);
+        globalState.notes = applyAuthors(input.cleanStoredNotes(data.notes), data.authors);
+        // Notes that fail the per-note checks are dropped; say so rather than report a clean import.
+        const skipped = data.notes.length - globalState.notes.length;
+        if (skipped) console.warn(`Import skipped ${skipped} of ${data.notes.length} notes that could not be read`);
+        globalState.showLog = showLog.cleanShowLog(data.showLog);
+
+        // Restore tags if present in backup
+        if (data.tags) {
+            globalState.tags = storedTags(data.tags);
+            saveTagsToFile(); // Save to tags.json
+        }
+
+        // Broadcast updates to all clients
+        io.emit('notes-update', globalState.notes);
+        io.emit('tags-update', globalState.tags);
+        io.emit('show-log-update', globalState.showLog);
+        scheduleBackup();
+
+        // Notify the importer of success
+        socket.emit('import-success', skipped
+            ? `Backup imported, but ${skipped} of ${data.notes.length} notes could not be read and were skipped.`
+            : 'Backup imported successfully.');
     });
 
     // Handle export requests (only for non-overlay users)
-    socket.on('export-request', (format) => {
+    on('export-request', (format) => {
         if (user.isOverlay) return; // Overlay users can't export
-        
+
         const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
         let data, mimeType, filename;
-        
+
         if (format === 'json') {
-            const exportData = {
-                notes: globalState.notes,
-                exportedAt: new Date().toISOString(),
-                totalNotes: globalState.notes.length,
-                authors: authorsOf(globalState.notes),
-                users: listedUsers().map(u => ({
-                    name: u.name,
-                    joinedAt: u.joinedAt
-                })),
-                tags: globalState.tags
-            };
-            data = JSON.stringify(exportData, null, 2);
+            data = JSON.stringify(notesExport(), null, 2);
             mimeType = 'application/json';
             filename = `timecoded-notes-${timestamp}.json`;
         }
         socket.emit('export-data', { data, mimeType, filename });
     });
-    
+
     socket.on('disconnect', () => {
         console.log('Client disconnected:', socket.id);
         const user = globalState.users.get(socket.id);
         if (user) {
             globalState.users.delete(socket.id);
-            
+
             // Only notify if this user was in the online users list
             if (!user.isOverlay && !user.isConfig) {
                 const filteredUsers = listedUsers();
-                io.emit('user-left', {
-                    user: user.name,
-                    userCount: filteredUsers.length
-                });
+                if (!isListed(user.id)) {
+                    io.emit('user-left', {
+                        user: user.name,
+                        userCount: filteredUsers.length
+                    });
+                }
                 io.emit('users-update', filteredUsers);
             }
         }
@@ -1272,24 +1824,92 @@ io.on('connection', (socket) => {
 // is the newest one, so a restart cannot bring the cleared notes back. Tags
 // are kept: they are the department list, not show data, and the notes that
 // are gone were the only things that used them.
-function resetNotesAndChat() {
+// Bumped by every reset, so a save that waited on its videos can tell whether
+// the notes it saved are still the live ones.
+let resetCount = 0;
+
+// The notes are kept first (reset-notes.js) so the reset can be undone for a
+// few days; if they can't be written nothing is reset, and this returns false.
+function resetNotesAndChat(resetBy) {
+    if (globalState.notes.length) {
+        try {
+            resetNotes.keepReset(RESETS_DIR, notesExport(), resetBy);
+        } catch (error) {
+            console.log('Error keeping the notes before a reset:', error.message);
+            return false;
+        }
+        resetsChanged();
+    }
+    resetCount++;
     globalState.notes = [];
     globalState.chatMessages = [];
+    globalState.showLog = [];
+    recordings.removeCollection(RECORDINGS_DIR, 'live');
+    recordingsChanged('live');
     chatRestore.close();
     io.emit('all-reset'); // each page also drops its saved chat copy and unsent notes
     io.emit('notes-update', globalState.notes);
+    io.emit('show-log-update', globalState.showLog);
     emitToChatClients('chat-messages-update', globalState.chatMessages);
     backup(true);
+    return true;
 }
 
-// Users shown in the online users list: overlay and config pages are left out.
+// Typing changes go to everyone with the whole list, so with a full room a
+// burst of them is sent as one: the first at once, the rest as a single
+// update USERS_UPDATE_MS later.
+const USERS_UPDATE_MS = 250;
+let typingTimer = null;
+let typingChanged = false;
+
+function broadcastTyping() {
+    if (typingTimer) {
+        typingChanged = true;
+        return;
+    }
+    io.emit('users-update', listedUsers());
+    typingTimer = setTimeout(() => {
+        typingTimer = null;
+        if (!typingChanged) return;
+        typingChanged = false;
+        broadcastTyping();
+    }, USERS_UPDATE_MS);
+}
+
+// Users shown in the online users list: one entry per person (Keycloak sub),
+// however many pages they have open, so a reload, a second tab or a trip to
+// the recall page and back never lists anyone twice. Overlay and config pages
+// are left out. A person is typing if any of their pages is.
 function listedUsers() {
-    return Array.from(globalState.users.values()).filter(u => !u.isOverlay && !u.isConfig);
+    const people = new Map();
+    for (const u of globalState.users.values()) {
+        if (u.isOverlay || u.isConfig) continue;
+        const seen = people.get(u.id);
+        if (!seen) {
+            people.set(u.id, { ...u });
+            continue;
+        }
+        if (u.joinedAt < seen.joinedAt) seen.joinedAt = u.joinedAt;
+        if (u.isTyping && !seen.isTyping) {
+            seen.isTyping = true;
+            seen.currentTimecode = u.currentTimecode;
+            seen.currentLxCue = u.currentLxCue;
+        }
+    }
+    return [...people.values()];
+}
+
+// Whether this person has a page open that is in the online users list.
+function isListed(userId) {
+    for (const u of globalState.users.values()) {
+        if (u.id === userId && !u.isOverlay && !u.isConfig) return true;
+    }
+    return false;
 }
 
 // Helper functions for tags
 function generateId() {
-    return Math.random().toString(36).substr(2, 9);
+    return crypto.randomUUID();
 }
 
 function getRandomColor() {
@@ -1304,8 +1924,6 @@ if (midiInput) {
     // Set time mode to realtime if no MIDI available
     globalState.timeMode = 'realtime';
 }
-
-const PORT = process.env.PORT || 80;
 
 initKeycloak().finally(() => {
     server.listen(PORT, () => {

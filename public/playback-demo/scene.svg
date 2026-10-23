@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540">
+  <defs>
+    <linearGradient id="room" x2="0" y2="1"><stop stop-color="#141320"/><stop offset="1" stop-color="#07090f"/></linearGradient>
+    <linearGradient id="cyan" x2="0" y2="1"><stop stop-color="#75d7f0" stop-opacity=".22"/><stop offset="1" stop-color="#75d7f0" stop-opacity="0"/></linearGradient>
+    <linearGradient id="violet" x2="0" y2="1"><stop stop-color="#c3a1ff" stop-opacity=".2"/><stop offset="1" stop-color="#c3a1ff" stop-opacity="0"/></linearGradient>
+    <radialGradient id="pool"><stop stop-color="#73c1d4" stop-opacity=".24"/><stop offset="1" stop-color="#73c1d4" stop-opacity="0"/></radialGradient>
+  </defs>
+  <path fill="url(#room)" d="M0 0h960v540H0z"/>
+  <path fill="#101018" d="M0 0h100v445H0zM860 0h100v445H860z"/>
+  <path stroke="#23212b" stroke-width="2" d="M24 0v445M48 0v445M72 0v445M888 0v445M912 0v445M936 0v445"/>
+  <path fill="#1e1c29" d="M100 42h760v14H100z"/>
+  <path fill="url(#cyan)" d="m270 68-160 370h460z"/>
+  <path fill="url(#violet)" d="m690 68-300 370h460z"/>
+  <ellipse fill="url(#pool)" cx="480" cy="430" rx="340" ry="66"/>
+  <path fill="#171b24" stroke="#303443" d="M380 260h200v171H380z"/>
+  <path fill="#0e111a" stroke="#303443" d="M405 280h150v151H405z"/>
+  <path stroke="#4b5263" d="M480 280v151"/>
+  <path fill="#22202d" d="M200 380h105v52H200zM655 380h105v52H655z"/>
+  <path stroke="#33333e" d="M100 434h760M100 448h760"/>
+  <path fill="#080a10" d="M0 474h960v66H0z"/>
+  <g fill="#080a10"><ellipse cx="190" cy="475" rx="23" ry="25"/><ellipse cx="310" cy="480" rx="25" ry="27"/><ellipse cx="440" cy="475" rx="24" ry="28"/><ellipse cx="570" cy="480" rx="24" ry="26"/><ellipse cx="700" cy="475" rx="23" ry="25"/><ellipse cx="820" cy="480" rx="24" ry="26"/></g>
+  <text x="28" y="34" fill="#b1b5c5" font-family="sans-serif" font-size="13" letter-spacing="2">SAMPLE RECORDING</text>
+  <text x="28" y="510" fill="#858b9c" font-family="sans-serif" font-size="12">Illustrative stage · invented notes and cues</text>
+</svg>

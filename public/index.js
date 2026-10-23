@@ -1,46 +1,74 @@
 document.addEventListener('DOMContentLoaded', function() {
+    const $ = (id) => document.getElementById(id);
+
     // --- DOM element references ---
-    const globalTimecodeElement = document.getElementById('globalTimecode');
-    const globalLxCueElement = document.getElementById('globalLxCue');
-    const globalFrameRateElement = document.getElementById('globalFrameRate');
-    const personalTimecodeElement = document.getElementById('personalTimecodeDisplay');
-    const personalLxCueElement = document.getElementById('personalLxCueDisplay');
-    const personalTimecodeContainer = document.getElementById('personalTimecode');
-    const sourceBadge = document.getElementById('sourceBadge');
-    const timeModeLabel = document.getElementById('timeModeLabel');
-    const noteInput = document.getElementById('noteInput');
-    const lxCueInput = document.getElementById('lxCueInput');
-    const sendNoteBtn = document.getElementById('sendNote');
-    const cancelNoteBtn = document.getElementById('cancelNote');
-    const usersPanel = document.getElementById('usersPanel');
-    const usersList = document.getElementById('usersList');
-    const notesList = document.getElementById('notesList');
-    const exportJsonBtn = document.getElementById('exportJson');
-    const currentUserName = document.getElementById('currentUserName');
-    const tagsContainer = document.getElementById('tagsContainer');
-    const filterTagsContainer = document.getElementById('filterTags');
-    const currentActDisplay = document.getElementById('currentActDisplay');
-    const actFilter = document.getElementById('actFilter');
-    const editTagsModal = document.getElementById('editTagsModal');
-    const editTagsContainer = document.getElementById('editTagsContainer');
-    const cancelEditTagsBtn = document.getElementById('cancelEditTags');
-    const saveEditTagsBtn = document.getElementById('saveEditTags');
-    const userCount = document.getElementById('userCount');
-    const chatInput = document.getElementById('chatInput');
-    const sendChatBtn = document.getElementById('sendChat');
-    const chatMessages = document.getElementById('chatMessages');
-    const chatCount = document.getElementById('chatCount');
-    const chatUserName = document.getElementById('chatUserName');
-    const scrollToTopBtn = document.getElementById('scrollToTopBtn');
-    const connectionBanner = document.getElementById('connectionBanner');
+    const globalTimecodeElement = $('globalTimecode');
+    const globalLxCueElement = $('globalLxCue');
+    const personalTimecodeElement = $('personalTimecodeDisplay');
+    const personalLxCueElement = $('personalLxCueDisplay');
+    const personalTimecodeContainer = $('personalTimecode');
+    const stampLabel = $('stampLabel');
+    const sourceBadge = $('sourceBadge');
+    const timeModeLabel = $('timeModeLabel');
+    const composer = $('composer');
+    const noteInput = $('noteInput');
+    const lxCueInput = $('lxCueInput');
+    const sendNoteBtn = $('sendNote');
+    const cancelNoteBtn = $('cancelNote');
+    const usersButton = $('usersButton');
+    const usersPopover = $('usersPopover');
+    const usersList = $('usersList');
+    const avatarStack = $('avatarStack');
+    const userCount = $('userCount');
+    const menuButton = $('menuButton');
+    const menuPopover = $('menuPopover');
+    const notesList = $('notesList');
+    PlaybackContext.restoreNote(notesList);
+    $('liveSampleBadge').hidden = document.body.dataset.playbackDemo !== 'true';
+    const notesEmpty = $('notesEmpty');
+    const notesSection = document.querySelector('section.notes');
+    const notesNoMatch = $('notesNoMatch');
+    const notesCount = $('notesCount');
+    const clearFiltersBtn = $('clearFilters');
+    const searchInput = $('searchInput');
+    const exportJsonBtn = $('exportJson');
+    const currentUserName = $('currentUserName');
+    const tagsContainer = $('tagsContainer');
+    const composerTagsToggle = $('composerTagsToggle');
+    const composerTagsLabel = $('composerTagsLabel');
+    const menuUsersButton = $('menuUsersButton');
+    const tagFilter = $('tagFilter');
+    const tagError = $('tagError');
+    const currentActDisplay = $('currentActDisplay');
+    const actFilter = $('actFilter');
+    const actFilterPopover = $('actFilterPopover');
+    const tagFilterPopover = $('tagFilterPopover');
+    const tagPicker = $('tagPicker');
+    const tagPickerList = $('tagPickerList');
+    const tagPickerHint = $('tagPickerHint');
+    const chatToggle = $('chatToggle');
+    const chatDrawer = $('chatDrawer');
+    const chatClose = $('chatClose');
+    const chatUnread = $('chatUnread');
+    const chatInput = $('chatInput');
+    const sendChatBtn = $('sendChat');
+    const chatMessages = $('chatMessages');
+    const chatCount = $('chatCount');
+    const scrollToTopBtn = $('scrollToTopBtn');
+    const connectionBanner = $('connectionBanner');
+    const phoneLayout = matchMedia('(max-width: 640px)');
+    const touchInput = matchMedia('(pointer: coarse)');
+    const modalChatLayout = matchMedia('(max-width: 860px)');
+    const wideChatLayout = matchMedia('(min-width: 1100px)');
 
     // --- State variables ---
     let currentUser = {
         name: 'Guest',
-        id: null,
+        sub: null,
         isTyping: false,
         frozenTimecode: null,
         frozenLxCue: null,
+        typingStartedAt: null, // this browser's clock; sent as an age (see sendPendingNote)
         currentFrameRate: 30
     };
     let currentGlobalTimecode = { hours: 0, minutes: 0, seconds: 0, frames: 0, frameRate: 30 };
@@ -51,262 +79,237 @@ document.addEventListener('DOMContentLoaded', function() {
     };
     const liveSources = { midi: false, network: false };
     let currentGlobalLxCue = '1';
+    let oscAvailable = true; // cue comes from the desk; without it the cue is typed in
     let allNotes = [];
     let timeMode = 'realtime';
     let realTimeInterval = null;
     let availableTags = [];
     let selectedTags = [];
-    let filterTag = 'all';
-    let filterAct = 'all';
-    let currentlyEditingNoteId = null;
-    let editTagsSelected = [];
     let autoResumeTimer = null;
     let chatMessagesList = [];
-    let expandedCommentSections = new Set();
+    let unreadChat = 0;
     let currentAct = 'Preshow';
-    let noteElements = new Map();
+    let lastUsers = [];
+    const filters = { tag: 'all', act: 'all', search: '' };
+    const filterDropdown = (button, popover, key, update) => NoteView.createDropdown({
+        button, popover,
+        beforeOpen: () => closePopovers(),
+        onChange: (value) => {
+            filters[key] = value;
+            update();
+            filterNotes();
+        }
+    });
+    const actDropdown = filterDropdown(actFilter, actFilterPopover, 'act', updateActFilter);
+    const tagDropdown = filterDropdown(tagFilter, tagFilterPopover, 'tag', updateFilterTags);
+    const noteElements = new Map();
     // Notes submitted but not yet acknowledged by the server, keyed by the
-    // clientId sent with them: clientId -> { note, element }.
+    // clientId sent with them: clientId -> { note, element, writtenAt, sub }.
     const pendingNotes = new Map();
+    let identityConfirmed = false; // this connection has sent current-user
 
-    let savedCommentInputs = {};
-    let focusedCommentNoteId = null;
+    // Per-note UI state lives here rather than in the DOM, so a note can be
+    // re-rendered (tags changed, comment added...) without losing what
+    // someone is in the middle of typing.
+    const openReplies = new Set(); // notes with the reply box open
+    const commentDrafts = new Map();            // noteId -> text
+    const noteEditDrafts = new Map();           // noteId -> text, while editing
+    const commentEditDrafts = new Map();        // `${noteId}/${commentId}` -> text, while editing
+    const deletedNotes = new Set();             // noteIds hidden while their Undo toast shows
+    const deletedComments = new Set();          // `${noteId}/${commentId}`, likewise
+    let tagPickerNoteId = null;
 
-    function captureCommentInputs() {
-        savedCommentInputs = {};
-        document.querySelectorAll('.comment-input').forEach(input => {
-            const noteId = input.dataset.noteId;
-            if (noteId) savedCommentInputs[noteId] = input.value;
-        });
-        const active = document.activeElement;
-        if (active && active.classList && active.classList.contains('comment-input')) {
-            focusedCommentNoteId = active.dataset.noteId;
-        } else {
-            focusedCommentNoteId = null;
+    // --- Helper functions ---
+    // Templates and helpers shared with past notes: public/note-view.js.
+    const { esc, safeColor, setHtml, clockTime, fullTime, relativeTime, plural, avatarHTML, dotHTML } = NoteView;
+    const { formatTimecode } = TimecodeFormat;
+
+    function isMine(item) {
+        return NoteAuthor.canEditNote(item, currentUser.sub);
+    }
+
+    // Older backups may lack a note's tags or comments; the page assumes lists.
+    function withLists(note) {
+        return { ...note, tags: Array.isArray(note.tags) ? note.tags : [], comments: Array.isArray(note.comments) ? note.comments : [] };
+    }
+
+    function tagById(id) {
+        return availableTags.find(t => t.id === id) || NoteView.unknownTag(id);
+    }
+
+    const TOAST_MS = 6000;
+    let toastTimer = null;
+    function showToast(message, actionLabel, action) {
+        document.querySelectorAll('.toast').forEach(t => t.remove());
+        clearTimeout(toastTimer);
+        const toast = document.createElement('div');
+        toast.className = 'toast';
+        toast.setAttribute('role', 'status');
+        setHtml(toast, `<span>${esc(message)}</span>${actionLabel ? `<button type="button" class="link-btn">${esc(actionLabel)}</button>` : ''}`);
+        if (actionLabel) {
+            toast.querySelector('button').addEventListener('click', () => { toast.remove(); action(); });
         }
+        document.body.appendChild(toast);
+        toastTimer = setTimeout(() => toast.remove(), TOAST_MS);
     }
 
-    function restoreCommentInputs() {
-        for (const [noteId, text] of Object.entries(savedCommentInputs)) {
-            const input = document.querySelector(`.comment-input[data-note-id="${noteId}"]`);
-            if (input) {
-                input.value = text;
-                const submitBtn = document.querySelector(`[data-action="submit-comment"][data-note-id="${noteId}"]`);
-                if (submitBtn) submitBtn.disabled = text.trim().length === 0;
-            }
-        }
-        if (focusedCommentNoteId) {
-            const input = document.querySelector(`.comment-input[data-note-id="${focusedCommentNoteId}"]`);
-            if (input) {
-                input.focus();
-                input.setSelectionRange(input.value.length, input.value.length);
-            }
-        }
-    }
-
-    // --- Helper functions (reused from original) ---
-    function formatTimecode(tc) {
-        if (!tc || typeof tc !== 'object') return '00:00:00:00';
-        return `${(tc.hours || 0).toString().padStart(2, '0')}:${(tc.minutes || 0).toString().padStart(2, '0')}:${(tc.seconds || 0).toString().padStart(2, '0')}:${(tc.frames || 0).toString().padStart(2, '0')}`;
-    }
-
-    function formatCommentTime(timestamp) {
-        const date = new Date(timestamp);
-        const now = new Date();
-        const diffMs = now - date;
-        const diffMins = Math.floor(diffMs / 60000);
-        const diffHours = Math.floor(diffMs / 3600000);
-        if (diffMins < 1) return 'Just now';
-        if (diffMins < 60) return `${diffMins}m ago`;
-        if (diffHours < 24) return `${diffHours}h ago`;
-        return date.toLocaleDateString();
-    }
-
-    function escapeHtml(str) {
-        return str.replace(/[&<>]/g, function(m) {
-            if (m === '&') return '&amp;';
-            if (m === '<') return '&lt;';
-            if (m === '>') return '&gt;';
-            return m;
-        });
-    }
-
-    // --- Tag persistence ---
+    // --- Tags ---
     function loadTagsFromStorage() {
-        const storedTags = localStorage.getItem('midi-timecode-notes-tags');
-        if (storedTags) {
-            availableTags = JSON.parse(storedTags);
-            updateTagsDisplay();
-            updateFilterTags();
-        }
+        try {
+            const storedTags = localStorage.getItem('midi-timecode-notes-tags');
+            const parsed = JSON.parse(storedTags);
+            if (Array.isArray(parsed)) availableTags = parsed.filter(tag => tag &&
+                typeof tag.id === 'string' && typeof tag.name === 'string' && typeof tag.color === 'string');
+        } catch (e) { /* storage unavailable */ }
     }
 
     function saveTagsToStorage() {
-        localStorage.setItem('midi-timecode-notes-tags', JSON.stringify(availableTags));
+        try { localStorage.setItem('midi-timecode-notes-tags', JSON.stringify(availableTags)); } catch (e) { /* ignore */ }
     }
 
-    function initializeTags() {
-        loadTagsFromStorage();
-    }
-    initializeTags();
-
+    // Tags for the note being written: toggles under the note box.
     function updateTagsDisplay() {
-        tagsContainer.innerHTML = '';
-        availableTags.forEach(tag => {
-            const tagId = `tag-${tag.id}`;
-            const tagElement = `
-                <input type="checkbox" id="${tagId}" class="tag-checkbox" value="${tag.id}">
-                <label for="${tagId}" class="tag-label" style="background-color: ${tag.color}; color: #000;">
-                    ${tag.name}
-                </label>
-            `;
-            tagsContainer.innerHTML += tagElement;
-        });
-        availableTags.forEach(tag => {
-            const checkbox = document.getElementById(`tag-${tag.id}`);
-            if (checkbox) {
-                checkbox.addEventListener('change', function() {
-                    if (this.checked) selectedTags.push(this.value);
-                    else selectedTags = selectedTags.filter(t => t !== this.value);
-                });
-            }
-        });
+        selectedTags = selectedTags.filter(id => availableTags.some(t => t.id === id));
+        setHtml(tagsContainer, availableTags.map(tag =>
+            NoteView.tagChipHTML(tag, `type="button" data-tag="${esc(tag.id)}" aria-pressed="${selectedTags.includes(tag.id)}"`)
+        ).join(''));
+        updateComposerTagsLabel();
+    }
+
+    function updateComposerTagsLabel() {
+        const names = selectedTags.map(id => tagById(id).name);
+        composerTagsLabel.textContent = names.length === 1 ? names[0] : names.length ? `${names.length} tags` : 'Choose tags';
+        composerTagsToggle.title = names.join(', ') || 'Choose tags for this note';
+        composerTagsToggle.hidden = availableTags.length === 0;
+    }
+
+    function setComposerTagsExpanded(open) {
+        composer.classList.toggle('tags-expanded', open);
+        composerTagsToggle.setAttribute('aria-expanded', String(open));
     }
 
     function updateFilterTags() {
-        filterTagsContainer.innerHTML = '<div class="filter-tag active" data-tag="all">All Notes</div>';
-        availableTags.forEach(tag => {
-            const filterTagElement = `
-                <div class="filter-tag" data-tag="${tag.id}" style="background-color: ${tag.color}; color: #000;">
-                    ${tag.name}
-                </div>
-            `;
-            filterTagsContainer.innerHTML += filterTagElement;
-        });
-        document.querySelectorAll('.filter-tag').forEach(tag => {
-            tag.addEventListener('click', function() {
-                filterTag = this.getAttribute('data-tag');
-                document.querySelectorAll('.filter-tag').forEach(t => t.classList.remove('active'));
-                this.classList.add('active');
-                filterNotes();
-            });
-        });
-        // Act filter listeners are reattached in updateActFilter
+        if (filters.tag !== 'all' && !availableTags.some(t => t.id === filters.tag)) filters.tag = 'all';
+        tagDropdown.render(NoteView.tagOptions(availableTags), filters.tag);
+        tagFilter.hidden = availableTags.length === 0;
     }
 
-    function updateEditTagsDisplay(noteTags) {
-        editTagsContainer.innerHTML = '';
-        editTagsSelected = [...noteTags];
-        availableTags.forEach(tag => {
-            const tagId = `edit-tag-${tag.id}`;
-            const isChecked = noteTags.includes(tag.id);
-            const tagElement = `
-                <input type="checkbox" id="${tagId}" class="tag-checkbox" value="${tag.id}" ${isChecked ? 'checked' : ''}>
-                <label for="${tagId}" class="tag-label" style="background-color: ${tag.color}; color: #000;">
-                    ${tag.name}
-                </label>
-            `;
-            editTagsContainer.innerHTML += tagElement;
-        });
-        availableTags.forEach(tag => {
-            const checkbox = document.getElementById(`edit-tag-${tag.id}`);
-            if (checkbox) {
-                checkbox.addEventListener('change', function() {
-                    if (this.checked) editTagsSelected.push(this.value);
-                    else editTagsSelected = editTagsSelected.filter(t => t !== this.value);
-                });
-            }
-        });
-    }
+    // --- Filtering ---
+    const noteMatches = (note) => NoteView.noteMatches(note, filters, tagById);
+    const filtersActive = () => NoteView.filtersActive(filters);
 
+    // Shows/hides rows, then each act heading with how many of its notes show.
+    // The counts come from the notes, not the rows: a long list is still being
+    // drawn for a moment after a rebuild (see rebuildFullNotesList). Headings
+    // are the runs of one act in newest-first order, the same as drawn.
     function filterNotes() {
-        const noteItems = document.querySelectorAll('.note-item:not(.pending)');
-        noteItems.forEach(item => {
-            let showNote = true;
-            if (filterTag !== 'all') {
-                const itemTags = item.getAttribute('data-tags').split(',');
-                if (!itemTags.includes(filterTag)) showNote = false;
+        const notesById = new Map(allNotes.map(n => [n.id, n]));
+        const isShown = (note) => !!note && !deletedNotes.has(note.id) && noteMatches(note);
+        const runCounts = [];
+        let lastAct = null;
+        let shown = 0;
+        for (const note of NoteOrder.newestFirst(allNotes)) {
+            const act = note.act || 'Preshow';
+            if (act !== lastAct) {
+                runCounts.push(0);
+                lastAct = act;
             }
-            if (filterAct !== 'all') {
-                const itemAct = item.getAttribute('data-act');
-                if (itemAct !== filterAct) showNote = false;
+            if (isShown(note)) {
+                runCounts[runCounts.length - 1]++;
+                shown++;
             }
-            item.style.display = showNote ? 'block' : 'none';
-        });
+        }
+        let run = 0;
+        for (const el of notesList.children) {
+            if (el.classList.contains('group-head')) {
+                const count = runCounts[run++] || 0;
+                el.hidden = count === 0;
+                el.querySelector('.group-count').textContent = plural(count, 'note');
+            } else if (!el.classList.contains('pending')) {
+                el.hidden = !isShown(notesById.get(el.dataset.noteId));
+            }
+        }
+
+        const total = allNotes.length - deletedNotes.size;
+        notesSection.classList.toggle('has-notes', total > 0 || pendingNotes.size > 0);
+        notesCount.textContent = filtersActive() ? `${shown} of ${plural(total, 'note')}` : '';
+        clearFiltersBtn.hidden = !filtersActive();
+        notesEmpty.hidden = total > 0 || pendingNotes.size > 0;
+        notesNoMatch.hidden = !(total > 0 && shown === 0 && filtersActive());
+    }
+
+    const notesLoading = createLoadingState(notesSection);
+    const chatLoading = createLoadingState(chatDrawer);
+    const liveHeader = document.querySelector('.topbar .live');
+    const liveReceived = new Set();
+    function receivedLive(part) {
+        liveReceived.add(part);
+        if (['act', 'mode', 'cue', 'system'].every(key => liveReceived.has(key))) {
+            liveHeader.classList.remove('awaiting-data');
+        }
     }
 
     function updateActFilter() {
-        const uniqueActs = [...new Set(allNotes.map(note => note.act || 'Preshow'))];
-        actFilter.innerHTML = '<div class="filter-tag active" data-act="all">All Acts</div>';
-        uniqueActs.forEach(act => {
-            const actElement = `<div class="filter-tag" data-act="${act}">${act}</div>`;
-            actFilter.innerHTML += actElement;
-        });
-        document.querySelectorAll('.act-filter .filter-tag').forEach(tag => {
-            tag.addEventListener('click', function() {
-                filterAct = this.getAttribute('data-act');
-                document.querySelectorAll('.act-filter .filter-tag').forEach(t => t.classList.remove('active'));
-                this.classList.add('active');
-                filterNotes();
-            });
-        });
+        const acts = [...new Set(allNotes.filter(n => !deletedNotes.has(n.id)).map(note => note.act || 'Preshow'))];
+        if (filters.act !== 'all' && !acts.includes(filters.act)) filters.act = 'all';
+        actDropdown.render(NoteView.sceneOptions(acts), filters.act);
+        actFilter.hidden = acts.length < 2 && filters.act === 'all';
     }
 
-    // --- Timecode and UI update functions ---
+    function clearFilters() {
+        filters.tag = 'all';
+        filters.act = 'all';
+        filters.search = '';
+        searchInput.value = '';
+        updateActFilter();
+        updateFilterTags();
+        filterNotes();
+    }
+
+    // --- Timecode and live display ---
     function updateGlobalTimecodeDisplay(timecode) {
-        let formatted;
-        if (timecode.displayMode === 'realtime') {
-            const ms = Math.floor((timecode.milliseconds || 0) / 10);
-            formatted = `${timecode.hours.toString().padStart(2, '0')}:${timecode.minutes.toString().padStart(2, '0')}:${timecode.seconds.toString().padStart(2, '0')}:${ms.toString().padStart(2, '0')}`;
-        } else {
-            formatted = formatTimecode(timecode);
-        }
-        globalTimecodeElement.textContent = formatted;
+        globalTimecodeElement.textContent = formatTimecode(timecode);
     }
 
     function updatePersonalTimecodeDisplay(timecode) {
-        let formatted;
-        if (timecode.displayMode === 'realtime') {
-            const ms = Math.floor((timecode.milliseconds || 0) / 10);
-            formatted = `${timecode.hours.toString().padStart(2, '0')}:${timecode.minutes.toString().padStart(2, '0')}:${timecode.seconds.toString().padStart(2, '0')}:${ms.toString().padStart(2, '0')}`;
-        } else {
-            formatted = formatTimecode(timecode);
-        }
-        personalTimecodeElement.textContent = formatted;
+        personalTimecodeElement.textContent = formatTimecode(timecode);
     }
 
     function updateGlobalLxCueDisplay(cue) {
-        globalLxCueElement.textContent = `LX Cue: ${cue}`;
+        globalLxCueElement.textContent = cue || '--';
+    }
+
+    // Without a cue feed from the desk the cue is typed in by hand.
+    function updateCueMode() {
+        lxCueInput.hidden = oscAvailable;
+        globalLxCueElement.hidden = !oscAvailable;
     }
 
     function updatePersonalLxCueDisplay(cue) {
-        personalLxCueElement.textContent = `LX Cue: ${cue}`;
+        personalLxCueElement.textContent = cue || '--';
     }
 
-    const timeModeLabels = {
-        midi: 'MIDI TIMECODE',
-        network: 'NETWORK TIMECODE',
-        realtime: 'REAL TIME'
-    };
+    const timeModeLabels = { midi: 'MIDI TC', network: 'Network TC', realtime: 'Time' };
 
     function updateSourceBadge() {
-        const name = timeMode === 'network' ? 'NETWORK' : 'MIDI';
-        sourceBadge.textContent = liveSources[timeMode] ? `LIVE ${name}` : name;
-        sourceBadge.className = `source-badge source-${timeMode}`;
+        const live = liveSources[timeMode];
+        sourceBadge.textContent = live ? 'Live' : 'Waiting';
+        sourceBadge.title = live ? 'Timecode is coming in' : 'No timecode received yet';
+        sourceBadge.classList.toggle('live', !!live);
     }
 
     function updateTimeModeDisplay() {
         timeModeLabel.textContent = timeModeLabels[timeMode] || timeModeLabels.midi;
         if (timeMode === 'realtime') {
-            sourceBadge.style.display = 'none';
-            globalFrameRateElement.textContent = 'Time Unit: Milliseconds';
+            sourceBadge.hidden = true;
+            globalTimecodeElement.title = 'Time of day';
             startRealTimeMode();
         } else {
             currentGlobalTimecode = latestTimecodes[timeMode];
             currentUser.currentFrameRate = currentGlobalTimecode.frameRate;
             updateSourceBadge();
-            sourceBadge.style.display = 'inline-block';
-            globalFrameRateElement.textContent = `Frame Rate: ${currentGlobalTimecode.frameRate} fps`;
+            sourceBadge.hidden = false;
+            globalTimecodeElement.title = `${currentGlobalTimecode.frameRate} fps`;
             stopRealTimeMode();
             updateGlobalTimecodeDisplay(currentGlobalTimecode);
             if (!currentUser.isTyping) updatePersonalTimecodeDisplay(currentGlobalTimecode);
@@ -327,62 +330,150 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateRealTimeDisplay() {
-        const now = new Date();
-        const realTimeTimecode = {
-            hours: now.getHours(),
-            minutes: now.getMinutes(),
-            seconds: now.getSeconds(),
-            milliseconds: now.getMilliseconds(),
-            displayMode: 'realtime'
-        };
-        updateGlobalTimecodeDisplay(realTimeTimecode);
-        if (!currentUser.isTyping) updatePersonalTimecodeDisplay(realTimeTimecode);
+        const now = TimecodeFormat.timeOfDay();
+        updateGlobalTimecodeDisplay(now);
+        if (!currentUser.isTyping) updatePersonalTimecodeDisplay(now);
+    }
+
+    // --- Writing a note ---
+    // Set while a press below the note box is landing (see releaseComposer).
+    let composerHold = null;
+    let composerHoldTimer = null;
+    let composerHoldWatch = null;
+    function updateComposer() {
+        const open = currentUser.isTyping || noteInput.value.length > 0 || document.activeElement === noteInput || !!composerHold;
+        composer.classList.toggle('open', open);
+        composer.classList.toggle('focused', composer.contains(document.activeElement) || !!composerHold);
+        personalTimecodeContainer.classList.toggle('frozen', currentUser.isTyping);
+        stampLabel.textContent = currentUser.isTyping ? 'Note taken at' : 'Taken when you start typing';
+        personalTimecodeContainer.title = 'Locked when you start writing, so it matches the moment you saw';
+        noteInput.style.height = 'auto';
+        noteInput.style.height = `${noteInput.scrollHeight}px`;
     }
 
     function startTyping() {
         if (currentUser.isTyping) return;
         currentUser.isTyping = true;
         if (timeMode === 'realtime') {
-            const now = new Date();
-            currentUser.frozenTimecode = {
-                hours: now.getHours(),
-                minutes: now.getMinutes(),
-                seconds: now.getSeconds(),
-                milliseconds: now.getMilliseconds(),
-                displayMode: 'realtime',
-                frameRate: 'ms'
-            };
+            currentUser.frozenTimecode = { ...TimecodeFormat.timeOfDay(), frameRate: 'ms' };
         } else {
             currentUser.frozenTimecode = { ...currentGlobalTimecode, displayMode: timeMode };
         }
         currentUser.frozenLxCue = currentGlobalLxCue;
+        currentUser.typingStartedAt = Date.now();
         updatePersonalTimecodeDisplay(currentUser.frozenTimecode);
         updatePersonalLxCueDisplay(currentUser.frozenLxCue);
-        personalTimecodeContainer.classList.add('frozen');
+        updateComposer();
         window.socket.emit('typing-start', {
             timecode: currentUser.frozenTimecode,
             lxCue: currentUser.frozenLxCue
         });
+        startAutoResumeTimer();
     }
 
-    function cancelNote() {
-        noteInput.value = '';
-        sendNoteBtn.disabled = true;
+    // Unfreezes the stamp so it follows the show again.
+    function releaseFreeze() {
         currentUser.isTyping = false;
         currentUser.frozenTimecode = null;
         currentUser.frozenLxCue = null;
-        personalTimecodeContainer.classList.remove('frozen');
-        selectedTags = [];
-        document.querySelectorAll('.tag-checkbox:checked').forEach(cb => cb.checked = false);
+        currentUser.typingStartedAt = null;
+        if (timeMode !== 'realtime') updatePersonalTimecodeDisplay(currentGlobalTimecode);
+        updatePersonalLxCueDisplay(currentGlobalLxCue);
         window.socket.emit('typing-stop');
         clearAutoResumeTimer();
+        updateComposer();
     }
 
+    // The tags a person last sent with start every new note, per person
+    // (localStorage, so all their tabs share them).
+    const lastTagsKey = () => `last-tags:${currentUser.sub}`;
+
+    function rememberedTags() {
+        if (!currentUser.sub) return [];
+        try {
+            const tags = JSON.parse(localStorage.getItem(lastTagsKey()));
+            return Array.isArray(tags) ? tags.filter(id => typeof id === 'string') : [];
+        } catch (e) { return []; }
+    }
+
+    function rememberTags(tags) {
+        if (!currentUser.sub) return;
+        try { localStorage.setItem(lastTagsKey(), JSON.stringify(tags)); } catch (e) { /* storage unavailable */ }
+    }
+
+    // Puts the remembered tags on a note that hasn't been started yet.
+    function applyRememberedTags() {
+        if (currentUser.isTyping || noteInput.value) return;
+        selectedTags = rememberedTags();
+        updateTagsDisplay();
+    }
+
+    function resetComposer() {
+        noteInput.value = '';
+        sendNoteBtn.disabled = true;
+        selectedTags = rememberedTags();
+        setComposerTagsExpanded(false);
+        updateTagsDisplay();
+        showTagError(false);
+        releaseFreeze();
+        clearDraft();
+    }
+
+    // A note needs a tag (unless none are set up) so it reaches the right department.
+    function needsTag() {
+        return availableTags.length > 0 && selectedTags.length === 0;
+    }
+
+    function showTagError(show) {
+        tagError.hidden = !show;
+        tagsContainer.classList.toggle('invalid', show);
+        if (show) setComposerTagsExpanded(true);
+    }
+
+    function cancelNote() {
+        resetComposer();
+    }
+
+    // Discarding typed text can be undone for a few seconds (stamp included).
+    function discardNote() {
+        const text = noteInput.value;
+        if (!text.trim()) {
+            cancelNote();
+            if (phoneLayout.matches) { noteInput.blur(); cancelNoteBtn.blur(); updateComposer(); }
+            return;
+        }
+        const saved = { text, tags: [...selectedTags], timecode: currentUser.frozenTimecode, lxCue: currentUser.frozenLxCue };
+        cancelNote();
+        noteInput.blur();
+        showToast('Note discarded', 'Undo', () => {
+            noteInput.value = saved.text;
+            selectedTags = saved.tags;
+            updateTagsDisplay();
+            noteInput.focus();
+            currentUser.frozenTimecode = saved.timecode;
+            currentUser.frozenLxCue = saved.lxCue;
+            updatePersonalTimecodeDisplay(saved.timecode);
+            updatePersonalLxCueDisplay(saved.lxCue);
+            sendNoteBtn.disabled = false;
+            updateComposer();
+            saveDraft();
+        });
+    }
+
+    // Restarted by every focus, keystroke and blur: once the box has been
+    // empty that long the stamp follows the show again (see type-to-note.js).
     function startAutoResumeTimer() {
         clearAutoResumeTimer();
         autoResumeTimer = setTimeout(function() {
-            if (noteInput.value.trim() === '' && document.activeElement !== noteInput) cancelNote();
-        }, 15000);
+            autoResumeTimer = null;
+            const action = typeToNote.emptyBoxAction({
+                isTyping: currentUser.isTyping,
+                noteValue: noteInput.value,
+                focused: document.activeElement === noteInput
+            });
+            if (action === 'release') releaseFreeze();
+            else if (action === 'cancel') cancelNote();
+        }, typeToNote.EMPTY_RELEASE_MS);
     }
 
     function clearAutoResumeTimer() {
@@ -392,28 +483,221 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // --- Chat functions ---
+    // --- Online users ---
+    // One entry per person, even with the page open in several tabs.
+    function renderUsers(users) {
+        const people = new Map();
+        for (const u of users) {
+            const key = u.id || u.name;
+            const existing = people.get(key);
+            if (existing) existing.isTyping = existing.isTyping || u.isTyping;
+            else people.set(key, { key, name: u.name, isTyping: !!u.isTyping, me: !!currentUser.sub && u.id === currentUser.sub });
+        }
+        const list = [...people.values()].sort((a, b) => (b.me - a.me) || a.name.localeCompare(b.name));
+        userCount.textContent = `${list.length} online`;
+        usersButton.classList.remove('awaiting-data');
+
+        const MAX = 4;
+        setHtml(avatarStack, list.slice(0, MAX).map(p =>
+            avatarHTML(p.key, p.name, p.isTyping ? 'typing' : '')
+        ).join('') + (list.length > MAX ? `<span class="avatar more">+${list.length - MAX}</span>` : ''));
+
+        setHtml(usersList, list.map(p => `
+            <li>
+                ${avatarHTML(p.key, p.name)}
+                <span>${esc(p.name)}</span>${p.me ? '<span class="you">you</span>' : ''}
+                ${p.isTyping ? '<span class="writing">writing…</span>' : ''}
+            </li>`).join(''));
+    }
+
+    // --- Popovers (online list, menu, filters, tag picker) ---
+    const { placePopover } = NoteView;
+
+    function closePopovers() {
+        let closed = false;
+        for (const dropdown of [actDropdown, tagDropdown]) closed = dropdown.close() || closed;
+        for (const [popover, button] of [[usersPopover, usersButton], [menuPopover, menuButton]]) {
+            if (popover.hidden) continue;
+            closed = true;
+            const hadFocus = popover.contains(document.activeElement);
+            popover.hidden = true;
+            button.setAttribute('aria-expanded', 'false');
+            if (hadFocus) button.focus({ preventScroll: true });
+        }
+        if (!tagPicker.hidden) {
+            closed = true;
+            closeTagPicker();
+        }
+        return closed;
+    }
+
+    function togglePopover(popover, button, align = 'right') {
+        const wasOpen = !popover.hidden;
+        closePopovers();
+        if (wasOpen) return false;
+        placePopover(popover, button, align);
+        button.setAttribute('aria-expanded', 'true');
+        return true;
+    }
+
+    function renderTagPicker() {
+        const note = allNotes.find(n => n.id === tagPickerNoteId);
+        if (!note) return closeTagPicker();
+        // The last tag on a note can't be taken off, only swapped by ticking another first.
+        const onlyTag = note.tags.length === 1 ? note.tags[0] : null;
+        tagPickerHint.hidden = !onlyTag;
+        const focused = tagPicker.contains(document.activeElement) ? document.activeElement.dataset.tag : null;
+        setHtml(tagPickerList, availableTags.map(tag => `
+            <button type="button" class="tag-option" role="menuitemcheckbox" data-tag="${esc(tag.id)}" aria-checked="${note.tags.includes(tag.id)}"${tag.id === onlyTag ? ' aria-disabled="true"' : ''} style="--tag: ${safeColor(tag.color)}">
+                <span class="dot"></span>${esc(tag.name)}<i data-icon="check" data-class="check"></i>
+            </button>`).join('') || '<div class="popover-title">No tags set up</div>');
+        if (focused) [...tagPickerList.querySelectorAll('.tag-option')].find(o => o.dataset.tag === focused)?.focus();
+    }
+
+    function openTagPicker(noteId, anchor) {
+        closePopovers();
+        tagPickerNoteId = noteId;
+        renderTagPicker();
+        placePopover(tagPicker, anchor, 'left');
+        anchor.setAttribute('aria-expanded', 'true');
+        const first = tagPickerList.querySelector('.tag-option');
+        if (first) first.focus();
+    }
+
+    function closeTagPicker() {
+        const noteId = tagPickerNoteId;
+        tagPicker.hidden = true;
+        tagPickerNoteId = null;
+        const el = noteId && noteElements.get(noteId);
+        el?.querySelector('[data-action="edit-tags"]')?.setAttribute('aria-expanded', 'false');
+        if (el && tagPicker.contains(document.activeElement)) el.querySelector('[data-action="edit-tags"]')?.focus();
+    }
+
+    tagPickerList.addEventListener('click', (e) => {
+        const option = e.target.closest('.tag-option');
+        const note = allNotes.find(n => n.id === tagPickerNoteId);
+        if (!option || !note) return;
+        const id = option.dataset.tag;
+        const tags = note.tags.includes(id) ? note.tags.filter(t => t !== id) : [...note.tags, id];
+        if (!tags.length) return;
+        option.setAttribute('aria-checked', String(tags.includes(id)));
+        window.socket.emit('note-update-tags', { noteId: note.id, tags });
+    });
+
+    tagPickerList.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+        e.preventDefault();
+        const options = [...tagPickerList.querySelectorAll('.tag-option')];
+        const i = options.indexOf(document.activeElement);
+        const next = options[(i + (e.key === 'ArrowDown' ? 1 : -1) + options.length) % options.length];
+        if (next) next.focus();
+    });
+
+    // --- Chat ---
+    function isMyChat(msg) {
+        return msg.userId ? msg.userId === currentUser.sub : msg.user === currentUser.name;
+    }
+
+    // Messages from one person within a few minutes of each other read as one
+    // run: the name and face show once, at the start.
+    function continuesRun(prev, msg) {
+        return !!prev && (prev.userId || prev.user) === (msg.userId || msg.user)
+            && new Date(msg.timestamp) - new Date(prev.timestamp) < 5 * 60 * 1000;
+    }
+
+    function renderChatMessage(msg, prev) {
+        const mine = isMyChat(msg);
+        const cont = continuesRun(prev, msg);
+        const head = cont ? '' : `
+                <div class="chat-msg-head">
+                    ${mine ? '' : `<span class="chat-msg-user">${esc(msg.user)}</span>`}
+                    <span class="chat-msg-time">${esc(clockTime(msg.timestamp))}</span>
+                </div>`;
+        const face = mine ? '' : (cont ? '<span class="avatar-gap"></span>' : avatarHTML(msg.userId || msg.user, msg.user, 'sm'));
+        return `
+            <div class="chat-msg${mine ? ' mine' : ''}${cont ? ' cont' : ''}">
+                ${face}
+                <div class="chat-msg-main">${head}
+                    <div class="bubble" title="${esc(fullTime(msg.timestamp))}">${esc(msg.text)}</div>
+                </div>
+            </div>`;
+    }
+
+    function chatNearBottom() {
+        return chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 80;
+    }
+
     function updateChatMessages() {
-        chatCount.textContent = `${chatMessagesList.length} shitpost${chatMessagesList.length !== 1 ? 's' : ''}`;
+        chatCount.textContent = plural(chatMessagesList.length, 'shitpost');
         if (chatMessagesList.length === 0) {
-            chatMessages.innerHTML = '<div style="text-align: center; opacity: 0.7; padding: 2rem;">No chat messages yet. Start the conversation!</div>';
+            setHtml(chatMessages, '<div class="chat-empty">No shitposts yet.</div>');
             return;
         }
-        const sorted = [...chatMessagesList].sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
-        chatMessages.innerHTML = sorted.map(msg => {
-            const time = new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            return `
-                <div class="chat-message">
-                    <div class="chat-message-header">
-                        <span class="chat-message-user">${escapeHtml(msg.user)}</span>
-                        <span class="chat-message-time">${time}</span>
-                    </div>
-                    <div class="chat-message-text">${escapeHtml(msg.text)}</div>
-                </div>
-            `;
-        }).join('');
-        setTimeout(() => chatMessages.scrollTop = chatMessages.scrollHeight, 100);
+        const sorted = [...chatMessagesList].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        setHtml(chatMessages, sorted.map((m, i) => renderChatMessage(m, sorted[i - 1])).join(''));
+        chatMessages.scrollTop = chatMessages.scrollHeight;
     }
+
+    function updateUnread() {
+        chatUnread.hidden = unreadChat === 0;
+        chatUnread.textContent = unreadChat > 99 ? '99+' : String(unreadChat);
+    }
+
+    function setChatOpen(open) {
+        chatDrawer.hidden = !open;
+        document.documentElement.classList.toggle('chat-open', open);
+        chatToggle.setAttribute('aria-expanded', String(open));
+        updateChatLayout();
+        if (open) {
+            closePopovers();
+            unreadChat = 0;
+            updateUnread();
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+    }
+
+    // Opening or closing chat on a wide screen is remembered for the next
+    // load (index-boot.js); narrow screens always start with it closed.
+    function chooseChatOpen(open) {
+        setChatOpen(open);
+        if (!wideChatLayout.matches) return;
+        try { localStorage.setItem('shitposts-open', open ? '1' : '0'); } catch (e) { /* storage unavailable */ }
+    }
+
+    // On phones chat occupies the visible viewport, including while the
+    // software keyboard is open. The page underneath is not interactive.
+    function updateChatLayout() {
+        const modal = modalChatLayout.matches && !chatDrawer.hidden;
+        document.querySelector('.page').inert = modal;
+        document.querySelector('.topbar').inert = modal;
+        scrollToTopBtn.inert = modal;
+        if (modal) {
+            chatDrawer.setAttribute('role', 'dialog');
+            chatDrawer.setAttribute('aria-modal', 'true');
+            chatDrawer.setAttribute('aria-labelledby', 'chatTitle');
+        } else {
+            chatDrawer.removeAttribute('role');
+            chatDrawer.removeAttribute('aria-modal');
+            chatDrawer.removeAttribute('aria-labelledby');
+        }
+    }
+
+    function updateVisibleViewport() {
+        const viewport = window.visualViewport;
+        document.documentElement.style.setProperty('--visible-height', `${viewport?.height ?? window.innerHeight}px`);
+        document.documentElement.style.setProperty('--visible-top', `${viewport?.offsetTop ?? 0}px`);
+    }
+    window.visualViewport?.addEventListener('resize', updateVisibleViewport);
+    window.visualViewport?.addEventListener('scroll', updateVisibleViewport);
+    window.addEventListener('resize', updateVisibleViewport);
+    modalChatLayout.addEventListener('change', () => {
+        updateChatLayout();
+        if (!chatDrawer.hidden && modalChatLayout.matches && !chatDrawer.contains(document.activeElement)) chatClose.focus();
+    });
+    updateVisibleViewport();
+    new ResizeObserver(() => {
+        document.documentElement.style.setProperty('--connection-banner-h', `${connectionBanner.offsetHeight}px`);
+    }).observe(connectionBanner);
 
     function sendChatMessage() {
         const text = chatInput.value.trim();
@@ -424,180 +708,213 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    function updateChatUserName() {
-        chatUserName.textContent = currentUser.name;
-    }
-
-    function updateUserCount(count) {
-        userCount.textContent = `${count} user${count !== 1 ? 's' : ''}`;
-    }
-
-    // --- Scroll button logic ---
-    // Newest notes are at the top of the list.
-    function isNearTop() {
-        return notesList.scrollTop < 50;
-    }
-
+    // --- Scroll back to the newest notes ---
     function toggleScrollButton() {
-        if (isNearTop()) scrollToTopBtn.style.display = 'none';
-        else scrollToTopBtn.style.display = 'flex';
+        scrollToTopBtn.hidden = window.scrollY < 400;
     }
 
     function scrollToTop() {
-        notesList.scrollTo({ top: 0, behavior: 'smooth' });
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
 
-    // --- Incremental DOM update functions ---
-    function getTagElements(tags) {
-        return tags.map(tagId => {
-            const tag = availableTags.find(t => t.id === tagId);
-            return tag ? `<span class="note-tag" style="background-color: ${tag.color}; color: #000;">${tag.name}</span>`
-                       : `<span class="note-tag" style="background-color: #cccccc; color: #000;">${tagId}</span>`;
-        }).join('');
+    // --- Rendering notes ---
+    const tagChipsHTML = (note) => NoteView.tagChipsHTML(note.tags, tagById);
+
+    // A note's tags are one dropdown: the chips and a chevron open the tag picker.
+    function tagTriggerHTML(note) {
+        const names = note.tags.map(id => tagById(id).name).join(', ');
+        const label = note.tags.length ? `Tags: ${names}. Change tags` : 'Add a tag';
+        return `<button type="button" class="tag-trigger" data-action="edit-tags" aria-haspopup="dialog" aria-expanded="${tagPickerNoteId === note.id}" aria-label="${esc(label)}" title="Change tags">
+            ${tagChipsHTML(note) || '<span class="chip add-tag">Add a tag</span>'}<i data-icon="chevron"></i></button>`;
     }
 
-    function formatNoteTimecode(note) {
-        if (note.frameRate === 'ms') {
-            const ms = Math.floor((note.timecode.milliseconds || 0) / 10);
-            return `${note.timecode.hours.toString().padStart(2, '0')}:${note.timecode.minutes.toString().padStart(2, '0')}:${note.timecode.seconds.toString().padStart(2, '0')}:${ms.toString().padStart(2, '0')}`;
-        }
-        return formatTimecode(note.timecode);
+    function iconButton(action, icon, label, extra) {
+        return `<button type="button" class="icon-btn" data-action="${esc(action)}" aria-label="${esc(label)}" title="${esc(label)}"${extra || ''}><i data-icon="${icon}"></i></button>`;
     }
 
-    function getNoteHTML(note) {
-        const timecodeDisplay = formatNoteTimecode(note);
-        const tagElements = getTagElements(note.tags);
-        const editButton = `<button class="small edit-tags-btn" data-action="edit-tags" data-note-id="${note.id}">Edit Tags</button>`;
-        const editNoteButton = !NoteAuthor.canEditNote(note, currentUser.sub) ? '' : `<button class="small edit-note-btn" data-action="edit-note" data-note-id="${note.id}">Edit Note</button>`;
-        const editedIndicator = note.lastEdited ? `<div class="note-edited">Last edited by ${escapeHtml(note.lastEditedBy || 'unknown')} at ${new Date(note.lastEdited).toLocaleTimeString()}</div>` : '';
-        const isCommentsExpanded = expandedCommentSections.has(note.id);
-        const commentCount = note.comments ? note.comments.length : 0;
-
-        const commentsSection = `
-            <div class="comments-section">
-                <button class="comments-toggle ${isCommentsExpanded ? 'expanded' : ''}" data-action="toggle-comments" data-note-id="${note.id}">
-                    <span>Comments</span>
-                    <span class="count">${commentCount}</span>
-                    <span class="arrow">▼</span>
-                </button>
-                <div class="comments-container ${isCommentsExpanded ? 'expanded' : ''}" id="comments-${note.id}">
-                    ${note.comments ? note.comments.map(comment => `
-                        <div class="comment-item" data-comment-id="${comment.id}">
-                            <div class="comment-header">
-                                <span class="comment-user">${escapeHtml(comment.user)}</span>
-                                <span class="comment-time">
-                                    ${formatCommentTime(comment.timestamp)}
-                                    ${comment.lastEdited ? `(edited by ${escapeHtml(comment.lastEditedBy || 'unknown')} at ${new Date(comment.lastEdited).toLocaleTimeString()})` : ''}
-                                </span>
-                            </div>
-                            <div class="comment-text">
-                                <span class="comment-text-display">${escapeHtml(comment.text)}</span>
-                                <textarea class="comment-text-edit" style="display: none">${escapeHtml(comment.text)}</textarea>
-                            </div>
-                            <div class="comment-actions" style="margin-top: 0.5rem;">
-                                <button class="small edit-comment-btn" data-action="edit-comment" data-note-id="${note.id}" data-comment-id="${comment.id}">Edit</button>
-                                <button class="small delete-comment-btn" data-action="delete-comment" data-note-id="${note.id}" data-comment-id="${comment.id}">Delete</button>
-                                <button class="small save-comment-btn" data-action="save-comment" data-note-id="${note.id}" data-comment-id="${comment.id}" style="display: none">Save</button>
-                                <button class="small cancel-comment-btn" data-action="cancel-comment" data-note-id="${note.id}" data-comment-id="${comment.id}" style="display: none">Cancel</button>
-                            </div>
-                        </div>
-                    `).join('') : ''}
+    function commentHTML(note, comment) {
+        const key = `${note.id}/${comment.id}`;
+        const editing = commentEditDrafts.has(key);
+        const tools = isMine(comment) && !editing ? `
+            <span class="row-actions">
+                ${iconButton('edit-comment', 'edit', 'Edit reply', ` data-comment-id="${esc(comment.id)}"`)}
+                ${iconButton('delete-comment', 'trash', 'Delete reply', ` data-comment-id="${esc(comment.id)}"`)}
+            </span>` : '';
+        const body = editing ? `
+            <div class="comment-edit">
+                <textarea data-field="comment-edit" data-comment-id="${esc(comment.id)}" aria-label="Edit reply">${esc(commentEditDrafts.get(key))}</textarea>
+                <div class="edit-actions">
+                    <button type="button" class="btn ghost" data-action="cancel-comment-edit" data-comment-id="${esc(comment.id)}">Cancel</button>
+                    <button type="button" class="btn primary" data-action="save-comment" data-comment-id="${esc(comment.id)}">Save</button>
                 </div>
-                <div class="comment-input-area ${isCommentsExpanded ? 'expanded' : ''}" id="comment-input-${note.id}">
-                    <textarea class="comment-input" data-action="comment-input" data-note-id="${note.id}" placeholder="Add a comment..."></textarea>
-                    <div class="comment-actions">
-                        <button class="small secondary cancel-comment" data-action="cancel-comment-input" data-note-id="${note.id}">Cancel</button>
-                        <button class="small primary submit-comment" data-action="submit-comment" data-note-id="${note.id}" disabled>Submit</button>
+            </div>` : undefined;
+        return NoteView.commentHTML(comment, { tools, body });
+    }
+
+    function noteHTML(note) {
+        const comments = (note.comments || []).filter(c => !deletedComments.has(`${note.id}/${c.id}`));
+        const editing = noteEditDrafts.has(note.id);
+        const replying = openReplies.has(note.id);
+        const canEdit = isMine(note);
+        // Ownerless notes can be edited by anyone, but only deleted by whoever wrote them.
+        const canDelete = !!note.userId && canEdit;
+
+        const body = editing ? `
+            <div class="note-edit">
+                <textarea data-field="note-edit" aria-label="Edit note">${esc(noteEditDrafts.get(note.id))}</textarea>
+                <div class="edit-actions">
+                    <button type="button" class="btn ghost" data-action="cancel-note-edit">Cancel</button>
+                    <button type="button" class="btn primary" data-action="save-note">Save</button>
+                </div>
+            </div>` : undefined;
+
+        // While the note is being edited, Save and Cancel are its only actions.
+        const actions = editing ? '' : `
+            <span class="row-actions">
+                ${NoteView.playbackLinkHTML(PlaybackContext.playbackUrl({ source: 'live' }, note.id, location.pathname + location.search))}
+                ${iconButton('reply', 'reply', 'Reply')}
+                ${canEdit ? iconButton('edit-note', 'edit', 'Edit note') : ''}
+                ${canDelete ? iconButton('delete-note', 'trash', 'Delete note') : ''}
+            </span>`;
+
+        const draft = commentDrafts.get(note.id) || '';
+        const thread = comments.length || replying ? `
+            ${comments.map(c => commentHTML(note, c)).join('')}
+            ${replying ? `
+            <div class="comment-input">
+                ${avatarHTML(currentUser.sub || currentUser.name, currentUser.name, 'sm')}
+                <div class="comment-box">
+                    <textarea rows="1" data-field="comment" placeholder="Write a reply…" aria-label="Write a reply">${esc(draft)}</textarea>
+                    <div class="comment-box-actions">
+                        <button type="button" class="btn ghost" data-action="cancel-comment">Cancel</button>
+                        <button type="button" class="btn primary" data-action="submit-comment" ${draft.trim() ? '' : 'disabled'}>Reply</button>
                     </div>
                 </div>
-            </div>
-        `;
+            </div>` : editing ? '' : `
+            <button type="button" class="reply-more" data-action="reply"><i data-icon="reply"></i>Reply</button>`}` : '';
 
-        return `
-            <div class="note-item" data-tags="${note.tags.join(',')}" data-act="${note.act || 'Preshow'}" data-note-id="${note.id}">
-                <div class="note-header">
-                    <span class="note-act">${note.act || 'Preshow'}</span>
-                    <span class="note-user">${escapeHtml(note.user)}</span>
-                    <span class="note-timecode">
-                        ${timecodeDisplay} 
-                        <span class="note-lx-cue">LX: ${note.lxCue || 'N/A'}</span>
-                        @ ${note.frameRate || '30 fps'}
-                    </span>
-                </div>
-                <div class="note-text">
-                    <span class="note-text-display">${escapeHtml(note.text)}</span>
-                    <textarea class="note-text-edit" style="display: none">${escapeHtml(note.text)}</textarea>
-                </div>
-                ${editedIndicator}
-                ${note.tags.length > 0 ? `<div class="note-tags">${tagElements}</div>` : ''}
-                ${commentsSection}
-                <div class="note-actions-row">
-                    ${editButton}
-                    ${editNoteButton}
-                </div>
-            </div>
-        `;
+        return NoteView.noteHTML(note, {
+            attrs: `data-note-id="${esc(note.id)}"`,
+            side: actions, body, thread,
+            foot: tagTriggerHTML(note)
+        });
     }
 
     function createNoteElement(note) {
         const wrapper = document.createElement('div');
-        wrapper.innerHTML = getNoteHTML(note).trim();
+        setHtml(wrapper, noteHTML(note).trim());
         const element = wrapper.firstChild;
         noteElements.set(note.id, element);
         return element;
     }
 
-    function updateNoteElement(note) {
+    function groupHeadElement(act) {
+        const wrapper = document.createElement('div');
+        setHtml(wrapper, NoteView.groupHeadHTML(act));
+        return wrapper.firstChild;
+    }
+
+    // Puts focus and caret back where they were if the focused field was re-rendered.
+    // Keeps focus (and the caret, in a text box) on the matching field or button in the new element.
+    function rerenderPreservingFocus(oldEl, newEl) {
+        const active = document.activeElement;
+        let target = null;
+        let caret = null;
+        if (active && oldEl.contains(active) && (active.dataset.field || active.dataset.action)) {
+            const comment = active.dataset.commentId ? `[data-comment-id="${CSS.escape(active.dataset.commentId)}"]` : '';
+            target = active.dataset.field
+                ? `[data-field="${active.dataset.field}"]${comment}`
+                : `[data-action="${active.dataset.action}"]${comment}${active.classList.contains('reply-more') ? '.reply-more' : ''}`;
+            if (active.dataset.field) caret = active.selectionStart;
+        }
+        newEl.hidden = oldEl.hidden;
+        oldEl.replaceWith(newEl);
+        if (target) {
+            const el = newEl.querySelector(target);
+            if (el) {
+                el.focus();
+                if (caret !== null) el.setSelectionRange(caret, caret);
+            }
+        }
+    }
+
+    // `refilter: false` when the caller filters once after a batch of updates.
+    function updateNoteElement(note, { refilter = true } = {}) {
         const oldElement = noteElements.get(note.id);
         if (!oldElement) return;
         const newElement = createNoteElement(note);
-        oldElement.replaceWith(newElement);
-        noteElements.set(note.id, newElement);
-        const shouldShow = (filterTag === 'all' || note.tags.includes(filterTag)) &&
-                           (filterAct === 'all' || (note.act || 'Preshow') === filterAct);
-        newElement.style.display = shouldShow ? 'block' : 'none';
+        rerenderPreservingFocus(oldElement, newElement);
+        if (tagPickerNoteId === note.id) renderTagPicker();
+        if (refilter) filterNotes();
     }
 
-    function insertNoteInOrder(noteElement, note) {
-        // Only for a note that is the newest; addNote rebuilds the list for one that isn't.
-        // Pending notes stay above every note the server has.
-        notesList.insertBefore(noteElement, notesList.querySelector('.note-item:not(.pending)'));
-        const shouldShow = (filterTag === 'all' || note.tags.includes(filterTag)) &&
-                           (filterAct === 'all' || (note.act || 'Preshow') === filterAct);
-        noteElement.style.display = shouldShow ? 'block' : 'none';
+    // Only for a note that is the newest; addNote rebuilds the list for one that isn't.
+    // Pending notes stay above every note the server has.
+    function insertNewestNote(element, note) {
+        const act = note.act || 'Preshow';
+        const firstHead = notesList.querySelector('.group-head');
+        if (firstHead && firstHead.dataset.act === act) {
+            firstHead.after(element);
+        } else {
+            const head = groupHeadElement(act);
+            notesList.insertBefore(head, firstHead);
+            head.after(element);
+        }
     }
+
+    // Drawing a note costs about half a millisecond (mostly DOMPurify), so a
+    // long list is drawn top first: enough to fill the screen at once, then the
+    // rest a batch per task so the page never stalls. Batches look each note up
+    // again, so one changed or deleted meanwhile is drawn as it is now.
+    const FIRST_BATCH = 30;
+    const LATER_BATCH = 60;
+    let rebuildTimer = null;
 
     function rebuildFullNotesList() {
-        captureCommentInputs();                // Save any in‑progress comments
-        notesList.innerHTML = '';
+        clearTimeout(rebuildTimer);
+        notesList.replaceChildren();
         noteElements.clear();
         for (const { element } of [...pendingNotes.values()].reverse()) notesList.appendChild(element);
-        for (const note of NoteOrder.newestFirst(allNotes)) {
-            const element = createNoteElement(note);
-            notesList.appendChild(element);
-        }
+        const order = NoteOrder.newestFirst(allNotes).map(note => note.id);
+        let next = 0;
+        let lastAct = null;
+        const drawBatch = (size) => {
+            const notesById = new Map(allNotes.map(n => [n.id, n]));
+            const batch = document.createDocumentFragment();
+            for (let drawn = 0; drawn < size && next < order.length; next++) {
+                const note = notesById.get(order[next]);
+                if (!note || noteElements.has(note.id)) continue;
+                const act = note.act || 'Preshow';
+                if (act !== lastAct) {
+                    batch.appendChild(groupHeadElement(act));
+                    lastAct = act;
+                }
+                batch.appendChild(createNoteElement(note));
+                drawn++;
+            }
+            notesList.appendChild(batch);
+            filterNotes();
+            if (next < order.length) rebuildTimer = setTimeout(() => drawBatch(LATER_BATCH), 0);
+        };
+        drawBatch(FIRST_BATCH);
         updateActFilter();
-        filterNotes();
-        restoreCommentInputs();                // Restore comment text and focus
-        toggleScrollButton();
+        if (tagPickerNoteId) renderTagPicker();
     }
 
+    // Rows are drawn in batches after a rebuild, so check the notes, not the drawn rows.
     function addNote(note) {
-        if (noteElements.has(note.id)) return;
-        const wasNearTop = isNearTop();   // Check BEFORE insertion
+        if (allNotes.some(n => n.id === note.id)) return;
         const index = NoteOrder.insertionIndex(allNotes, note);
         allNotes.splice(index, 0, note);
         if (index < allNotes.length - 1) {
             // A late note (written while disconnected) belongs below later ones.
             rebuildFullNotesList();
         } else {
-            insertNoteInOrder(createNoteElement(note), note);
+            const element = createNoteElement(note);
+            insertNewestNote(element, note);
             updateActFilter();
-        }
-        if (wasNearTop) {
-            scrollToTop();
-        } else {
-            toggleScrollButton();
+            filterNotes();
+            if (note.userId !== currentUser.sub) element.classList.add('flash');
         }
     }
 
@@ -606,48 +923,78 @@ document.addEventListener('DOMContentLoaded', function() {
     // has stored it. While disconnected it is held here rather than in
     // socket.io's send buffer, and every pending note is (re)sent on connect:
     // one sent just before a drop may or may not have arrived, and the server
-    // ignores a resend with a clientId it already has.
+    // ignores a resend with a clientId it already has. They are also saved to
+    // localStorage (pending-notes.js), so a reload or a trip through /login
+    // while the server is unreachable does not lose them.
+    const pendingStore = createPendingNotes({
+        // reached inside pendingStore's try/catch, as merely touching localStorage can throw
+        getItem: (key) => localStorage.getItem(key),
+        setItem: (key, value) => localStorage.setItem(key, value),
+        removeItem: (key) => localStorage.removeItem(key)
+    });
+
+    // The notes this browser had not got stored before it was last closed.
+    function restorePendingNotes() {
+        for (const { note, writtenAt } of pendingStore.load(currentUser.sub)) {
+            if (pendingNotes.has(note.clientId) || allNotes.some(n => isMyStoredNote(n, note.clientId))) continue;
+            showPendingNote(note, writtenAt);
+            sendPendingNote(note, writtenAt);
+        }
+    }
+
     function pendingBadgeText() {
-        return window.socket.connected ? 'Pending - sending...' : 'Pending - will send on reconnect';
+        return window.socket.connected ? 'Sending…' : 'Not sent yet · goes out when the connection is back';
     }
 
     function createPendingNoteElement(note) {
         const wrapper = document.createElement('div');
-        wrapper.innerHTML = `
-            <div class="note-item pending" data-client-id="${note.clientId}">
-                <div class="note-pending-badge">${pendingBadgeText()}</div>
-                <div class="note-header">
-                    <span class="note-user">${escapeHtml(currentUser.name)}</span>
-                    <span class="note-timecode">
-                        ${formatNoteTimecode(note)}
-                        <span class="note-lx-cue">LX: ${escapeHtml(note.lxCue || 'N/A')}</span>
-                        @ ${note.frameRate || '30 fps'}
-                    </span>
-                </div>
-                <div class="note-text">
-                    <span class="note-text-display">${escapeHtml(note.text)}</span>
-                </div>
-                ${note.tags.length > 0 ? `<div class="note-tags">${getTagElements(note.tags)}</div>` : ''}
-            </div>
-        `.trim();
+        setHtml(wrapper, NoteView.noteHTML(note, {
+            className: 'pending',
+            attrs: `data-client-id="${esc(note.clientId)}"`,
+            author: { key: currentUser.sub || currentUser.name, name: currentUser.name },
+            side: `<span class="pending-badge">${esc(pendingBadgeText())}</span>`,
+            foot: tagChipsHTML(note)
+        }).trim());
         return wrapper.firstChild;
     }
 
     function updatePendingBadges() {
         const text = pendingBadgeText();
         for (const { element } of pendingNotes.values()) {
-            element.querySelector('.note-pending-badge').textContent = text;
+            element.querySelector('.pending-badge').textContent = text;
         }
     }
 
-    // The age is recomputed on every send: the browser's clock is not the
-    // server's, but how long ago the note was written is the same on both.
+    // The ages are recomputed on every send: the browser's clock is not the
+    // server's, but how long ago the note was written (and started) is the
+    // same on both.
     function sendPendingNote(note, writtenAt) {
-        if (!window.socket.connected) return;
-        window.socket.emit('note-submit', { ...note, ageMs: Math.max(0, Date.now() - writtenAt) }, (stored) => {
+        const pending = pendingNotes.get(note.clientId);
+        if (!window.socket.connected || !identityConfirmed || !pending || pending.sub !== currentUser.sub) return;
+        const { typingStartedAt, ...payload } = note;
+        payload.ageMs = Math.max(0, Date.now() - writtenAt);
+        if (typeof typingStartedAt === 'number') payload.startedAgeMs = Math.max(0, Date.now() - typingStartedAt);
+        window.socket.emit('note-submit', payload, (stored) => {
+            // Already sent and deleted since (from another tab, say).
+            if (stored && stored.deleted) return clearPendingNote(note.clientId);
+            if (!stored || stored.error) {
+                // Refused, so resending cannot help: say so on the note and stop trying.
+                if (pendingNotes.get(note.clientId) !== pending) return;
+                pendingNotes.delete(note.clientId);
+                pendingStore.remove(pending.sub, note.clientId);
+                pending.element.querySelector('.pending-badge').textContent =
+                    `Not added. ${(stored && stored.error) || 'Something went wrong. Write it again.'}`;
+                pending.element.classList.add('failed');
+                return;
+            }
             clearPendingNote(stored.clientId);
-            addNote(stored);
+            addNote(withLists(stored));
         });
+    }
+
+    // The server keeps clientIds per person, so someone else's note with the same one is not ours.
+    function isMyStoredNote(note, clientId) {
+        return !!clientId && note.clientId === clientId && note.userId === currentUser.sub;
     }
 
     function clearPendingNote(clientId) {
@@ -655,54 +1002,220 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!pending) return;
         pending.element.remove();
         pendingNotes.delete(clientId);
+        pendingStore.remove(pending.sub, clientId);
+        filterNotes();
+    }
+
+    function showPendingNote(note, writtenAt) {
+        const element = createPendingNoteElement(note);
+        // `sub` is whoever wrote it: it is only ever sent under their login.
+        pendingNotes.set(note.clientId, { note, element, writtenAt, sub: currentUser.sub });
+        notesLoading.finish({ immediate: true });
+        // The newest pending note goes above the older ones.
+        notesList.insertBefore(element, notesList.firstChild);
+        filterNotes();
+    }
+
+    function newClientId() {
+        if (window.crypto && typeof crypto.randomUUID === 'function') return crypto.randomUUID();
+        return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
     }
 
     function submitNote(data) {
-        const clientId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-        const note = { ...data, clientId };
+        const note = { ...data, clientId: newClientId() };
         const writtenAt = Date.now();
-        const wasNearTop = isNearTop();
-        const element = createPendingNoteElement(note);
-        pendingNotes.set(clientId, { note, element, writtenAt });
-        // The newest pending note goes above the older ones.
-        notesList.insertBefore(element, notesList.firstChild);
-        if (wasNearTop) scrollToTop();
-        else toggleScrollButton();
+        showPendingNote(note, writtenAt);
+        pendingStore.add(currentUser.sub, { note, writtenAt });
         sendPendingNote(note, writtenAt);
     }
 
-    function updateCommentsForNote(noteId) {
-        const note = allNotes.find(n => n.id === noteId);
-        if (note) updateNoteElement(note);
+    // --- Draft note ---
+    // The note being written is kept in sessionStorage (this tab only), with
+    // its frozen stamp, so a reload or a bounce through /login gives it back.
+    const DRAFT_KEY = 'note-draft';
+
+    function saveDraft() {
+        try {
+            if (noteInput.value.trim() === '') return clearDraft();
+            sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
+                text: noteInput.value,
+                tags: selectedTags,
+                timecode: currentUser.frozenTimecode,
+                lxCue: currentUser.frozenLxCue,
+                typingStartedAt: currentUser.typingStartedAt
+            }));
+        } catch (e) { /* storage unavailable */ }
+    }
+
+    function clearDraft() {
+        try { sessionStorage.removeItem(DRAFT_KEY); } catch (e) { /* storage unavailable */ }
+    }
+
+    // --- Notes snapshot ---
+    // What this tab last showed, drawn at start-up so the notes are there at
+    // once rather than after the socket connects (public/notes-snapshot.js).
+    const notesSnapshot = createNotesSnapshot({
+        // reached inside notesSnapshot's try/catch, as merely touching sessionStorage can throw
+        getItem: (key) => sessionStorage.getItem(key),
+        setItem: (key, value) => sessionStorage.setItem(key, value),
+        removeItem: (key) => sessionStorage.removeItem(key)
+    });
+
+    function saveNotesSnapshot() {
+        notesSnapshot.save({
+            sub: currentUser.sub,
+            name: currentUser.name,
+            notes: allNotes.filter(n => !deletedNotes.has(n.id)),
+            live: { users: lastUsers, act: currentAct, cue: currentGlobalLxCue, timeMode, oscAvailable,
+                timecodes: latestTimecodes, liveSources, unreadChat }
+        });
+    }
+
+    function showNotesSnapshot() {
+        const snapshot = notesSnapshot.load();
+        if (!snapshot) return;
+        currentUser.sub = snapshot.sub;
+        currentUser.name = snapshot.name;
+        currentUserName.textContent = snapshot.name;
+        currentUserName.classList.remove('awaiting-data');
+        allNotes = snapshot.notes.map(withLists);
+        rebuildFullNotesList();
+        notesLoading.finish({ immediate: true });
+        const live = snapshot.live;
+        if (!live) return false;
+        lastUsers = live.users;
+        renderUsers(lastUsers);
+        currentAct = live.act;
+        currentActDisplay.textContent = live.act;
+        currentGlobalLxCue = live.cue;
+        lxCueInput.value = live.cue;
+        oscAvailable = live.oscAvailable;
+        updateCueMode();
+        Object.assign(latestTimecodes.midi, live.timecodes.midi);
+        Object.assign(latestTimecodes.network, live.timecodes.network);
+        Object.assign(liveSources, live.liveSources);
+        timeMode = live.timeMode;
+        unreadChat = live.unreadChat;
+        updateUnread();
+        liveHeader.classList.remove('awaiting-data');
+        return true;
+    }
+
+    function restoreDraft() {
+        let draft = null;
+        try { draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY)); } catch (e) { /* none */ }
+        if (!draft || typeof draft.text !== 'string' || !draft.timecode) return;
+        noteInput.value = draft.text;
+        sendNoteBtn.disabled = draft.text.trim().length === 0;
+        selectedTags = Array.isArray(draft.tags) ? draft.tags : [];
+        updateTagsDisplay();
+        currentUser.isTyping = true;
+        currentUser.frozenTimecode = draft.timecode;
+        currentUser.frozenLxCue = draft.lxCue;
+        currentUser.typingStartedAt = typeof draft.typingStartedAt === 'number' ? draft.typingStartedAt : null;
+        updatePersonalTimecodeDisplay(draft.timecode);
+        updatePersonalLxCueDisplay(draft.lxCue);
+        updateComposer();
+        startAutoResumeTimer();
+    }
+
+    // --- Login ---
+    // Back through Keycloak to this same page, keeping the note being written.
+    let goingToLogin = false;
+    function goToLogin() {
+        if (goingToLogin) return;
+        goingToLogin = true;
+        saveDraft();
+        window.location.href = loginUrl();
     }
 
     // --- Socket.io setup ---
-    window.socket = io();
+    // `page` tells the server which page this is (see pageOf() in server.js).
+    window.socket = io({ auth: { page: 'main' } });
+    let pageInCache = false;
+    let connectionBannerTimer = null;
+    function showConnectionProblem() {
+        clearTimeout(connectionBannerTimer);
+        connectionBannerTimer = setTimeout(() => {
+            if (!pageInCache && !loggingOut) connectionBanner.hidden = false;
+        }, 1000);
+    }
 
     // The server refuses the socket handshake when the session is missing or
-    // expired (e.g. the 12-hour login ran out, or local-sessions.json was deleted).
-    // That's distinct from an ordinary network blip - socket.io's normal
+    // expired (e.g. the login sat idle for 12 hours, or local-sessions.json was
+    // deleted). That's distinct from an ordinary network blip - socket.io's normal
     // auto-reconnect can never succeed here, so send the user back through
     // the login flow instead of retrying forever.
     window.socket.on('connect_error', (err) => {
         if (err && err.message === 'unauthorized') {
-            window.location.href = '/login';
+            goToLogin();
             return;
         }
-        connectionBanner.hidden = false;
+        showConnectionProblem();
+    });
+
+    // Logged out on purpose, here or in another tab: the note being written is
+    // dropped so whoever logs in next on this tab doesn't send it as theirs.
+    // (Unsent notes are kept per person and go out at their next login.)
+    // The tab that sent the logout form gets `logged-out` too, often before the
+    // form's own redirect: leaving then would cut that short before it reaches
+    // Keycloak, whose login would then sign the person straight back in.
+    let loggingOut = false;
+    function loggedOut() {
+        if (loggingOut) return;
+        loggingOut = true;
+        clearDraft();
+        notesSnapshot.clear();
+        window.location.href = loggedOutUrl();
+    }
+    document.querySelector('form[action="/logout"]').addEventListener('submit', () => {
+        loggingOut = true;
+        clearDraft();
+        notesSnapshot.clear();
+    });
+    window.socket.on('logged-out', loggedOut);
+
+    keepLoginAlive(goToLogin);
+
+    // A page kept in the back/forward cache (e.g. after visiting the recall
+    // page) must not keep its socket, or the server would count it as open.
+    window.addEventListener('pagehide', (e) => {
+        if (!loggingOut) {
+            saveDraft();
+            saveNotesSnapshot();
+        }
+        if (e.persisted) {
+            pageInCache = true;
+            clearTimeout(connectionBannerTimer);
+            connectionBanner.hidden = true;
+            window.socket.disconnect();
+        }
+    });
+    // A phone may discard a tab in the background without a pagehide.
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden' && !loggingOut) saveNotesSnapshot();
+    });
+    window.addEventListener('pageshow', (e) => {
+        if (e.persisted) {
+            pageInCache = false;
+            window.socket.connect();
+            showConnectionProblem();
+        }
     });
 
     window.socket.on('disconnect', () => {
-        connectionBanner.hidden = false;
+        identityConfirmed = false;
+        if (!loggingOut && !pageInCache) showConnectionProblem();
         updatePendingBadges();
     });
 
-    // The server sends full state on every connect, so only the banner and
-    // any unacknowledged notes need attention here.
+    // The server sends full state on every connect, so only the banner needs
+    // attention here. Unacknowledged notes wait for current-user: another tab
+    // may have signed in as someone else while this one was offline.
     window.socket.on('connect', () => {
+        clearTimeout(connectionBannerTimer);
         connectionBanner.hidden = true;
         updatePendingBadges();
-        for (const { note, writtenAt } of pendingNotes.values()) sendPendingNote(note, writtenAt);
     });
 
     window.socket.on('current-user', (data) => {
@@ -710,53 +1223,61 @@ document.addEventListener('DOMContentLoaded', function() {
         currentUser.name = data.name;
         currentUser.sub = data.sub;
         currentUserName.textContent = data.name;
-        updateChatUserName();
-        if (changed) rebuildFullNotesList(); // edit buttons depend on who we are, which may arrive after the notes
+        currentUserName.classList.remove('awaiting-data');
+        identityConfirmed = true;
+        if (changed) applyRememberedTags();
+        // Notes written before we knew who we are are ours; another person's
+        // stay in their own saved copy (pending-notes.js) for their next login.
+        for (const [clientId, pending] of pendingNotes) {
+            if (pending.sub === null) {
+                pending.sub = data.sub;
+                pendingStore.add(data.sub, { note: pending.note, writtenAt: pending.writtenAt });
+            } else if (pending.sub !== data.sub) {
+                pending.element.remove();
+                pendingNotes.delete(clientId);
+            }
+        }
+        if (changed) {
+            rebuildFullNotesList(); // edit buttons depend on who we are, which may arrive after the notes
+            if (!usersButton.classList.contains('awaiting-data')) renderUsers(lastUsers);
+            updateChatMessages();
+        }
+        for (const { note, writtenAt } of pendingNotes.values()) sendPendingNote(note, writtenAt);
+        restorePendingNotes();
     });
-
-    // Collapsing the online users list is remembered per browser (nice to have, so failures are ignored).
-    try {
-        if (localStorage.getItem('users-panel-collapsed') === '1') usersPanel.open = false;
-    } catch (e) { /* storage unavailable */ }
-    usersPanel.addEventListener('toggle', () => {
-        try { localStorage.setItem('users-panel-collapsed', usersPanel.open ? '0' : '1'); } catch (e) { /* ignore */ }
-    });
-
-    window.socket.on('user-joined', (data) => updateUserCount(data.userCount));
-    window.socket.on('user-left', (data) => updateUserCount(data.userCount));
 
     window.socket.on('users-update', (users) => {
-        updateUserCount(users.length);
-        usersList.innerHTML = '';
-        users.forEach(user => {
-            const userItem = document.createElement('li');
-            userItem.className = 'user-item';
-            userItem.innerHTML = `${escapeHtml(user.name)}${user.isTyping ? '<span class="user-typing"><span class="typing-indicator"></span>writing note</span>' : ''}`;
-            usersList.appendChild(userItem);
-        });
+        lastUsers = users;
+        renderUsers(users);
     });
 
     window.socket.on('act-update', (act) => {
         currentAct = act;
         currentActDisplay.textContent = act;
+        receivedLive('act');
     });
 
     window.socket.on('time-mode-update', (newMode) => {
         timeMode = newMode;
         updateTimeModeDisplay();
+        receivedLive('mode');
     });
 
     window.socket.on('lx-cue-update', (cue) => {
         currentGlobalLxCue = cue;
         updateGlobalLxCueDisplay(cue);
-        lxCueInput.value = cue;
+        if (document.activeElement !== lxCueInput) lxCueInput.value = cue;
         if (!currentUser.isTyping) updatePersonalLxCueDisplay(cue);
+        receivedLive('cue');
     });
 
     window.socket.on('tags-update', (tags) => {
+        // Sent on every connect, usually the same tags the page already has.
+        if (JSON.stringify(tags) === JSON.stringify(availableTags)) return;
         availableTags = tags;
         saveTagsToStorage();
-        updateTagsDisplay();
+        if (selectedTags.length) updateTagsDisplay();
+        else applyRememberedTags();
         updateFilterTags();
         rebuildFullNotesList();
     });
@@ -768,13 +1289,9 @@ document.addEventListener('DOMContentLoaded', function() {
             updateTimeModeDisplay();
             window.socket.emit('time-mode-change', 'realtime');
         }
-        if (data.oscAvailable) {
-            lxCueInput.disabled = true;
-            lxCueInput.placeholder = 'Auto-updated via OSC';
-        } else {
-            lxCueInput.disabled = false;
-            lxCueInput.placeholder = 'Cue Number';
-        }
+        oscAvailable = !!data.oscAvailable;
+        updateCueMode();
+        receivedLive('system');
     });
 
     window.socket.on('network-timecode-status', (status) => {
@@ -788,7 +1305,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (timeMode === data.source) {
             currentGlobalTimecode = data;
             currentUser.currentFrameRate = data.frameRate;
-            globalFrameRateElement.textContent = `Frame Rate: ${data.frameRate} fps`;
+            globalTimecodeElement.title = `${data.frameRate} fps`;
             updateGlobalTimecodeDisplay(data);
             if (!currentUser.isTyping) updatePersonalTimecodeDisplay(data);
             if (data.source === 'midi' && !liveSources.midi) {
@@ -798,23 +1315,32 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    let isFirstLoad = true;
-
+    // Sent on every connect, so it also catches up a page drawn from the
+    // snapshot or back from the back/forward cache: notes edited, tagged or
+    // replied to meanwhile are redrawn one by one (keeping any open edit box
+    // and its focus), and only a changed set of notes rebuilds the list.
     window.socket.on('notes-update', (notes) => {
-        // Only rebuild if the notes array has changed (e.g., name change, import)
-        if (allNotes.length === notes.length && allNotes.every((n, i) => n.id === notes[i].id)) {
+        notesLoading.finish();
+        const incoming = notes.map(withLists);
+        for (const note of incoming) {
+            if (isMyStoredNote(note, note.clientId)) clearPendingNote(note.clientId);
+        }
+        if (allNotes.length === incoming.length && allNotes.every((n, i) => n.id === incoming[i].id)) {
+            incoming.forEach((note, i) => {
+                if (JSON.stringify(note) === JSON.stringify(allNotes[i])) return;
+                allNotes[i] = note;
+                updateNoteElement(note, { refilter: false });
+            });
+            filterNotes();
             return;
         }
-        allNotes = notes;
-        for (const note of notes) {
-            if (note.clientId) clearPendingNote(note.clientId);
-        }
+        allNotes = incoming;
         rebuildFullNotesList();
     });
 
     window.socket.on('note-added', (note) => {
-        if (note.clientId) clearPendingNote(note.clientId);
-        addNote(note);
+        if (isMyStoredNote(note, note.clientId)) clearPendingNote(note.clientId);
+        addNote(withLists(note));
     });
 
     window.socket.on('note-edit-text', ({ noteId, newText, lastEditedBy, lastEdited }) => {
@@ -840,38 +1366,75 @@ document.addEventListener('DOMContentLoaded', function() {
         if (note) {
             if (!note.comments) note.comments = [];
             note.comments.push(comment);
-            updateCommentsForNote(noteId);
+            updateNoteElement(note);
         }
     });
 
     window.socket.on('comment-edit', ({ noteId, commentId, newText, lastEditedBy, lastEdited }) => {
         const note = allNotes.find(n => n.id === noteId);
-        if (note && note.comments) {
-            const comment = note.comments.find(c => c.id === commentId);
-            if (comment) {
-                comment.text = newText;
-                comment.lastEdited = lastEdited;
-                comment.lastEditedBy = lastEditedBy;
-                updateCommentsForNote(noteId);
-            }
+        const comment = note && note.comments && note.comments.find(c => c.id === commentId);
+        if (comment) {
+            comment.text = newText;
+            comment.lastEdited = lastEdited;
+            comment.lastEditedBy = lastEditedBy;
+            updateNoteElement(note);
+        }
+    });
+
+    window.socket.on('note-delete', ({ noteId }) => {
+        deletedNotes.delete(noteId);
+        const index = allNotes.findIndex(n => n.id === noteId);
+        if (index === -1) return;
+        allNotes.splice(index, 1);
+        noteEditDrafts.delete(noteId);
+        commentDrafts.delete(noteId);
+        openReplies.delete(noteId);
+        if (tagPickerNoteId === noteId) closeTagPicker();
+        const element = noteElements.get(noteId);
+        noteElements.delete(noteId);
+        const before = element && element.previousElementSibling;
+        const after = element && element.nextElementSibling;
+        if (element) element.remove();
+        // A scene heading left with no notes could sit next to another for the same scene.
+        if (before && before.classList.contains('group-head') && (!after || after.classList.contains('group-head'))) {
+            rebuildFullNotesList();
+        } else {
+            updateActFilter();
+            filterNotes();
         }
     });
 
     window.socket.on('comment-delete', ({ noteId, commentId }) => {
+        deletedComments.delete(`${noteId}/${commentId}`);
         const note = allNotes.find(n => n.id === noteId);
         if (note && note.comments) {
             note.comments = note.comments.filter(c => c.id !== commentId);
-            updateCommentsForNote(noteId);
+            commentEditDrafts.delete(`${noteId}/${commentId}`);
+            updateNoteElement(note);
         }
     });
 
     // The server sends each new message on its own, and the whole log only on
     // connecting and after a restore.
     window.socket.on('chat-message-added', (msg) => {
+        chatLoading.finish({ immediate: true });
         if (chatMessagesList.some((m) => m.id === msg.id)) return;
         chatMessagesList.push(msg);
         chatCopy.onMessageAdded(chatMessagesList);
-        updateChatMessages();
+        const mine = isMyChat(msg);
+        if (chatDrawer.hidden && !mine) {
+            unreadChat++;
+            updateUnread();
+        }
+        // Only the new message is drawn, open or not: redrawing the whole
+        // (uncapped) log per message gets slower as the log grows.
+        const stick = !chatDrawer.hidden && (mine || chatNearBottom());
+        if (chatMessagesList.length === 1) setHtml(chatMessages, '');
+        const holder = document.createElement('div');
+        setHtml(holder, renderChatMessage(msg, chatMessagesList[chatMessagesList.length - 2]));
+        chatMessages.append(...holder.childNodes);
+        chatCount.textContent = plural(chatMessagesList.length, 'shitpost');
+        if (stick) chatMessages.scrollTop = chatMessages.scrollHeight;
     });
 
     // The chat log kept in localStorage so it survives a reload. After a server
@@ -888,6 +1451,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (offer) window.socket.emit('chat-restore-offer', offer);
         chatMessagesList = msgs;
         updateChatMessages();
+        chatLoading.finish();
     });
 
     // The server was reset from the config page: forget the saved chat copy
@@ -896,6 +1460,8 @@ document.addEventListener('DOMContentLoaded', function() {
         chatCopy.onReset();
         for (const { element } of pendingNotes.values()) element.remove();
         pendingNotes.clear();
+        pendingStore.clear(currentUser.sub);
+        filterNotes();
     });
 
     window.socket.on('export-data', (data) => {
@@ -908,48 +1474,193 @@ document.addEventListener('DOMContentLoaded', function() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+        showToast(`Downloaded ${data.filename}`);
     });
 
-    // --- Event listeners ---
+    // --- Event listeners: top bar ---
     lxCueInput.addEventListener('input', () => window.socket.emit('lx-cue-change', lxCueInput.value));
+    lxCueInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') lxCueInput.blur(); });
 
-    cancelEditTagsBtn.addEventListener('click', () => {
-        editTagsModal.style.display = 'none';
-        currentlyEditingNoteId = null;
-        editTagsSelected = [];
+    usersButton.addEventListener('click', (e) => { e.stopPropagation(); togglePopover(usersPopover, usersButton); });
+    menuUsersButton.addEventListener('click', (e) => { e.stopPropagation(); togglePopover(usersPopover, menuButton); });
+    menuButton.addEventListener('click', (e) => { e.stopPropagation(); togglePopover(menuPopover, menuButton); });
+    exportJsonBtn.addEventListener('click', () => {
+        closePopovers();
+        window.socket.emit('export-request', 'json');
     });
 
-    saveEditTagsBtn.addEventListener('click', () => {
-        if (currentlyEditingNoteId) {
-            window.socket.emit('note-update-tags', { noteId: currentlyEditingNoteId, tags: editTagsSelected });
-            editTagsModal.style.display = 'none';
-            currentlyEditingNoteId = null;
-            editTagsSelected = [];
-        }
+    chatToggle.addEventListener('click', () => {
+        chooseChatOpen(chatDrawer.hidden);
+        if (!chatDrawer.hidden) (modalChatLayout.matches ? chatClose : chatInput).focus();
+    });
+    chatClose.addEventListener('click', () => { chooseChatOpen(false); chatToggle.focus(); });
+
+    chatDrawer.addEventListener('keydown', (e) => {
+        if (!modalChatLayout.matches || e.key !== 'Tab') return;
+        const controls = [...chatDrawer.querySelectorAll('button:not(:disabled), textarea')];
+        const first = controls[0];
+        const last = controls[controls.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     });
 
-    noteInput.addEventListener('focus', startTyping);
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('.popover') && !e.target.closest('[data-action="edit-tags"]')) closePopovers();
+    });
+    window.addEventListener('resize', closePopovers);
+
+    // --- Event listeners: note box ---
+    noteInput.addEventListener('focus', () => {
+        startTyping();
+        updateComposer();
+    });
     noteInput.addEventListener('input', () => {
         sendNoteBtn.disabled = noteInput.value.trim().length === 0;
-        startAutoResumeTimer();
+        // After a release, the next key freezes the stamp at that moment.
         if (!currentUser.isTyping && noteInput.value.length > 0) startTyping();
+        else startAutoResumeTimer();
+        updateComposer();
+        saveDraft();
     });
     noteInput.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !phoneLayout.matches && !touchInput.matches) {
             e.preventDefault();
             if (!sendNoteBtn.disabled) sendNoteBtn.click();
         }
     });
-    noteInput.addEventListener('blur', startAutoResumeTimer);
+    noteInput.addEventListener('blur', () => {
+        startAutoResumeTimer();
+        updateComposer();
+    });
+    composer.addEventListener('focusin', updateComposer);
+    // Clicking or tabbing away from an empty note closes it (see type-to-note.js).
+    // Checked once focus has landed, so a move to the note's own tags doesn't count.
+    composer.addEventListener('focusout', () => {
+        setTimeout(() => {
+            updateComposer();
+            const action = typeToNote.leaveAction({
+                noteValue: noteInput.value,
+                focusInComposer: composer.contains(document.activeElement),
+                pageFocused: document.hasFocus()
+            });
+            const tagsChanged = JSON.stringify(selectedTags) !== JSON.stringify(rememberedTags().filter(id => availableTags.some(t => t.id === id)));
+            if (action === 'cancel' && (currentUser.isTyping || tagsChanged)) cancelNote();
+        }, 0);
+    });
+
+    // Leaving the note box shrinks it, which used to move whatever was pressed
+    // below it before the press ended, so the click missed. Hold its size until
+    // the click has landed and any popover it opened has closed, then shrink it
+    // without moving what was pressed (as far as the scroll position allows).
+    document.addEventListener('pointerdown', (e) => {
+        // A hold still set at the next press missed its click; let it go first.
+        if (composerHold && !composerHoldWatch) releaseComposer();
+        if (composerHold || composer.contains(e.target) || !composer.contains(document.activeElement)) return;
+        composerHold = { target: e.target };
+        updateComposer();
+    }, true);
+    // Touch can deliver the click a moment after the finger lifts.
+    for (const type of ['pointerup', 'pointercancel']) {
+        window.addEventListener(type, () => {
+            if (composerHold) composerHoldTimer = setTimeout(releaseComposer, 500);
+        }, true);
+    }
+    window.addEventListener('click', () => {
+        if (composerHold) setTimeout(releaseComposer, 0);
+    }, true);
+
+    function releaseComposer() {
+        if (!composerHold || composerHoldWatch) return;
+        clearTimeout(composerHoldTimer);
+        if (document.querySelector('.popover:not([hidden])')) {
+            composerHoldWatch = new MutationObserver(() => {
+                if (document.querySelector('.popover:not([hidden])')) return;
+                composerHoldWatch.disconnect();
+                composerHoldWatch = null;
+                releaseComposer();
+            });
+            composerHoldWatch.observe(document.body, { subtree: true, attributes: true, attributeFilter: ['hidden'] });
+            return;
+        }
+        const { target } = composerHold;
+        const before = target.isConnected ? target.getBoundingClientRect().top : null;
+        composerHold = null;
+        updateComposer();
+        if (before !== null) {
+            const moved = target.getBoundingClientRect().top - before;
+            if (moved) window.scrollBy(0, moved);
+        }
+    }
+
+    // Picking a tag keeps the cursor in the note box.
+    tagsContainer.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.chip') && document.activeElement === noteInput) e.preventDefault();
+    });
+    tagsContainer.addEventListener('click', (e) => {
+        const chip = e.target.closest('.chip');
+        if (!chip) return;
+        const id = chip.dataset.tag;
+        selectedTags = selectedTags.includes(id) ? selectedTags.filter(t => t !== id) : [...selectedTags, id];
+        chip.setAttribute('aria-pressed', String(selectedTags.includes(id)));
+        updateComposerTagsLabel();
+        if (!needsTag()) showTagError(false);
+        saveDraft();
+    });
+    composerTagsToggle.addEventListener('click', () => setComposerTagsExpanded(!composer.classList.contains('tags-expanded')));
+
+    sendNoteBtn.addEventListener('click', () => {
+        const text = noteInput.value.trim();
+        if (text && needsTag()) {
+            showTagError(true);
+            if (phoneLayout.matches) tagsContainer.querySelector('button')?.focus();
+            else noteInput.focus();
+            return;
+        }
+        if (text && currentUser.frozenTimecode) {
+            submitNote({
+                text: text,
+                timecode: currentUser.frozenTimecode,
+                lxCue: currentUser.frozenLxCue,
+                typingStartedAt: currentUser.typingStartedAt,
+                frameRate: timeMode === 'realtime' ? 'ms' : currentUser.currentFrameRate,
+                tags: selectedTags,
+            });
+            rememberTags(selectedTags);
+            resetComposer();
+            // Dismiss the phone keyboard after sending; desktop stays ready to type.
+            if (phoneLayout.matches || touchInput.matches) {
+                noteInput.blur();
+                sendNoteBtn.blur();
+            } else noteInput.focus();
+            currentUser.isTyping = false;
+            updateComposer();
+            window.scrollTo({ top: 0 });
+        }
+    });
+
+    cancelNoteBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    cancelNoteBtn.addEventListener('click', discardNote);
 
     // Typing anywhere else on the page starts a note (see type-to-note.js).
     document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !e.defaultPrevented) {
+            if (closePopovers()) return;
+            if (!chatDrawer.hidden && chatDrawer.contains(document.activeElement)) {
+                chooseChatOpen(false);
+                chatToggle.focus();
+                return;
+            }
+        }
+
         const ctx = {
-            modalOpen: editTagsModal.style.display === 'flex',
+            modalOpen: !tagPicker.hidden || (modalChatLayout.matches && !chatDrawer.hidden),
             noteHasText: noteInput.value.length > 0,
             body: document.body
         };
-        if (typeToNote.shouldFocusNote(e, document.activeElement, ctx)) noteInput.focus();
+        if (typeToNote.shouldFocusNote(e, document.activeElement, ctx)) {
+            closePopovers();
+            noteInput.focus();
+        }
 
         // Escape leaves the note box; an empty note is also cancelled.
         const action = typeToNote.escapeAction(e, document.activeElement, {
@@ -963,193 +1674,237 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    sendNoteBtn.addEventListener('click', () => {
-        const text = noteInput.value.trim();
-        if (text && currentUser.frozenTimecode) {
-            submitNote({
-                text: text,
-                timecode: currentUser.frozenTimecode,
-                lxCue: currentUser.frozenLxCue,
-                frameRate: timeMode === 'realtime' ? 'ms' : currentUser.currentFrameRate,
-                tags: selectedTags,
-            });
-            noteInput.value = '';
-            sendNoteBtn.disabled = true;
-            currentUser.isTyping = false;
-            currentUser.frozenTimecode = null;
-            currentUser.frozenLxCue = null;
-            personalTimecodeContainer.classList.remove('frozen');
-            selectedTags = [];
-            document.querySelectorAll('.tag-checkbox:checked').forEach(cb => cb.checked = false);
-            window.socket.emit('typing-stop');
-            clearAutoResumeTimer();
-        }
+    // --- Event listeners: filters ---
+    searchInput.addEventListener('input', () => {
+        filters.search = searchInput.value.trim().toLowerCase();
+        filterNotes();
+    });
+    clearFiltersBtn.addEventListener('click', clearFilters);
+    notesNoMatch.addEventListener('click', (e) => {
+        if (e.target.closest('[data-action="clear-filters"]')) clearFilters();
     });
 
-    cancelNoteBtn.addEventListener('click', cancelNote);
-    exportJsonBtn.addEventListener('click', () => window.socket.emit('export-request', 'json'));
-
+    // --- Event listeners: chat ---
     chatInput.addEventListener('input', () => { sendChatBtn.disabled = chatInput.value.trim().length === 0; });
-    chatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter' && e.ctrlKey) sendChatMessage(); });
+    chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing && !phoneLayout.matches && !touchInput.matches) {
+            e.preventDefault();
+            sendChatMessage();
+        }
+    });
     sendChatBtn.addEventListener('click', sendChatMessage);
 
-    // Delegated events for dynamic buttons
+    // --- Event listeners: the notes list (delegated) ---
+    function noteOf(el) {
+        const item = el.closest('.note[data-note-id]');
+        return item && allNotes.find(n => n.id === item.dataset.noteId);
+    }
+
+    function saveNoteEdit(note) {
+        const newText = (noteEditDrafts.get(note.id) || '').trim();
+        noteEditDrafts.delete(note.id);
+        if (newText && newText !== note.text) window.socket.emit('note-edit-text', { noteId: note.id, newText });
+        updateNoteElement(note);
+    }
+
+    function saveCommentEdit(note, commentId) {
+        const key = `${note.id}/${commentId}`;
+        const comment = (note.comments || []).find(c => c.id === commentId);
+        const newText = (commentEditDrafts.get(key) || '').trim();
+        commentEditDrafts.delete(key);
+        if (comment && newText && newText !== comment.text) {
+            window.socket.emit('comment-edit', { noteId: note.id, commentId, newText });
+        }
+        updateNoteElement(note);
+    }
+
+    function submitComment(note) {
+        const text = (commentDrafts.get(note.id) || '').trim();
+        if (!text) return;
+        window.socket.emit('comment-submit', { noteId: note.id, text });
+        commentDrafts.delete(note.id);
+        closeReplyBox(note);
+    }
+
+    // Closes the reply box and focuses the "Reply" link under the thread if there is one, else the reply icon.
+    function closeReplyBox(note) {
+        openReplies.delete(note.id);
+        updateNoteElement(note);
+        const el = noteElements.get(note.id);
+        (el?.querySelector('.reply-more') || el?.querySelector('[data-action="reply"]'))?.focus();
+    }
+
+    // Throws the reply draft away and closes the reply box.
+    function cancelComment(note) {
+        commentDrafts.delete(note.id);
+        closeReplyBox(note);
+    }
+
+    // A delete shows straight away but only reaches the server once its Undo
+    // toast has gone, so Undo just never sends it.
+    const pendingDeletes = new Map(); // key -> { send, timer }
+
+    function finishDelete(key) {
+        const pending = pendingDeletes.get(key);
+        if (!pending) return;
+        clearTimeout(pending.timer);
+        pendingDeletes.delete(key);
+        pending.send();
+    }
+
+    function deleteWithUndo(key, message, hide, unhide, send) {
+        hide();
+        pendingDeletes.set(key, { send, timer: setTimeout(() => finishDelete(key), TOAST_MS) });
+        showToast(message, 'Undo', () => {
+            const pending = pendingDeletes.get(key);
+            if (!pending) return;
+            clearTimeout(pending.timer);
+            pendingDeletes.delete(key);
+            unhide();
+        });
+    }
+
+    // Leaving the page doesn't undo a delete.
+    window.addEventListener('pagehide', () => {
+        for (const key of [...pendingDeletes.keys()]) finishDelete(key);
+    });
+
+    function deleteNote(note) {
+        const showNote = (hidden) => {
+            if (hidden) deletedNotes.add(note.id);
+            else deletedNotes.delete(note.id);
+            if (hidden && tagPickerNoteId === note.id) closeTagPicker();
+            updateActFilter();
+            filterNotes();
+        };
+        deleteWithUndo(`note:${note.id}`, 'Note deleted', () => showNote(true), () => showNote(false),
+            () => window.socket.emit('note-delete', { noteId: note.id }));
+    }
+
+    function deleteComment(note, commentId) {
+        const key = `${note.id}/${commentId}`;
+        deleteWithUndo(`comment:${key}`, 'Reply deleted',
+            () => { deletedComments.add(key); updateNoteElement(note); },
+            () => { deletedComments.delete(key); updateNoteElement(note); },
+            () => window.socket.emit('comment-delete', { noteId: note.id, commentId }));
+    }
+
     notesList.addEventListener('click', (e) => {
-        const button = e.target.closest('button');
+        const button = e.target.closest('button[data-action]');
         if (!button) return;
+        const note = noteOf(button);
+        if (!note) return;
         const action = button.dataset.action;
-        if (!action) return;
-        const noteId = button.dataset.noteId;
+        const commentId = button.dataset.commentId;
 
         if (action === 'edit-tags') {
-            const note = allNotes.find(n => n.id === noteId);
-            if (note) {
-                currentlyEditingNoteId = noteId;
-                updateEditTagsDisplay(note.tags);
-                editTagsModal.style.display = 'flex';
-            }
-        } else if (action === 'toggle-comments') {
-            const container = document.getElementById(`comments-${noteId}`);
-            const inputArea = document.getElementById(`comment-input-${noteId}`);
-            if (container.classList.contains('expanded')) {
-                container.classList.remove('expanded');
-                inputArea.classList.remove('expanded');
-                button.classList.remove('expanded');
-                expandedCommentSections.delete(noteId);
-            } else {
-                container.classList.add('expanded');
-                inputArea.classList.add('expanded');
-                button.classList.add('expanded');
-                expandedCommentSections.add(noteId);
-            }
-        } else if (action === 'edit-note') {
-            const noteItem = button.closest('.note-item');
-            const display = noteItem.querySelector('.note-text-display');
-            const textarea = noteItem.querySelector('.note-text-edit');
-            if (display.style.display !== 'none') {
-                display.style.display = 'none';
-                textarea.style.display = 'block';
-                textarea.focus();
-                button.textContent = 'Save Note';
-                button.dataset.action = 'save-note';
-            }
-        } else if (action === 'save-note') {
-            const noteItem = button.closest('.note-item');
-            const display = noteItem.querySelector('.note-text-display');
-            const textarea = noteItem.querySelector('.note-text-edit');
-            const newText = textarea.value.trim();
-            if (newText && newText !== display.textContent) {
-                window.socket.emit('note-edit-text', { noteId, newText });
-            }
-            display.textContent = newText || display.textContent;
-            display.style.display = 'block';
-            textarea.style.display = 'none';
-            button.textContent = 'Edit Note';
-            button.dataset.action = 'edit-note';
-        } else if (action === 'edit-comment') {
-            const commentId = button.dataset.commentId;
-            const commentItem = button.closest('.comment-item');
-            const display = commentItem.querySelector('.comment-text-display');
-            const textarea = commentItem.querySelector('.comment-text-edit');
-            const editBtn = commentItem.querySelector('[data-action="edit-comment"]');
-            const delBtn = commentItem.querySelector('[data-action="delete-comment"]');
-            const saveBtn = commentItem.querySelector('[data-action="save-comment"]');
-            const cancelBtn = commentItem.querySelector('[data-action="cancel-comment"]');
-            display.style.display = 'none';
-            textarea.style.display = 'block';
-            textarea.focus();
-            editBtn.style.display = 'none';
-            delBtn.style.display = 'none';
-            saveBtn.style.display = 'inline-block';
-            cancelBtn.style.display = 'inline-block';
-        } else if (action === 'save-comment') {
-            const commentId = button.dataset.commentId;
-            const commentItem = button.closest('.comment-item');
-            const display = commentItem.querySelector('.comment-text-display');
-            const textarea = commentItem.querySelector('.comment-text-edit');
-            const newText = textarea.value.trim();
-            if (newText) {
-                window.socket.emit('comment-edit', { noteId, commentId, newText });
-            }
-            display.style.display = 'block';
-            textarea.style.display = 'none';
-            const editBtn = commentItem.querySelector('[data-action="edit-comment"]');
-            const delBtn = commentItem.querySelector('[data-action="delete-comment"]');
-            const saveBtn = commentItem.querySelector('[data-action="save-comment"]');
-            const cancelBtn = commentItem.querySelector('[data-action="cancel-comment"]');
-            editBtn.style.display = 'inline-block';
-            delBtn.style.display = 'inline-block';
-            saveBtn.style.display = 'none';
-            cancelBtn.style.display = 'none';
+            if (tagPickerNoteId === note.id) closeTagPicker();
+            else openTagPicker(note.id, button);
+        } else if (action === 'reply') {
+            openReplies.add(note.id);
+            updateNoteElement(note);
+            noteElements.get(note.id).querySelector('[data-field="comment"]')?.focus();
         } else if (action === 'cancel-comment') {
-            const commentId = button.dataset.commentId;
-            const commentItem = button.closest('.comment-item');
-            const display = commentItem.querySelector('.comment-text-display');
-            const textarea = commentItem.querySelector('.comment-text-edit');
-            textarea.value = display.textContent;
-            display.style.display = 'block';
-            textarea.style.display = 'none';
-            const editBtn = commentItem.querySelector('[data-action="edit-comment"]');
-            const delBtn = commentItem.querySelector('[data-action="delete-comment"]');
-            const saveBtn = commentItem.querySelector('[data-action="save-comment"]');
-            const cancelBtn = commentItem.querySelector('[data-action="cancel-comment"]');
-            editBtn.style.display = 'inline-block';
-            delBtn.style.display = 'inline-block';
-            saveBtn.style.display = 'none';
-            cancelBtn.style.display = 'none';
-        } else if (action === 'delete-comment') {
-            const commentId = button.dataset.commentId;
-            if (confirm('Are you sure you want to delete this comment?')) {
-                window.socket.emit('comment-delete', { noteId, commentId });
-            }
+            cancelComment(note);
+        } else if (action === 'edit-note') {
+            noteEditDrafts.set(note.id, note.text);
+            updateNoteElement(note);
+            const textarea = noteElements.get(note.id).querySelector('[data-field="note-edit"]');
+            textarea.focus();
+            textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+        } else if (action === 'save-note') {
+            saveNoteEdit(note);
+        } else if (action === 'cancel-note-edit') {
+            noteEditDrafts.delete(note.id);
+            updateNoteElement(note);
         } else if (action === 'submit-comment') {
-            const input = document.querySelector(`.comment-input[data-note-id="${noteId}"]`);
-            const text = input.value.trim();
-            if (text) {
-                window.socket.emit('comment-submit', { noteId, text });
-                input.value = '';
-                button.disabled = true;
-                expandedCommentSections.add(noteId);
-            }
-        } else if (action === 'cancel-comment-input') {
-            const input = document.querySelector(`.comment-input[data-note-id="${noteId}"]`);
-            input.value = '';
-            const submitBtn = document.querySelector(`[data-action="submit-comment"][data-note-id="${noteId}"]`);
-            if (submitBtn) submitBtn.disabled = true;
+            submitComment(note);
+        } else if (action === 'edit-comment') {
+            const comment = note.comments.find(c => c.id === commentId);
+            commentEditDrafts.set(`${note.id}/${commentId}`, comment ? comment.text : '');
+            updateNoteElement(note);
+            noteElements.get(note.id).querySelector(`[data-field="comment-edit"][data-comment-id="${CSS.escape(commentId)}"]`)?.focus();
+        } else if (action === 'save-comment') {
+            saveCommentEdit(note, commentId);
+        } else if (action === 'cancel-comment-edit') {
+            commentEditDrafts.delete(`${note.id}/${commentId}`);
+            updateNoteElement(note);
+        } else if (action === 'delete-note') {
+            deleteNote(note);
+        } else if (action === 'delete-comment') {
+            deleteComment(note, commentId);
         }
     });
 
     notesList.addEventListener('input', (e) => {
         const target = e.target;
-        if (target.dataset.action === 'comment-input') {
-            const noteId = target.dataset.noteId;
-            const submitBtn = document.querySelector(`[data-action="submit-comment"][data-note-id="${noteId}"]`);
-            if (submitBtn) submitBtn.disabled = target.value.trim().length === 0;
+        const note = noteOf(target);
+        if (!note) return;
+        const field = target.dataset.field;
+        if (field === 'comment') {
+            commentDrafts.set(note.id, target.value);
+            const submit = target.closest('.comment-box').querySelector('[data-action="submit-comment"]');
+            if (submit) submit.disabled = target.value.trim().length === 0;
+        } else if (field === 'note-edit') {
+            noteEditDrafts.set(note.id, target.value);
+        } else if (field === 'comment-edit') {
+            commentEditDrafts.set(`${note.id}/${target.dataset.commentId}`, target.value);
         }
     });
 
     notesList.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            const target = e.target;
-            if (target.dataset.action === 'comment-input') {
-                e.preventDefault();
-                const noteId = target.dataset.noteId;
-                const submitBtn = document.querySelector(`[data-action="submit-comment"][data-note-id="${noteId}"]`);
-                if (submitBtn && !submitBtn.disabled) submitBtn.click();
+        const target = e.target;
+        const field = target.dataset && target.dataset.field;
+        if (!field) return;
+        const note = noteOf(target);
+        if (!note) return;
+        if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+            e.preventDefault();
+            if (field === 'comment') submitComment(note);
+            else if (field === 'note-edit') saveNoteEdit(note);
+            else if (field === 'comment-edit') saveCommentEdit(note, target.dataset.commentId);
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            if (field === 'note-edit') {
+                noteEditDrafts.delete(note.id);
+                updateNoteElement(note);
+            } else if (field === 'comment-edit') {
+                commentEditDrafts.delete(`${note.id}/${target.dataset.commentId}`);
+                updateNoteElement(note);
+            } else if (field === 'comment') {
+                cancelComment(note);
             }
         }
     });
 
     scrollToTopBtn.addEventListener('click', scrollToTop);
     let scrollTimeout;
-    notesList.addEventListener('scroll', () => {
+    window.addEventListener('scroll', () => {
         clearTimeout(scrollTimeout);
-        scrollTimeout = setTimeout(() => toggleScrollButton(), 50);
-    });
+        scrollTimeout = setTimeout(toggleScrollButton, 50);
+        if (!tagPicker.hidden && !tagPicker.contains(document.activeElement)) closeTagPicker();
+        actDropdown.close();
+        tagDropdown.close();
+    }, { passive: true });
 
     // --- Initialization ---
-    updateGlobalTimecodeDisplay(currentGlobalTimecode);
-    updatePersonalTimecodeDisplay(currentGlobalTimecode);
+    loadTagsFromStorage();
+    updateTagsDisplay();
+    updateFilterTags();
+    updateActFilter();
+    // Restore identity before chat so its own messages have the right alignment.
+    showNotesSnapshot();
+    chatMessagesList = chatCopy.saved();
+    if (chatMessagesList.length) {
+        updateChatMessages();
+        chatLoading.finish({ immediate: true });
+    }
+    setChatOpen(document.documentElement.classList.contains('chat-open'));
+    updateTimeModeDisplay();
     updateGlobalLxCueDisplay(currentGlobalLxCue);
     updatePersonalLxCueDisplay(currentGlobalLxCue);
+    updateComposer();
+    filterNotes();
+    restoreDraft();
+    applyRememberedTags();
 });

@@ -4,185 +4,187 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BTS Dress Notes</title>
+    <link rel="stylesheet" href="base.css">
     <link rel="stylesheet" href="index-style.css">
+    <script src="index-boot.js"></script>
 </head>
-<body>
-    <div id="connectionBanner" class="connection-banner" role="status" aria-live="polite" hidden>Connection lost, reconnecting&hellip;</div>
+<body class="notes-page">
 
-    <!-- Edit Tags Modal -->
-    <div id="editTagsModal" class="edit-tags-modal">
-        <div class="edit-tags-content">
-            <h3>Edit Note Tags</h3>
-            <div class="edit-tags-container" id="editTagsContainer">
-                <!-- Tags for editing will be populated by JavaScript -->
-            </div>
-            <div class="edit-tags-actions">
-                <button id="cancelEditTags" class="secondary">Cancel</button>
-                <button id="saveEditTags" class="primary">Save Tags</button>
-            </div>
+    <div id="connectionBanner" class="connection-banner" role="status" aria-live="polite" hidden>Connection lost. Reconnecting&hellip; Notes you send are kept and go out when it's back.</div>
+
+    <header class="topbar">
+        <div class="brand">Dress Notes</div>
+
+        <div class="live awaiting-data" title="What a note is stamped with if you start writing now">
+            <span class="live-item"><span class="live-label">Cue</span> <span id="globalLxCue" class="live-value">1</span><input type="text" id="lxCueInput" class="cue-input" aria-label="Current cue" title="No cue feed from the desk, so type the current cue here. It updates for everyone." hidden></span>
+            <span class="live-item"><span class="live-label">Scene</span> <span id="currentActDisplay" class="live-value">Preshow</span></span>
+            <span class="live-item">
+                <span id="timeModeLabel" class="live-label">Clock</span>
+                <span id="globalTimecode" class="live-value mono">00:00:00:00</span>
+                <span id="sourceBadge" class="signal" hidden></span>
+            </span>
         </div>
+
+        <div class="topbar-actions">
+            <a href="/playback.html?source=live" class="btn ghost video-link" aria-label="Open video" title="Open video"><svg class="icon" aria-hidden="true"><use href="icons.svg#i-video"/></svg><span>Video</span></a>
+            <button type="button" id="usersButton" class="avatars awaiting-data" aria-haspopup="true" aria-expanded="false" title="Who's online">
+                <span id="avatarStack" class="avatar-stack"></span>
+                <span id="userCount" class="avatars-count">0 online</span>
+            </button>
+            <button type="button" id="chatToggle" class="btn chat-toggle" aria-expanded="false" title="Shitposts: chat with everyone, kept out of the notes">
+                <svg class="icon"><use href="icons.svg#i-chat"/></svg><span>Shitposts</span><span id="chatUnread" class="count-badge" hidden>0</span>
+            </button>
+            <button type="button" id="menuButton" class="btn ghost icon-only" aria-label="More" aria-haspopup="true" aria-expanded="false"><svg class="icon"><use href="icons.svg#i-more"/></svg></button>
+        </div>
+    </header>
+
+    <div id="usersPopover" class="popover users-popover" hidden>
+        <div class="popover-title">Online now</div>
+        <ul id="usersList" class="users-list"></ul>
     </div>
 
-    <div class="container">
-        <header>
-            <h1>BTS Dress Notes</h1>
-            <p class="subtitle">Dress Notes with LX Cue and Timecode information 😮</p>
-            <div style="margin-top: 1rem;">
-                <a href="/recall.html" class="primary" style="text-decoration: none; color: white; padding: 0.5rem 1rem; background: rgba(255, 152, 0, 0.3); border-radius: 5px;">View Exported Notes</a>
-                <a href="/config.html" class="primary" style="text-decoration: none; color: white; padding: 0.5rem 1rem; background: rgba(255, 255, 255, 0.15); border-radius: 5px; margin-left: 0.5rem;">Config &amp; Status</a>
-            </div>
-        </header>
-        
-        <div class="main-content">
-            <div class="status-panel">
-                <div class="user-info">
-                    <span>You are: </span>
-                    <span class="user-name-display" id="currentUserName">Guest</span>
-                    <a href="/logout" id="logoutLink" class="logout-link">Log out</a>
-                </div>
-                <details class="users-panel" id="usersPanel" open>
-                    <summary>Online users</summary>
-                    <ul class="users-list" id="usersList"></ul>
-                </details>
-            </div>
-            
-            <div class="timecode-section">
-                <div class="global-timecode">
-                    <div class="timecode-label">
-                        <span id="timeModeLabel">MIDI TIMECODE</span>
-                        <span id="sourceBadge" class="source-badge source-midi">MIDI</span>
-                    </div>
-                    <div class="timecode" id="globalTimecode">00:00:00:00</div>
-                    <div class="lx-cue" id="globalLxCue">LX Cue: 1</div>
-                    <div class="frame-rate-display" id="globalFrameRate">Frame Rate: 30 fps</div>
-                </div>
-                
-                <div class="personal-timecode" id="personalTimecode">
-                    <div class="timecode-label">YOUR NOTE TIMECODE</div>
-                    <div class="timecode" id="personalTimecodeDisplay">--:--:--:--</div>
-                    <div class="lx-cue" id="personalLxCueDisplay">LX Cue: --</div>
-                    <div class="frame-rate-display">Timecode will freeze when you type</div>
-                </div>
-            </div>
-            
-            <div class="notes-section">
-                <div class="notes-header">
-                    <h2>Add Your Note</h2>
-                    <div class="export-buttons">
-                        <button id="exportJson">Export JSON</button>
-                    </div>
-                </div>
-                
-                <div class="note-input-area">
-                    <textarea id="noteInput" placeholder="Start typing your note here... (Your personal timecode will freeze)"></textarea>
-                    
-                    <div class="lx-cue-input">
-                        <label for="lxCueInput">LX Cue:</label>
-                        <input type="text" id="lxCueInput" placeholder="Cue Number">
-                    </div>
-                    
-                    <div class="act-display">
-                        <label>Current Act:</label>
-                        <span id="currentActDisplay">Preshow</span>
-                    </div>
-                    <div class="tags-section">
-                        <div class="tags-label">Add Tags:</div>
-                        <div class="tags-container" id="tagsContainer">
-                            <!-- Tags will be populated by JavaScript -->
-                        </div>
-                    </div>
-                    
-                    <div class="note-actions">
-                        <button id="cancelNote" class="secondary">Cancel</button>
-                        <button id="sendNote" class="primary" disabled>Send Note</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Notes Log Panel (moved to right) -->
-        <div class="notes-log-panel">
-            <div class="notes-log-header">
-                <h3>All Notes</h3>
-                <span class="user-count" id="userCount">0 users</span>
-            </div>
-            
-            <div class="filter-section">
-                <div class="tags-label">Filter by Act:</div>
-                <div class="act-filter" id="actFilter">
-                    <div class="filter-tag active" data-act="all">All Acts</div>
-                    <div class="filter-tag" data-act="Preshow">Preshow</div>
-                </div>
-                
-                <div class="tags-label" style="margin-top: 1rem;">Filter by Tags:</div>
-                <div class="filter-tags" id="filterTags">
-                    <div class="filter-tag active" data-tag="all">All Notes</div>
-                    <!-- Filter tags will be populated by JavaScript -->
-                </div>
-            </div>
-            
-            <div class="notes-log-content" id="notesList">
-                <div style="text-align: center; opacity: 0.7; padding: 2rem;">
-                    No notes yet. Be the first to add one!
-                </div>
-            </div>
-        </div>
-        <button id="scrollToTopBtn" class="scroll-to-top-btn" style="display: none;">↑</button>
-        <!-- New Chat Section -->
-        <div class="chat-section">
-            <div class="chat-input-area">
-                <h3>Shitposts</h3>
-                <div class="user-info-small">
-                    <span>Chatting as: </span>
-                    <span class="user-name-display-small" id="chatUserName">Guest</span>
-                </div>
-                <textarea id="chatInput" placeholder="Shitpost here..."></textarea>
-                <div class="chat-actions">
-                    <button id="sendChat" class="primary" disabled>Send Message</button>
-                </div>
-            </div>
-            
-            <div class="chat-log-panel">
-                <div class="chat-log-header">
-                    <h3>Shitposts</h3>
-                    <span class="chat-count" id="chatCount">0 shitposts</span>
-                </div>
-                <div class="chat-log-content" id="chatMessages">
-                    <div style="text-align: center; opacity: 0.7; padding: 2rem;">
-                        No chat messages yet. Start the conversation!
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Instructions Panel (moved to bottom) -->
-        <div class="instructions-panel">
-            <h3>How It Works</h3>
-            <div class="instructions-grid">
-                <div class="instruction-item">• Start typing - your timecode and LX cue freeze</div>
-                <div class="instruction-item">• Send note - it gets timestamped with frozen timecode and LX cue</div>
-                <div class="instruction-item">• Add tags to categorize your notes</div>
-                <div class="instruction-item">• Anyone can edit tags on any note</div>
-                <div class="instruction-item">• Add comments to notes for discussions</div>
-                <div class="instruction-item">• LX cues automatically update via OSC from EOS</div>
-                <div class="instruction-item">• Filter notes by tags to find what you need</div>
-                <div class="instruction-item">• Export all notes as JSON with timestamps</div>
-                <div class="instruction-item">• Switch between MIDI Timecode, Network Timecode and Real Time (Global) on the Config &amp; Status page</div>
-                <div class="instruction-item">• Auto-resume after 15 seconds if note is empty and not focused</div>
-                <div class="instruction-item">• Use the "View Exported Notes" link to review past sessions</div>
-            </div>
-        </div>
-        
-        <footer>
-            <p>BTS Dress Notes &copy; 2025 | Vibecoded by Jamie with ❤️</p>
-        </footer>
+    <div id="menuPopover" class="popover menu-popover" hidden>
+        <div class="menu-user">Signed in as <strong id="currentUserName" class="awaiting-data">Guest</strong></div>
+        <button type="button" id="menuUsersButton" class="menu-item mobile-only">Who's online</button>
+        <a href="/recall.html" class="menu-item">Open past notes</a>
+        <button type="button" id="exportJson" class="menu-item">Download notes (JSON)</button>
+        <a href="/config.html" class="menu-item">Settings &amp; status</a>
+        <div class="menu-sep"></div>
+        <form method="post" action="/logout" class="menu-form"><button type="submit" class="menu-item">Log out</button></form>
     </div>
+
+    <main class="page">
+        <section id="composer" class="composer" aria-label="Write a note">
+            <textarea id="noteInput" rows="1" placeholder="Write a note…" aria-label="Write a note"></textarea>
+            <div class="composer-details">
+                <button type="button" id="composerTagsToggle" class="btn outline mobile-only" aria-expanded="false" aria-controls="tagsContainer">
+                    <svg class="icon" aria-hidden="true"><use href="icons.svg#i-tag"/></svg><span id="composerTagsLabel">Choose tags</span>
+                </button>
+                <div class="tag-toggles" id="tagsContainer" role="group" aria-label="Tags for this note" aria-describedby="tagError"></div>
+                <p id="tagError" class="field-error" role="alert" hidden>Choose at least one tag.</p>
+                <div class="composer-footer">
+                    <div id="personalTimecode" class="stamp">
+                        <span id="stampLabel" class="stamp-label">Will be stamped</span>
+                        <span class="stamp-value">Cue <span id="personalLxCueDisplay">--</span> · <span id="personalTimecodeDisplay" class="mono">--:--:--:--</span></span>
+                    </div>
+                    <div class="composer-actions">
+                        <button type="button" id="cancelNote" class="btn ghost" aria-label="Discard note"><svg class="icon mobile-only" aria-hidden="true"><use href="icons.svg#i-close"/></svg><span>Discard</span></button>
+                        <button type="button" id="sendNote" class="btn primary" disabled>Send note</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section class="notes loading-region is-loading" aria-label="Notes" aria-busy="true">
+            <div class="toolbar">
+                <label class="search">
+                    <svg class="icon"><use href="icons.svg#i-search"/></svg>
+                    <input type="search" id="searchInput" placeholder="Search notes, people, cues" aria-label="Search notes">
+                </label>
+                <button type="button" id="actFilter" class="select" hidden aria-haspopup="listbox" aria-expanded="false" title="Filter by scene"></button>
+                <button type="button" id="tagFilter" class="select" hidden aria-haspopup="listbox" aria-expanded="false" title="Filter by tag"></button>
+                <button type="button" id="clearFilters" class="btn outline clear-filters" title="Show all notes again" hidden><svg class="icon" aria-hidden="true"><use href="icons.svg#i-close"/></svg>Clear filters</button>
+                <div class="toolbar-end">
+                    <span class="chip" id="liveSampleBadge" hidden>Sample live session</span>
+                    <span id="notesCount" class="muted"></span>
+                </div>
+            </div>
+
+            <div id="notesList" class="notes-list" data-loading-content></div>
+            <div id="notesLoading" class="notes-list skeleton" data-loading-placeholder aria-hidden="true">
+                <div class="group-head"><span class="bone head-bone"></span></div>
+                <div class="note">
+                    <span class="bone avatar-bone"></span>
+                    <div class="note-main">
+                        <div class="note-head"><span class="bone meta-bone"></span></div>
+                        <span class="bone line w-80"></span>
+                        <span class="bone line w-45"></span>
+                        <div class="note-foot"><span class="bone chip-bone"></span></div>
+                    </div>
+                </div>
+                <div class="note">
+                    <span class="bone avatar-bone"></span>
+                    <div class="note-main">
+                        <div class="note-head"><span class="bone meta-bone"></span></div>
+                        <span class="bone line w-60"></span>
+                        <div class="note-foot"><span class="bone chip-bone"></span></div>
+                    </div>
+                </div>
+                <div class="note">
+                    <span class="bone avatar-bone"></span>
+                    <div class="note-main">
+                        <div class="note-head"><span class="bone meta-bone"></span></div>
+                        <span class="bone line w-90"></span>
+                        <span class="bone line w-30"></span>
+                        <div class="note-foot"><span class="bone chip-bone"></span></div>
+                    </div>
+                </div>
+                <div class="note">
+                    <span class="bone avatar-bone"></span>
+                    <div class="note-main">
+                        <div class="note-head"><span class="bone meta-bone"></span></div>
+                        <span class="bone line w-50"></span>
+                        <div class="note-foot"><span class="bone chip-bone"></span></div>
+                    </div>
+                </div>
+            </div>
+            <div id="notesEmpty" class="empty" data-loading-content hidden>
+                <p class="empty-title">No notes yet</p>
+                <p class="muted">Write a note above. The cue and time are added for you.</p>
+            </div>
+            <div id="notesNoMatch" class="empty" data-loading-content hidden>
+                <p class="empty-title">No notes match these filters</p>
+                <button type="button" class="btn outline" data-action="clear-filters"><svg class="icon" aria-hidden="true"><use href="icons.svg#i-close"/></svg>Clear filters</button>
+            </div>
+        </section>
+    </main>
+
+    <button type="button" id="scrollToTopBtn" class="to-top" hidden><svg class="icon"><use href="icons.svg#i-up"/></svg>Newest</button>
+
+    <div id="actFilterPopover" class="popover filter-popover" role="listbox" aria-label="Filter by scene" hidden></div>
+    <div id="tagFilterPopover" class="popover filter-popover" role="listbox" aria-label="Filter by tag" hidden></div>
+
+    <div id="tagPicker" class="popover tag-picker" role="dialog" aria-label="Edit tags" hidden>
+        <div class="popover-title">Tags</div>
+        <div id="tagPickerList" class="tag-picker-list"></div>
+        <div id="tagPickerHint" class="popover-foot muted" hidden>A note needs at least one tag</div>
+    </div>
+
+    <aside id="chatDrawer" class="drawer loading-region is-loading" aria-busy="true" aria-label="Shitposts" hidden>
+        <div class="drawer-head">
+            <h2 id="chatTitle">Shitposts</h2>
+            <span id="chatCount" class="muted"></span>
+            <button type="button" id="chatClose" class="btn ghost icon-only" aria-label="Close shitposts"><svg class="icon"><use href="icons.svg#i-close"/></svg></button>
+        </div>
+        <div id="chatMessages" class="chat-log" data-loading-content></div>
+        <div class="chat-log skeleton" data-loading-placeholder aria-hidden="true">
+            <div class="chat-msg skeleton"><span class="bone avatar-bone sm"></span><span class="bone bubble-bone w-60"></span></div>
+            <div class="chat-msg skeleton cont"><span class="avatar-gap"></span><span class="bone bubble-bone w-40"></span></div>
+            <div class="chat-msg skeleton mine"><span class="bone bubble-bone w-50"></span></div>
+            <div class="chat-msg skeleton"><span class="bone avatar-bone sm"></span><span class="bone bubble-bone w-70"></span></div>
+        </div>
+        <div class="chat-compose">
+            <textarea id="chatInput" rows="2" placeholder="Shitpost here…" aria-label="Shitpost to everyone"></textarea>
+            <div class="chat-compose-foot">
+                <button type="button" id="sendChat" class="btn primary" disabled>Send</button>
+            </div>
+        </div>
+    </aside>
 
     <script src="/socket.io/socket.io.js"></script>
+    <script src="keepalive.js"></script>
     <script src="chat-copy.js"></script>
     <script src="note-order.js"></script>
     <script src="note-author.js"></script>
     <script src="type-to-note.js"></script>
+    <script src="pending-notes.js"></script>
+    <script src="notes-snapshot.js"></script>
+    <script src="vendor/purify.min.js"></script>
+    <script src="safe-html.js"></script>
+    <script src="timecode-format.js"></script>
+    <script src="note-view.js"></script>
+    <script src="loading-state.js"></script>
+    <script src="playback-context.js"></script>
     <script src="index.js"></script>
 </body>
 </html>

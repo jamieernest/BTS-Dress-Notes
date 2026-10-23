@@ -1,7 +1,7 @@
-// What the online users list does for one person. The list has one entry per socket, so a person with two
-// tabs open is genuinely listed twice (that is deliberate). A reconnect must not leave an extra entry once
-// the old socket has closed. A socket that dies without closing (network drop, phone asleep) stays listed
-// until Socket.IO's ping timeout (25 s + 20 s by default), which is too slow to wait for in a test.
+// What the online users list does for one person. The list has one entry per person (Keycloak account),
+// however many pages they have open, so a second tab, a reload or a visit to the recall page and back never
+// lists anyone twice; they leave the list when their last page closes. The config page and overlays are not
+// listed at all.
 const test = require('node:test');
 const assert = require('node:assert');
 const os = require('node:os');
@@ -30,7 +30,13 @@ async function setup(t) {
         sockets.push(page.socket);
         return page;
     };
-    return { open };
+    // A config page or overlay, identified in the handshake rather than by referer.
+    const openAs = (who, page) => {
+        const socket = io(`http://127.0.0.1:${app.port}`, { extraHeaders: { cookie: cookies[who] }, auth: { page }, reconnection: false });
+        sockets.push(socket);
+        return socket;
+    };
+    return { open, openAs };
 }
 
 test('closing a page and opening it again lists the person once', async (t) => {
@@ -43,24 +49,64 @@ test('closing a page and opening it again lists the person once', async (t) => {
     const bobAgain = open('bob');
     await until(() => bobAgain.users, 'the reconnected page to get the list');
     assert.deepStrictEqual(bobAgain.users.slice().sort(), ['alice', 'bob']);
-    // alice is told of the new page by the typing broadcast that re-sends the whole list
-    alice.socket.emit('typing-start', {});
-    await until(() => alice.users.length === 2, 'alice to get the list again');
+    // everyone is sent the new list when someone joins
+    await until(() => alice.users.length === 2, 'alice to get the new list');
     assert.deepStrictEqual(alice.users.slice().sort(), ['alice', 'bob']);
 });
 
-test('two open pages for one person are both listed, and each is removed when it closes', async (t) => {
+test('a person with several pages open is listed once, until their last page closes', async (t) => {
     const { open } = await setup(t);
     const alice = open('alice');
+    await until(() => alice.users, 'alice to connect');
+    const joined = [];
+    const left = [];
+    alice.socket.on('user-joined', (d) => joined.push(d.user));
+    alice.socket.on('user-left', (d) => left.push(d.user));
     const bobTab1 = open('bob');
-    await until(() => bobTab1.users, 'bob to connect');
+    await until(() => alice.users && alice.users.length === 2, 'bob to be listed');
     const bobTab2 = open('bob');
-    await until(() => bobTab2.users && bobTab2.users.length === 3, 'both bob tabs to be listed');
-    assert.deepStrictEqual(bobTab2.users.slice().sort(), ['alice', 'bob', 'bob']);
-    bobTab1.socket.close();
-    await until(() => alice.users && alice.users.length === 2, 'the closed tab to leave the list');
+    await until(() => bobTab2.users, 'the second bob tab to connect');
+    assert.deepStrictEqual(bobTab2.users.slice().sort(), ['alice', 'bob']);
     assert.deepStrictEqual(alice.users.slice().sort(), ['alice', 'bob']);
+
+    bobTab1.socket.close();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.deepStrictEqual(alice.users.slice().sort(), ['alice', 'bob'], 'bob still has a page open');
+    assert.deepStrictEqual(left, []);
+
     bobTab2.socket.close();
-    await until(() => alice.users.length === 1, 'the second tab to leave the list');
+    await until(() => alice.users.length === 1, 'bob to leave the list');
+    assert.deepStrictEqual(alice.users, ['alice']);
+    assert.deepStrictEqual(joined, ['bob']);
+    assert.deepStrictEqual(left, ['bob']);
+});
+
+test('a person is shown typing while any of their pages is', async (t) => {
+    const { open } = await setup(t);
+    const alice = open('alice');
+    const typing = {};
+    alice.socket.on('users-update', (users) => { for (const u of users) typing[u.name] = u.isTyping; });
+    const bobTab1 = open('bob');
+    const bobTab2 = open('bob');
+    await until(() => bobTab1.users && bobTab2.users && alice.users.length === 2, 'bob to connect twice');
+    bobTab1.socket.emit('typing-start', { timecode: { hours: 1, minutes: 2, seconds: 3, frames: 4 } });
+    await until(() => typing.bob === true, 'bob to be shown typing');
+    bobTab2.socket.emit('typing-stop');
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.strictEqual(typing.bob, true, 'the other tab is still typing');
+    bobTab1.socket.emit('typing-stop');
+    await until(() => typing.bob === false, 'bob to stop typing');
+});
+
+test('pages that say they are the config page or an overlay are not listed', async (t) => {
+    const { open, openAs } = await setup(t);
+    const alice = open('alice');
+    await until(() => alice.users && alice.users.length === 1, 'alice to be listed');
+    const config = openAs('bob', 'config');
+    const overlay = openAs('bob', 'overlay');
+    await until(() => config.connected && overlay.connected, 'the config page and overlay to connect');
+    alice.socket.emit('typing-start', {}); // forces a fresh list to everyone
+    await until(() => alice.users && alice.users.length === 1, 'the list to come back');
+    await new Promise((resolve) => setTimeout(resolve, 200));
     assert.deepStrictEqual(alice.users, ['alice']);
 });

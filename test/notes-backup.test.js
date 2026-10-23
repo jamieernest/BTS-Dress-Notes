@@ -24,6 +24,8 @@ test('a backup file name round trips to the time it was made', () => {
 test('checkBackup accepts what the server writes and the older shape without totalNotes or tags', () => {
     assert.strictEqual(checkBackup({ notes: [note('a')], totalNotes: 1, tags: [{ id: 't', name: 'T' }] }), null);
     assert.strictEqual(checkBackup({ notes: [] }), null);
+    // An imported note with an unreadable timecode is stored with null.
+    assert.strictEqual(checkBackup({ notes: [{ ...note('a'), timecode: null }] }), null);
 });
 
 test('checkBackup rejects the wrong shape and a count that does not match', () => {

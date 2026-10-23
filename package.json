@@ -4,25 +4,32 @@
   "description": "Collaborative note sharing with MIDI Timecode integration",
   "main": "server.js",
   "scripts": {
+    "dev:playback": "node scripts/playback-dev.js",
     "start": "node --env-file-if-exists=.env server.js",
-    "test": "node --test test/eos-osc.test.js test/acn-midi.test.js test/net-iface.test.js test/gateway-lock.test.js test/settings.test.js test/session-store.test.js test/type-to-note.test.js test/chat-restore.test.js test/chat-restore-e2e.test.js test/notes-backup.test.js test/notes-restore-e2e.test.js test/note-order.test.js test/note-order-e2e.test.js test/online-users-e2e.test.js test/eos-reconnect-e2e.test.js test/note-author.test.js test/note-author-e2e.test.js",
+    "test": "node --test --test-timeout=60000 test/eos-osc.test.js test/acn-midi.test.js test/net-iface.test.js test/gateway-lock.test.js test/settings.test.js test/session-store.test.js test/type-to-note.test.js test/chat-restore.test.js test/chat-restore-e2e.test.js test/notes-backup.test.js test/notes-restore-e2e.test.js test/saved-shows.test.js test/saved-shows-e2e.test.js test/reset-notes.test.js test/reset-notes-e2e.test.js test/note-order.test.js test/note-order-e2e.test.js test/online-users-e2e.test.js test/eos-reconnect-e2e.test.js test/note-author.test.js test/note-author-e2e.test.js test/note-input.test.js test/auth-e2e.test.js test/note-submit-e2e.test.js test/pending-notes.test.js test/notes-snapshot.test.js test/loading-state.test.js test/safe-html.test.js test/note-view.test.js test/security-e2e.test.js test/show-log.test.js test/playback-timeline.test.js test/playback-context.test.js test/playback-program.test.js test/recordings.test.js test/recordings-e2e.test.js",
     "dev": "nodemon --exec \"node --env-file-if-exists=.env\" server.js"
   },
   "dependencies": {
-    "easymidi": "^3.1.0",
-    "express": "^4.18.2",
+    "dompurify": "^3.4.17",
+    "easymidi": "^3.2.0",
+    "express": "^4.22.3",
     "express-session": "^1.19.0",
-    "node-osc": "^11.2.2",
+    "helmet": "^8.3.0",
+    "node-osc": "^11.7.1",
     "openid-client": "^6.8.8",
-    "socket.io": "^4.7.2"
+    "socket.io": "^4.8.4",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "jose": "^6.2.12",
-    "nodemon": "^3.0.1",
-    "socket.io-client": "^4.8.3"
+    "jose": "^6.2.13",
+    "nodemon": "^3.1.14",
+    "socket.io-client": "^4.8.4"
   },
   "allowScripts": {
-    "@julusian/midi@3.6.1": true,
-    "fsevents@2.3.3": true
+    "fsevents@2.3.3": true,
+    "@julusian/midi@3.8.1": true
+  },
+  "overrides": {
+    "qs": "^6.16.0"
   }
 }

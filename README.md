@@ -24,7 +24,7 @@ npm i
 
    (For Network TC) No extra MIDI interface is needed - see [Timecode modes](#timecode-modes) below
 
-7. Every page requires login via Keycloak SSO. Set `SESSION_SECRET` (required - the server won't start without it) and, to enable login, `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID` and `KEYCLOAK_CLIENT_SECRET` (one shared client covers every venue). See `AGENTS.md` for how these are used. Logins last 12 hours and are saved to `local-sessions.json` (git-ignored) so they survive a server restart; changing `SESSION_SECRET` or deleting that file logs everyone out.
+7. Every page requires login via Keycloak SSO. Set `SESSION_SECRET` (required - the server won't start without it) and, to enable login, `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID` and `KEYCLOAK_CLIENT_SECRET` (one shared client covers every venue). See `AGENTS.md` for how these are used. A login lasts until it has gone 12 hours without any open page talking to the server (open pages, overlays included, keep it alive), and is saved to `local-sessions.json` (git-ignored) so it survives a server restart; changing `SESSION_SECRET` or deleting that file logs everyone out. Someone sent back to log in returns to the page they were on, with any half-written note. In the Keycloak client, "Valid redirect URIs" must cover `http://<host>:<port>/callback` and "Valid post logout redirect URIs" must cover `http://<host>:<port>/logged-out` (or be `+` with a redirect URI pattern that covers it), or logging out stops at a Keycloak error page.
 
 8. Run by running `npm start`
 
@@ -63,8 +63,14 @@ Have fun and enjoy :)
 
 ## Notes backup, restart and reset
 
-Notes are kept in server memory and saved to `backups/` every minute and when the server stops or crashes. When the server starts it loads the newest backup under 2 hours old that is intact (valid JSON, well-formed notes, not cut short), trying older ones if the newest is damaged, and starts empty if none qualifies; the log says which. A restart after a dress, hours later, therefore starts clean.
+Notes are kept in server memory and saved to `backups/` about a second after every change (one file per minute at most), every minute, and when the server stops or crashes. A browser also keeps each note it has sent until the server confirms it, and sends it again after a reload or reconnect. When the server starts it loads the newest backup under 2 hours old that is intact (valid JSON, well-formed notes, not cut short), trying older ones if the newest is damaged, and starts empty if none qualifies; the log says which. A restart after a dress, hours later, therefore starts clean.
 
 Only the person who sent a note can edit it; backups record who wrote each note (by login), so this survives a restart or an export/import. Notes from a backup or file that has no author record, such as one made before this rule, can be edited by anyone.
 
 To clear the show, open `/config.html` and use **Reset all notes and chat** (it asks for confirmation). This empties notes and chat on the server and in every open browser, and a restart afterwards stays empty. Tags are kept.
+
+## Show recordings
+
+**Recordings** on the settings page puts a show's recording on the server, for the live notes or any saved show, so everyone who opens those notes can watch it without their own copy. A recording in several parts can be uploaded together or one at a time: the parts play as one timeline in start-time order, with blank time where the recording stopped. Start times come from Vor's dated file names (`Show.2026-10-07 19-30-00.mp4`) and can be adjusted under **Adjust timing**; parts without one play back to back. On the playback page (**Video** on the notes, or on a saved show in Past notes), **Choose from this device** plays a video only for you, without uploading it.
+
+Uploads are kept in `recordings/` (`RECORDINGS_DIR`), up to 32 GiB a file (`RECORDING_MAX_BYTES`, in bytes). The live notes' recording goes with them when the show is saved on `/config.html`, and is removed by **Reset all notes and chat** (the saved show keeps its copy). Anyone logged in can upload or remove a part. Leave room on the disk: a full-length HD recording is several gigabytes.

@@ -41,6 +41,36 @@ test('another user cannot edit a note by sending the message directly', async (t
     assert.strictEqual(edits[0].lastEditedBy, 'alice');
 });
 
+test('a note cannot have its last tag taken off', async (t) => {
+    const oidc = await startOidc();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'note-author-e2e-'));
+    const app = createApp({ issuer: oidc.issuer, sessionsFile: path.join(dir, 'sessions.json'), port: await freePort() });
+    await app.start();
+    const alice = new Browser(app, await login(app, oidc, 'alice'));
+    t.after(async () => {
+        alice.close();
+        await app.stop().catch(() => {});
+        oidc.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+    alice.load();
+    const updates = [];
+    alice.page.socket.on('note-update-tags', (u) => updates.push(u));
+    await until(() => alice.page.socket.connected, 'the browser to connect');
+
+    alice.note('tagged', { tags: ['lighting'] });
+    await until(() => alice.noteTexts().length === 1, 'the note to arrive');
+    const noteId = alice.page.notes[0].id;
+
+    alice.page.socket.emit('note-update-tags', { noteId, tags: [] });
+    await until(() => updates.length === 1, 'the server to answer');
+    assert.deepStrictEqual(updates[0].tags, ['lighting'], 'the sender is told the tag is still there');
+
+    alice.page.socket.emit('note-update-tags', { noteId, tags: ['sound'] });
+    await until(() => updates.length === 2, 'the swap to be broadcast');
+    assert.deepStrictEqual(updates[1].tags, ['sound']);
+});
+
 // Ownership is the Keycloak identity, so it has to survive a backup, a restart and a display-name change.
 const { io } = require('socket.io-client');
 const { backupFilename } = require('../notes-backup');
@@ -188,11 +218,21 @@ test('importing a file without authors leaves its notes editable by anyone', asy
     assert.strictEqual((await edit).newText, 'bob edited');
 });
 
+test('an import that has to skip unreadable notes says how many', async (t) => {
+    const { connect } = await importSetup(t);
+    const bob = await connect('bob');
+    const note = (id) => ({ id, text: 'n', user: 'x', timestamp: new Date().toISOString(), tags: [], comments: [] });
+    const done = new Promise((resolve) => bob.once('import-success', resolve));
+    bob.emit('import-backup', { notes: [note('ok1'), note('x'.repeat(200))] });
+    assert.strictEqual(await done, 'Backup imported, but 1 of 2 notes could not be read and were skipped.');
+    await until(() => bob.notes.length === 1, 'the readable note to arrive');
+});
+
 test('an exported file keeps authorship by Keycloak identity when imported again', async (t) => {
     const { connect } = await importSetup(t);
     const alice = await connect('alice');
     const bob = await connect('bob');
-    alice.emit('note-submit', { id: 'rt1', clientId: 'c1', text: 'alice note', timestamp: new Date().toISOString(), tags: [], comments: [] });
+    alice.emit('note-submit', { id: 'rt1', clientId: 'c1', text: 'alice note', timestamp: new Date().toISOString(), tags: ['lx'], comments: [] });
     await until(() => alice.notes.length === 1, 'the note to arrive');
     const exported = new Promise((resolve) => alice.once('export-data', resolve));
     alice.emit('export-request', 'json');

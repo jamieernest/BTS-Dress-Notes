@@ -43,5 +43,27 @@
         return String(ctx.noteValue || '').trim() === '' ? 'cancel' : 'blur';
     }
 
-    return { shouldFocusNote, isTextEntry, escapeAction };
+    // Focus has moved out of the note box: 'cancel' when the box is empty and
+    // focus went somewhere else on the page (a click or Tab away), else null.
+    // Moving to the box's own tags or buttons, or to another window, keeps the
+    // started note; text is never dropped this way.
+    function leaveAction(ctx = {}) {
+        if (String(ctx.noteValue || '').trim() !== '') return null;
+        if (ctx.focusInComposer || !ctx.pageFocused) return null;
+        return 'cancel';
+    }
+
+    // How long the note box may sit empty before its frozen timecode is let go.
+    const EMPTY_RELEASE_MS = 5000;
+
+    // The note box has been empty for EMPTY_RELEASE_MS: null (there is text, or
+    // nothing is frozen), 'release' (still focused: unfreeze the timecode and
+    // LX cue but keep the chosen tags; the next key freezes them again) or
+    // 'cancel' (the box was left: drop the started note altogether).
+    function emptyBoxAction(ctx = {}) {
+        if (!ctx.isTyping || String(ctx.noteValue || '').trim() !== '') return null;
+        return ctx.focused ? 'release' : 'cancel';
+    }
+
+    return { shouldFocusNote, isTextEntry, escapeAction, leaveAction, emptyBoxAction, EMPTY_RELEASE_MS };
 }));

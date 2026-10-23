@@ -24,6 +24,8 @@ async function until(check, what, timeoutMs = 8000) {
     }
 }
 
+const exitedNow = (child) => child.exitCode !== null || child.signalCode !== null;
+
 function freePort() {
     return new Promise((resolve) => {
         const s = net.createServer().listen(0, '127.0.0.1', () => {
@@ -33,7 +35,8 @@ function freePort() {
     });
 }
 
-// Stub OIDC provider: whoever /authorize is asked for next is `nextUser`.
+// Stub OIDC provider: whoever /authorize is asked for next is `nextUser`
+// (it has no login of its own, so it never asks; Keycloak may).
 async function startOidc() {
     const { publicKey, privateKey } = await jose.generateKeyPair('RS256', { extractable: true });
     const jwk = { ...(await jose.exportJWK(publicKey)), kid: 'k1', alg: 'RS256', use: 'sig' };
@@ -47,6 +50,7 @@ async function startOidc() {
         if (url.pathname === '/.well-known/openid-configuration') {
             return json({
                 issuer, authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/token`,
+                end_session_endpoint: `${issuer}/end-session`,
                 jwks_uri: `${issuer}/jwks`, response_types_supported: ['code'], subject_types_supported: ['public'],
                 id_token_signing_alg_values_supported: ['RS256'], code_challenge_methods_supported: ['S256'],
                 token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post']
@@ -62,6 +66,13 @@ async function startOidc() {
             back.searchParams.set('iss', issuer);
             res.statusCode = 302;
             res.setHeader('location', back.href);
+            return res.end();
+        }
+        // Like Keycloak: ends its own login, then back to the app.
+        if (url.pathname === '/end-session') {
+            state.endSessions = (state.endSessions || 0) + 1;
+            res.statusCode = 302;
+            res.setHeader('location', url.searchParams.get('post_logout_redirect_uri'));
             return res.end();
         }
         if (url.pathname === '/token') {
@@ -85,14 +96,29 @@ async function startOidc() {
 function createApp({ issuer, sessionsFile, port, env = {} }) {
     let child = null;
     const backupsDir = path.join(path.dirname(sessionsFile), 'backups');
+    const savedShowsDir = path.join(path.dirname(sessionsFile), 'saved-shows');
+    const recordingsDir = path.join(path.dirname(sessionsFile), 'recordings');
+    const resetsDir = path.join(path.dirname(sessionsFile), 'reset-notes');
+    // A copy of the tags, so a test that changes them leaves the tracked tags.json alone.
+    const tagsFile = path.join(path.dirname(sessionsFile), 'tags.json');
+    if (!fs.existsSync(tagsFile)) fs.copyFileSync(path.join(ROOT, 'tags.json'), tagsFile);
+    // Signals the server and waits for it to exit; one that already has is not
+    // waited on, since its 'exit' event has been and gone.
+    async function ended(signal) {
+        if (!child || exitedNow(child)) return;
+        const exited = new Promise((resolve) => child.once('exit', resolve));
+        child.kill(signal);
+        await exited;
+    }
     return {
         port,
         backupsDir,
+        savedShowsDir,
+        recordingsDir,
+        resetsDir,
         // Kills the process without the shutdown backup, as a crash or power cut would.
         async kill() {
-            const exited = new Promise((resolve) => child.once('exit', resolve));
-            child.kill('SIGKILL');
-            await exited;
+            await ended('SIGKILL');
         },
         async start() {
             const oscPort = await freePort();
@@ -100,7 +126,7 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
                 cwd: ROOT,
                 env: {
                     ...process.env, PORT: String(port), OSC_PORT: String(oscPort), SESSIONS_FILE: sessionsFile,
-                    BACKUPS_DIR: backupsDir,
+                    BACKUPS_DIR: backupsDir, SAVED_SHOWS_DIR: savedShowsDir, RECORDINGS_DIR: recordingsDir, RESETS_DIR: resetsDir, TAGS_FILE: tagsFile,
                     SESSION_SECRET: 'test', KEYCLOAK_ISSUER: issuer, KEYCLOAK_CLIENT_ID: 'bts',
                     KEYCLOAK_CLIENT_SECRET: 'x', EOS_HOST: '127.0.0.1', EOS_PORT: String(await freePort()), ...env
                 },
@@ -109,25 +135,36 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
             let out = '';
             child.stdout.on('data', (d) => { out += d; });
             child.stderr.on('data', (d) => { out += d; });
-            await until(() => out.includes('Server running on'), `server to start:\n${out}`);
+            // A server that dies starting (a port taken meanwhile, say) fails here, with what it said.
+            await until(() => {
+                if (exitedNow(child)) assert.fail(`server exited while starting:\n${out}`);
+                return out.includes('Server running on');
+            }, 'server to start');
         },
         async stop() {
-            const exited = new Promise((resolve) => child.once('exit', resolve));
-            child.kill('SIGINT');
-            await exited;
+            await ended('SIGINT');
         }
     };
 }
 
-// Logs in through the real /login -> OIDC -> /callback flow; returns the session cookie.
-async function login(app, oidc, who) {
+// Logs in through the real /login -> OIDC -> /callback flow; returns the session
+// cookie, which the server only sets once the login has succeeded.
+// The cookies a response sets, as a Cookie header.
+function cookiesOf(res) {
+    return res.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+}
+
+async function login(app, oidc, who, returnTo) {
     oidc.state.nextUser = who;
     const base = `http://127.0.0.1:${app.port}`;
-    let res = await fetch(`${base}/login`, { redirect: 'manual' });
-    const cookie = res.headers.getSetCookie().map((c) => c.split(';')[0]).join('; ');
+    let res = await fetch(`${base}/login${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ''}`, { redirect: 'manual' });
+    const loginCookie = cookiesOf(res); // ties the callback to this "browser"
     res = await fetch(res.headers.get('location'), { redirect: 'manual' });
-    res = await fetch(res.headers.get('location'), { redirect: 'manual', headers: { cookie } });
+    res = await fetch(res.headers.get('location'), { redirect: 'manual', headers: { cookie: loginCookie } });
     assert.strictEqual(res.status, 302, 'login callback should redirect');
+    const cookie = cookiesOf(res).split('; ').filter((c) => !c.startsWith('bts-notes.login.')).join('; ');
+    assert.ok(cookie, 'login callback should set the session cookie');
+    if (returnTo !== undefined) login.lastRedirect = res.headers.get('location');
     return cookie;
 }
 
@@ -172,7 +209,7 @@ class Browser {
         return page;
     }
 
-    note(text, extra = {}) { this.page.socket.emit('note-submit', { text, clientId: `c-${Math.random().toString(36).slice(2)}`, ...extra }); }
+    note(text, extra = {}) { this.page.socket.emit('note-submit', { text, clientId: `c-${Math.random().toString(36).slice(2)}`, tags: ['lx'], ...extra }); }
     noteTexts() { return this.page.notes.map((n) => n.text); }
     say(text) { this.page.socket.emit('chat-message', { text }); }
     texts() { return this.page.log ? this.page.log.map((m) => m.text) : null; }
@@ -197,4 +234,4 @@ function serverLog(app, cookie) {
 }
 
 
-module.exports = { ROOT, sleep, until, freePort, startOidc, createApp, login, Browser, serverLog };
+module.exports = { ROOT, sleep, until, freePort, startOidc, createApp, login, cookiesOf, Browser, serverLog };

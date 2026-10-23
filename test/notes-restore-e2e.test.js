@@ -80,7 +80,8 @@ test('after a crash the notes come back from the last periodic backup', async (t
     const { app, alice, carol } = await setup(t, { BACKUP_INTERVAL_MS: '200' });
     alice.note('before the crash');
     await until(() => alice.noteTexts().length === 1, 'the note to arrive');
-    await until(() => fs.existsSync(app.backupsDir) && fs.readdirSync(app.backupsDir).some((f) => fs.readFileSync(path.join(app.backupsDir, f), 'utf8').includes('before the crash')),
+    // A finished backup, not the hidden temp file of one still being written
+    await until(() => fs.existsSync(app.backupsDir) && fs.readdirSync(app.backupsDir).some((f) => !f.startsWith('.') && fs.readFileSync(path.join(app.backupsDir, f), 'utf8').includes('before the crash')),
         'a backup holding the note');
     await app.kill(); // no shutdown backup
     await app.start();
