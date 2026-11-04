@@ -6,14 +6,15 @@
         return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
     }
 
+    function suggestTagCommand(name) {
+        return normalize(name).replace(/\s+/g, '-');
+    }
+
     function tagMatchesCommand(tag, command) {
         const commandKey = normalize(command);
         if (!commandKey) return false;
-        // An explicit command replaces the id/name matches; leave the old matches for older tags.
-        if (tag.command) return commandKey === normalize(tag.command);
-        const id = normalize(tag.id);
-        const name = normalize(tag.name);
-        return commandKey === id || commandKey === name || name.split(' ').includes(commandKey);
+        // An explicit command wins; otherwise use the full tag name as a dashed command.
+        return commandKey === normalize(tag.command || suggestTagCommand(tag.name) || tag.id);
     }
 
     function consumeTagCommand(value, tags, cursor = String(value || '').length) {
@@ -51,5 +52,5 @@
         return text || null;
     }
 
-    return { consumeTagCommand, consumeShitpostCommand };
+    return { suggestTagCommand, consumeTagCommand, consumeShitpostCommand };
 }));

@@ -30,15 +30,12 @@ document.addEventListener('DOMContentLoaded', function() {
         tagResult.hidden = !message;
     }
 
-    function validTagColor(value) {
-        return /^#[0-9A-Fa-f]{6}$/.test(value);
-    }
-
     function saveTag(tag, name, color, command, saveButton) {
-        if (!name.trim()) return showTagResult('Enter a tag name.', true);
-        if (!validTagColor(color)) return showTagResult('Use a six-digit colour such as #FF0000.', true);
+        const payload = configTags.payload(tag, name, color, command, tagCommands.suggestTagCommand);
+        if (!payload) return showTagResult(!String(name || '').trim()
+            ? 'Enter a tag name.' : 'Use a six-digit colour such as #FF0000.', true);
         saveButton.disabled = true;
-        socket.timeout(10000).emit('create-tag', { id: tag.id, name, color, command }, (error, reply) => {
+        socket.timeout(10000).emit('create-tag', payload, (error, reply) => {
             saveButton.disabled = false;
             if (error || !reply || reply.error) showTagResult(error || reply?.error || 'The tag could not be saved.', true);
             else showTagResult(`Saved ${name}.`);
@@ -78,7 +75,7 @@ document.addEventListener('DOMContentLoaded', function() {
             command.className = 'input command-input';
             command.type = 'text';
             command.maxLength = 40;
-            command.value = tag.command || '';
+            command.value = tag.command || tagCommands.suggestTagCommand(tag.name);
             command.pattern = '[a-zA-Z0-9][a-zA-Z0-9_-]*';
             command.placeholder = 'Slash command';
             command.setAttribute('aria-label', `${tag.name} slash command`);
@@ -157,15 +154,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
     newTagForm.addEventListener('submit', (event) => {
         event.preventDefault();
-        if (!newTagName.value.trim()) return showTagResult('Enter a tag name.', true);
-        if (!validTagColor(newTagColor.value)) return showTagResult('Use a six-digit colour such as #FF0000.', true);
+        const payload = configTags.payload(null, newTagName.value, newTagColor.value, newTagCommand.value, tagCommands.suggestTagCommand);
+        if (!payload) return showTagResult(!newTagName.value.trim()
+            ? 'Enter a tag name.' : 'Use a six-digit colour such as #FF0000.', true);
         const addButton = newTagForm.querySelector('button[type="submit"]');
         addButton.disabled = true;
-        socket.timeout(10000).emit('create-tag', {
-            name: newTagName.value,
-            color: newTagColor.value,
-            command: newTagCommand.value
-        }, (error, reply) => {
+        socket.timeout(10000).emit('create-tag', payload, (error, reply) => {
             addButton.disabled = false;
             if (error || !reply || reply.error) showTagResult(error || reply?.error || 'The tag could not be added.', true);
             else {
