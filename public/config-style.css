@@ -44,6 +44,11 @@
 .row-text { flex: 1; min-width: 240px; }
 .row-text .row-label { width: auto; }
 .row-text .section-note { margin: 2px 0 0; }
+.tag-row .input { min-width: 0; }
+.tag-name-input { flex: 1.5 !important; }
+.color-input { flex: 0 0 120px !important; font-family: var(--mono); text-transform: uppercase; }
+.command-input { flex: 1 !important; min-width: 140px !important; }
+.tag-new-row { margin-top: 10px; }
 
 /* Green, red or grey: the state is also in the text beside it. */
 .state-dot {

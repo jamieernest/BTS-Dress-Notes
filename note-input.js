@@ -15,6 +15,7 @@ const MAX_NOTE_LENGTH = 10000;
 const MAX_COMMENT_LENGTH = 5000;
 const MAX_TAGS = 50;
 const MAX_TAG_NAME_LENGTH = 60;
+const MAX_TAG_COMMAND_LENGTH = 40;
 const MAX_ID_LENGTH = 100;
 const MAX_CUE_LENGTH = 200;
 const MAX_NAME_LENGTH = 200;
@@ -69,12 +70,15 @@ const cueSchema = z.union([z.string(), z.number()]).transform(String)
     .refine((s) => s.trim() !== '').transform((s) => s.slice(0, MAX_CUE_LENGTH));
 
 const colourSchema = z.string().regex(HEX_COLOUR);
+const tagCommandSchema = z.string().transform((s) => s.trim().replace(/^\/+/, '').toLowerCase())
+    .pipe(z.string().regex(/^[a-z0-9][a-z0-9_-]*$/).max(MAX_TAG_COMMAND_LENGTH));
 
-// A tag from the tag editor: { id, name, color } with a #rgb/#rrggbb colour.
+// A tag from the tag editor: { id, name, color, command } with a #rgb/#rrggbb colour.
 const tagSchema = z.object({
     id: idSchema.nullable().catch(null).default(null),
     name: z.string().transform((s) => s.trim().slice(0, MAX_TAG_NAME_LENGTH)).pipe(z.string().min(1)),
-    color: colourSchema.nullable().catch(null).default(null)
+    color: colourSchema.nullable().catch(null).default(null),
+    command: tagCommandSchema.optional().catch(undefined)
 });
 
 // Notes and comments as stored, for a backup imported from the config page or

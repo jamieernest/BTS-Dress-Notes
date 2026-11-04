@@ -345,7 +345,7 @@ document.addEventListener('DOMContentLoaded', function() {
         composer.classList.toggle('open', open);
         composer.classList.toggle('focused', composer.contains(document.activeElement) || !!composerHold);
         personalTimecodeContainer.classList.toggle('frozen', currentUser.isTyping);
-        stampLabel.textContent = currentUser.isTyping ? 'Note taken during' : 'Taken when you start typing';
+        stampLabel.textContent = currentUser.isTyping ? 'Note taken during' : 'Taken when you start typing, use /{and then the name of the tag, like lighting} to easily add tags.';
         personalActElement.textContent = currentUser.frozenAct || currentAct;
         personalTimecodeContainer.title = 'Locked when you start writing, so it matches the moment you saw';
         noteInput.style.height = 'auto';
@@ -701,10 +701,18 @@ document.addEventListener('DOMContentLoaded', function() {
         document.documentElement.style.setProperty('--connection-banner-h', `${connectionBanner.offsetHeight}px`);
     }).observe(connectionBanner);
 
-    function sendChatMessage() {
-        const text = chatInput.value.trim();
+    // Both the chat box and /shitpost use the same chat event.
+    function sendChatText(text) {
+        text = text.trim();
         if (text) {
             window.socket.emit('chat-message', { text });
+            return true;
+        }
+        return false;
+    }
+
+    function sendChatMessage() {
+        if (sendChatText(chatInput.value)) {
             chatInput.value = '';
             sendChatBtn.disabled = true;
         }
@@ -1540,6 +1548,14 @@ document.addEventListener('DOMContentLoaded', function() {
         updateComposer();
     });
     noteInput.addEventListener('input', () => {
+        const command = tagCommands.consumeTagCommand(noteInput.value, availableTags, noteInput.selectionStart);
+        if (command) {
+            if (!selectedTags.includes(command.tagId)) selectedTags = [...selectedTags, command.tagId];
+            noteInput.value = command.value;
+            noteInput.setSelectionRange(command.cursor, command.cursor);
+            updateTagsDisplay();
+            if (!needsTag()) showTagError(false);
+        }
         sendNoteBtn.disabled = noteInput.value.trim().length === 0;
         // After a release, the next key freezes the stamp at that moment.
         if (!currentUser.isTyping && noteInput.value.length > 0) startTyping();
@@ -1633,6 +1649,19 @@ document.addEventListener('DOMContentLoaded', function() {
 
     sendNoteBtn.addEventListener('click', () => {
         const text = noteInput.value.trim();
+        const shitpost = tagCommands.consumeShitpostCommand(text);
+        if (shitpost) {
+            // This draft never enters the notes pipeline or carries its selected tags.
+            sendChatText(shitpost);
+            resetComposer();
+            if (touchInput.matches) {
+                noteInput.blur();
+                sendNoteBtn.blur();
+            } else noteInput.focus();
+            currentUser.isTyping = false;
+            updateComposer();
+            return;
+        }
         if (text && needsTag()) {
             showTagError(true);
             if (phoneLayout.matches) tagsContainer.querySelector('button')?.focus();

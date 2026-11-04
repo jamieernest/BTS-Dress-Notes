@@ -50,6 +50,24 @@
             <p id="recordingResult" class="section-note result" role="alert" hidden></p>
         </section>
 
+        <section class="section" aria-labelledby="tagsTitle">
+            <h2 id="tagsTitle">Tags and commands</h2>
+            <p class="section-note">Add, rename, recolour or remove tags, and set the slash command that selects each one. Colours must look like <span class="mono">#FF0000</span>. A tag used by an existing note cannot be removed.</p>
+            <div class="rows" id="tagRows">
+                <div class="row"><span class="row-value">Loading</span></div>
+            </div>
+            <form class="rows tag-new-row" id="newTagForm">
+                <div class="row row-wrap">
+                    <label class="row-label" for="newTagName">New tag</label>
+                    <input class="input" id="newTagName" type="text" maxlength="60" placeholder="Tag name" required>
+                    <input class="input color-input" id="newTagColor" type="text" value="#FF0000" maxlength="7" pattern="#[0-9A-Fa-f]{6}" placeholder="#FF0000" required>
+                    <input class="input command-input" id="newTagCommand" type="text" maxlength="40" pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*" placeholder="Slash command">
+                    <button class="btn outline" type="submit">Add tag</button>
+                </div>
+            </form>
+            <p id="tagResult" class="section-note result" role="status" hidden></p>
+        </section>
+
         <section class="section" aria-labelledby="statusTitle">
             <h2 id="statusTitle">Status</h2>
             <div class="rows">

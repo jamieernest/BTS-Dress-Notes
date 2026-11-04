@@ -16,6 +16,87 @@ document.addEventListener('DOMContentLoaded', function() {
     let timeMode = null;
     const midiInputSelect = byId('midiInputSelect');
     const networkInterfaceSelect = byId('networkInterfaceSelect');
+    const tagRows = byId('tagRows');
+    const newTagForm = byId('newTagForm');
+    const newTagName = byId('newTagName');
+    const newTagColor = byId('newTagColor');
+    const newTagCommand = byId('newTagCommand');
+    const tagResult = byId('tagResult');
+    let tags = [];
+
+    function showTagResult(message, error = false) {
+        tagResult.textContent = message;
+        tagResult.dataset.state = error ? 'bad' : '';
+        tagResult.hidden = !message;
+    }
+
+    function validTagColor(value) {
+        return /^#[0-9A-Fa-f]{6}$/.test(value);
+    }
+
+    function saveTag(tag, name, color, command, saveButton) {
+        if (!name.trim()) return showTagResult('Enter a tag name.', true);
+        if (!validTagColor(color)) return showTagResult('Use a six-digit colour such as #FF0000.', true);
+        saveButton.disabled = true;
+        socket.timeout(10000).emit('create-tag', { id: tag.id, name, color, command }, (error, reply) => {
+            saveButton.disabled = false;
+            if (error || !reply || reply.error) showTagResult(error || reply?.error || 'The tag could not be saved.', true);
+            else showTagResult(`Saved ${name}.`);
+        });
+    }
+
+    function renderTags() {
+        // Name, color and command are saved together as one tag.
+        if (!tags.length) {
+            const row = document.createElement('div');
+            row.className = 'row';
+            const empty = document.createElement('span');
+            empty.className = 'row-value';
+            empty.textContent = 'No tags have been set up.';
+            row.append(empty);
+            tagRows.replaceChildren(row);
+            return;
+        }
+
+        tagRows.replaceChildren(...tags.map(tag => {
+            const row = document.createElement('div');
+            row.className = 'row row-wrap tag-row';
+            const name = document.createElement('input');
+            name.className = 'input tag-name-input';
+            name.type = 'text';
+            name.maxLength = 60;
+            name.value = tag.name;
+            name.setAttribute('aria-label', `${tag.name} tag name`);
+            const color = document.createElement('input');
+            color.className = 'input color-input';
+            color.type = 'text';
+            color.maxLength = 7;
+            color.value = tag.color;
+            color.pattern = '#[0-9A-Fa-f]{6}';
+            color.setAttribute('aria-label', `${tag.name} tag colour`);
+            const command = document.createElement('input');
+            command.className = 'input command-input';
+            command.type = 'text';
+            command.maxLength = 40;
+            command.value = tag.command || '';
+            command.pattern = '[a-zA-Z0-9][a-zA-Z0-9_-]*';
+            command.placeholder = 'Slash command';
+            command.setAttribute('aria-label', `${tag.name} slash command`);
+            const save = button('Save', 'btn outline');
+            save.addEventListener('click', () => saveTag(tag, name.value, color.value, command.value, save));
+            const remove = button('Remove', 'btn danger-outline');
+            remove.addEventListener('click', () => {
+                remove.disabled = true;
+                socket.timeout(10000).emit('delete-tag', tag.id, (error, reply) => {
+                    remove.disabled = false;
+                    if (error || !reply || reply.error) showTagResult(error || reply?.error || 'The tag could not be removed.', true);
+                    else showTagResult(`Removed ${tag.name}.`);
+                });
+            });
+            row.append(name, color, command, save, remove);
+            return row;
+        }));
+    }
 
     function fillSelect(select, options, value) {
         select.replaceChildren();
@@ -67,6 +148,32 @@ document.addEventListener('DOMContentLoaded', function() {
 
     socket.on('act-update', (act) => {
         byId('currentAct').textContent = act;
+    });
+
+    socket.on('tags-update', (updatedTags) => {
+        tags = Array.isArray(updatedTags) ? updatedTags : [];
+        renderTags();
+    });
+
+    newTagForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        if (!newTagName.value.trim()) return showTagResult('Enter a tag name.', true);
+        if (!validTagColor(newTagColor.value)) return showTagResult('Use a six-digit colour such as #FF0000.', true);
+        const addButton = newTagForm.querySelector('button[type="submit"]');
+        addButton.disabled = true;
+        socket.timeout(10000).emit('create-tag', {
+            name: newTagName.value,
+            color: newTagColor.value,
+            command: newTagCommand.value
+        }, (error, reply) => {
+            addButton.disabled = false;
+            if (error || !reply || reply.error) showTagResult(error || reply?.error || 'The tag could not be added.', true);
+            else {
+                showTagResult(`Added ${newTagName.value.trim()}.`);
+                newTagForm.reset();
+                newTagColor.value = '#FF0000';
+            }
+        });
     });
 
     socket.on('lx-cue-update', (cue) => {

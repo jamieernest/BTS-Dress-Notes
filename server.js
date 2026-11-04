@@ -1053,6 +1053,7 @@ let backupAgain = false;
 let lastBackupFile = null;
 
 // What a backup, the JSON export and a saved show hold (Past notes reads all three).
+// Tags stay in the export so saved shows keep the names, colours and commands they used.
 function notesExport() {
     return {
         notes: globalState.notes,
@@ -1379,15 +1380,17 @@ io.on('connection', (socket) => {
     });
 
     // Handle tag creation/updates
-    on('create-tag', (tagData) => {
-        if (user.isOverlay) return;
+    on('create-tag', (tagData, ack) => {
+        const reply = typeof ack === 'function' ? ack : () => {};
+        if (user.isOverlay) return reply({ error: 'Overlays cannot change tags.' });
         const tag = input.cleanTag(tagData);
-        if (!tag) return;
+        if (!tag) return reply({ error: 'That tag is not valid.' });
         const existingIndex = tag.id ? globalState.tags.findIndex(t => t.id === tag.id) : -1;
         const newTag = {
             id: tag.id || generateId(),
             name: tag.name,
-            color: tag.color || (existingIndex >= 0 && globalState.tags[existingIndex].color) || getRandomColor()
+            color: tag.color || (existingIndex >= 0 && globalState.tags[existingIndex].color) || getRandomColor(),
+            command: tag.command
         };
         if (existingIndex >= 0) {
             globalState.tags[existingIndex] = newTag;
@@ -1398,17 +1401,24 @@ io.on('connection', (socket) => {
         saveTagsToFile();
         io.emit('tags-update', globalState.tags);
         scheduleBackup();
+        reply({ ok: true, tag: newTag });
     });
 
     // Handle tag deletion
-    on('delete-tag', (tagId) => {
-        if (user.isOverlay) return;
+    on('delete-tag', (tagId, ack) => {
+        const reply = typeof ack === 'function' ? ack : () => {};
+        if (user.isOverlay) return reply({ error: 'Overlays cannot change tags.' });
         const id = input.cleanId(tagId);
-        if (!id) return;
+        if (!id) return reply({ error: 'That tag is not valid.' });
+        // Keep tag definitions usable by refusing to orphan tags on existing notes.
+        if (globalState.notes.some(note => note.tags.includes(id))) {
+            return reply({ error: 'That tag is used by an existing note.' });
+        }
         globalState.tags = globalState.tags.filter(tag => tag.id !== id);
         saveTagsToFile();
         io.emit('tags-update', globalState.tags);
         scheduleBackup();
+        reply({ ok: true });
     });
 
     // Handle user starting to type (only for non-overlay users)
