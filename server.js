@@ -148,6 +148,15 @@ function originOf(url) {
     }
 }
 
+function bathEmailOf(value) {
+    const email = typeof value === 'string' ? value.trim() : '';
+    return /@bath\.ac\.uk$/i.test(email) ? email : null;
+}
+
+function bathEmailPrefix(email) {
+    return email ? email.slice(0, email.lastIndexOf('@')).trim().slice(0, 100) || null : null;
+}
+
 // Security headers. The Content-Security-Policy only lets the pages run
 // scripts served from this app (no inline scripts or event handlers, which is
 // what an injected note would need), so keep all JavaScript in .js files.
@@ -162,7 +171,7 @@ app.use(helmet({
         directives: {
             'script-src': ["'self'"],
             'style-src': ["'self'", "'unsafe-inline'"],
-            'img-src': ["'self'", 'data:'],
+            'img-src': ["'self'", 'data:', 'https://www.bts-crew.com'],
             'connect-src': ["'self'"],
             // playback.html plays uploaded videos, or one opened locally through a blob: URL.
             'media-src': ["'self'", 'blob:'],
@@ -312,10 +321,16 @@ app.get('/callback', async (req, res) => {
         // A fresh session id on login (no session fixation), saved before the
         // redirect so the next page load already sees the user.
         await new Promise((resolve, reject) => req.session.regenerate((err) => (err ? reject(err) : resolve())));
+        const email = bathEmailOf(claims.email);
+        const username = String(claims.preferred_username || bathEmailPrefix(email) || '').trim().slice(0, 100) || null;
+        // Keep only the part used to find the profile image; the full email stays server-side.
+        const emailPrefix = bathEmailPrefix(email);
         req.session.user = {
             sub: claims.sub,
             name: claims.name || claims.preferred_username || claims.email || claims.sub,
-            email: claims.email || null,
+            username,
+            emailPrefix,
+            email: email || null,
             idToken: tokens.id_token || null
         };
         await new Promise((resolve, reject) => req.session.save((err) => (err ? reject(err) : resolve())));
@@ -1301,6 +1316,8 @@ io.on('connection', (socket) => {
     const user = {
         id: sessionUser.sub,
         name: sessionUser.name,
+        email: bathEmailOf(sessionUser.email),
+        emailPrefix: bathEmailPrefix(bathEmailOf(sessionUser.email)),
         isTyping: false,
         currentTimecode: null,
         currentLxCue: null,
@@ -1345,7 +1362,7 @@ io.on('connection', (socket) => {
 
     // Only send user-related updates if this is NOT an overlay
     if (!isOverlay) {
-        socket.emit('current-user', { name: user.name, sub: user.id });
+        socket.emit('current-user', { name: user.name, sub: user.id, emailPrefix: user.emailPrefix });
 
         const filteredUsers = listedUsers();
         if (listed) {
@@ -1545,6 +1562,9 @@ io.on('connection', (socket) => {
             id: newId(),
             noteNumber: globalState.nextNoteNumber++,
             user: user.name,
+            email: user.email || undefined,
+            emailPrefix: user.emailPrefix || undefined,
+            username: user.username || undefined,
             userId: user.id,
             text,
             mentions: input.cleanMentions(text, data.mentions),
@@ -1578,6 +1598,9 @@ io.on('connection', (socket) => {
             const comment = {
                 id: newId(),
                 user: user.name,
+                email: user.email || undefined,
+                emailPrefix: user.emailPrefix || undefined,
+                username: user.username || undefined,
                 userId: user.id,
                 text,
                 mentions: input.cleanMentions(text, data.mentions),
@@ -1594,7 +1617,7 @@ io.on('connection', (socket) => {
     on('chat-message', (data, ack) => {
         if (user.isOverlay) return; // Overlay users can't chat
 
-        const bounded = boundChatMessage({ user: user.name, userId: user.id, text: data && data.text, replyTo: data && data.replyTo, mentions: data && data.mentions });
+        const bounded = boundChatMessage({ user: user.name, userId: user.id, emailPrefix: user.emailPrefix, text: data && data.text, replyTo: data && data.replyTo, mentions: data && data.mentions });
         if (!bounded) {
             if (typeof ack === 'function') ack({ error: 'Invalid message' });
             return;

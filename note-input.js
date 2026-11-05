@@ -84,11 +84,15 @@ const tagSchema = z.object({
 // hand-edited file cannot carry anything a live note could not. Optional
 // fields that are not valid are dropped rather than failing the whole file.
 const optionalString = (max) => z.string().max(max).optional().catch(undefined);
+const bathEmail = z.string().max(MAX_NAME_LENGTH).refine((s) => /@bath\.ac\.uk$/i.test(s)).optional().catch(undefined);
 const timestampSchema = z.string().max(40).refine((s) => !Number.isNaN(Date.parse(s)));
 
 const storedCommentSchema = z.object({
     id: idSchema,
     user: z.string().transform((s) => s.slice(0, MAX_NAME_LENGTH)).catch(''),
+    email: bathEmail,
+    emailPrefix: optionalString(MAX_NAME_LENGTH),
+    username: optionalString(MAX_NAME_LENGTH),
     userId: optionalString(MAX_NAME_LENGTH),
     mentions: z.unknown().optional(),
     text: z.string().transform((s) => s.slice(0, MAX_COMMENT_LENGTH)),
@@ -102,6 +106,9 @@ const storedNoteSchema = z.object({
     noteNumber: z.number().int().positive().max(Number.MAX_SAFE_INTEGER - 1).optional().catch(undefined),
     clientId: idSchema.optional().catch(undefined),
     user: z.string().transform((s) => s.slice(0, MAX_NAME_LENGTH)).catch(''),
+    email: bathEmail,
+    emailPrefix: optionalString(MAX_NAME_LENGTH),
+    username: optionalString(MAX_NAME_LENGTH),
     userId: optionalString(MAX_NAME_LENGTH),
     mentions: z.unknown().optional(),
     text: z.string().transform((s) => s.slice(0, MAX_NOTE_LENGTH)),

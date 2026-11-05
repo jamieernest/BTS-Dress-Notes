@@ -36,6 +36,7 @@ const chatMessageSchema = z.object({
     id: z.string().max(MAX_ID),
     user: z.string().max(MAX_NAME),
     userId: z.string().max(MAX_NAME),
+    emailPrefix: z.string().max(MAX_NAME).optional(),
     text: z.string().max(MAX_TEXT),
     replyTo: replyToSchema.optional(),
     mentions: z.unknown().optional(),
@@ -57,11 +58,12 @@ function sanitizeChatLog(raw) {
 
 // Bounds a live chat message to the limits sanitizeChatLog enforces, so every
 // stored message can later be restored. Returns null if the text is not a string.
-function boundChatMessage({ user, userId, text, replyTo, mentions }) {
+function boundChatMessage({ user, userId, emailPrefix, text, replyTo, mentions }) {
     if (typeof text !== 'string' || (replyTo !== undefined && !validId(replyTo))) return null;
     return {
         user: String(user ?? '').slice(0, MAX_NAME),
         userId: String(userId ?? '').slice(0, MAX_NAME),
+        ...(emailPrefix ? { emailPrefix: String(emailPrefix).slice(0, MAX_NAME) } : {}),
         text: text.slice(0, MAX_TEXT),
         ...(replyTo !== undefined ? { replyTo } : {}),
         ...(Mentions.clean(text.slice(0, MAX_TEXT), mentions).length ? { mentions: Mentions.clean(text.slice(0, MAX_TEXT), mentions) } : {})
