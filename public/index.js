@@ -387,29 +387,26 @@ document.addEventListener('DOMContentLoaded', function() {
         updateComposer();
     }
 
-    // The tags a person last sent with start every new note, per person
-    // (localStorage, so all their tabs share them).
-    const lastTagsKey = () => `last-tags:${currentUser.sub}`;
+    // Every explicit selection is shared by this person's tabs, including [].
+    const composerTags = createComposerTags({
+        getItem: (key) => localStorage.getItem(key),
+        setItem: (key, value) => localStorage.setItem(key, value)
+    });
+    const rememberedTags = () => composerTags.load(currentUser.sub);
 
-    function rememberedTags() {
-        if (!currentUser.sub) return [];
-        try {
-            const tags = JSON.parse(localStorage.getItem(lastTagsKey()));
-            return Array.isArray(tags) ? tags.filter(id => typeof id === 'string') : [];
-        } catch (e) { return []; }
-    }
-
-    function rememberTags(tags) {
-        if (!currentUser.sub) return;
-        try { localStorage.setItem(lastTagsKey(), JSON.stringify(tags)); } catch (e) { /* storage unavailable */ }
-    }
-
-    // Puts the remembered tags on a note that hasn't been started yet.
     function applyRememberedTags() {
-        if (currentUser.isTyping || noteInput.value) return;
         selectedTags = rememberedTags();
         updateTagsDisplay();
+        if (!needsTag()) showTagError(false);
     }
+
+    window.addEventListener('storage', (event) => {
+        if (event.key !== composerTags.key(currentUser.sub)) return;
+        // Read the current value, since several tabs may have written since
+        // this event was queued. Never write back from draft/reset/send paths.
+        applyRememberedTags();
+        saveDraft();
+    });
 
     function resetComposer() {
         noteInput.value = '';
@@ -443,13 +440,12 @@ document.addEventListener('DOMContentLoaded', function() {
             if (phoneLayout.matches) { noteInput.blur(); cancelNoteBtn.blur(); updateComposer(); }
             return;
         }
-        const saved = { text, tags: [...selectedTags], timecode: currentUser.frozenTimecode, lxCue: currentUser.frozenLxCue, act: currentUser.frozenAct };
+        const saved = { text, timecode: currentUser.frozenTimecode, lxCue: currentUser.frozenLxCue, act: currentUser.frozenAct };
         cancelNote();
         noteInput.blur();
         showToast('Note discarded', 'Undo', () => {
             noteInput.value = saved.text;
-            selectedTags = saved.tags;
-            updateTagsDisplay();
+            applyRememberedTags();
             noteInput.focus();
             currentUser.frozenTimecode = saved.timecode;
             currentUser.frozenLxCue = saved.lxCue;
@@ -1128,8 +1124,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!draft || typeof draft.text !== 'string' || !draft.timecode) return;
         noteInput.value = draft.text;
         sendNoteBtn.disabled = draft.text.trim().length === 0;
-        selectedTags = Array.isArray(draft.tags) ? draft.tags : [];
-        updateTagsDisplay();
+        // Tags come from the latest per-user selection, never an older draft.
+        applyRememberedTags();
         currentUser.isTyping = true;
         currentUser.frozenTimecode = draft.timecode;
         currentUser.frozenLxCue = draft.lxCue;
@@ -1245,7 +1241,7 @@ document.addEventListener('DOMContentLoaded', function() {
         currentUser.name = data.name;
         currentUser.sub = data.sub;
         identityConfirmed = true;
-        if (changed) applyRememberedTags();
+        applyRememberedTags();
         // Notes written before we knew who we are are ours; another person's
         // stay in their own saved copy (pending-notes.js) for their next login.
         for (const [clientId, pending] of pendingNotes) {
@@ -1568,8 +1564,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 focusInComposer: composer.contains(document.activeElement),
                 pageFocused: document.hasFocus()
             });
-            const tagsChanged = JSON.stringify(selectedTags) !== JSON.stringify(rememberedTags().filter(id => availableTags.some(t => t.id === id)));
-            if (action === 'cancel' && (currentUser.isTyping || tagsChanged)) cancelNote();
+            if (action === 'cancel' && currentUser.isTyping) cancelNote();
         }, 0);
     });
 
@@ -1625,8 +1620,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const chip = e.target.closest('.chip');
         if (!chip) return;
         const id = chip.dataset.tag;
+        selectedTags = rememberedTags().filter(id => availableTags.some(t => t.id === id));
         selectedTags = selectedTags.includes(id) ? selectedTags.filter(t => t !== id) : [...selectedTags, id];
-        chip.setAttribute('aria-pressed', String(selectedTags.includes(id)));
+        composerTags.save(currentUser.sub, selectedTags);
+        // Keep the focused chip in place for keyboard selection.
+        tagsContainer.querySelectorAll('.chip').forEach(button => {
+            button.setAttribute('aria-pressed', String(selectedTags.includes(button.dataset.tag)));
+        });
         if (!needsTag()) showTagError(false);
         saveDraft();
     });
@@ -1648,7 +1648,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 frameRate: timeMode === 'realtime' ? 'ms' : currentUser.currentFrameRate,
                 tags: selectedTags,
             });
-            rememberTags(selectedTags);
             resetComposer();
             // Dismiss the phone keyboard after sending; desktop stays ready to type.
             if (touchInput.matches) {
