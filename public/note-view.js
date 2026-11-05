@@ -4,9 +4,9 @@
 // Icons come from icons.svg: write <i data-icon="name"> and setHtml() swaps in
 // the SVG, since DOMPurify strips <svg><use>.
 (function (root, factory) {
-    if (typeof module === 'object' && module.exports) module.exports = factory(require('./safe-html.js'), require('./timecode-format.js'), require('./note-numbers.js'));
-    else root.NoteView = factory(root.SafeHtml, root.TimecodeFormat, root.NoteNumbers);
-}(typeof self !== 'undefined' ? self : this, function (SafeHtml, TimecodeFormat, NoteNumbers) {
+    if (typeof module === 'object' && module.exports) module.exports = factory(require('./safe-html.js'), require('./timecode-format.js'), require('./note-numbers.js'), require('./mentions.js'));
+    else root.NoteView = factory(root.SafeHtml, root.TimecodeFormat, root.NoteNumbers, root.Mentions);
+}(typeof self !== 'undefined' ? self : this, function (SafeHtml, TimecodeFormat, NoteNumbers, Mentions) {
     const { escapeHtml: esc } = SafeHtml;
     const NEUTRAL = '#8a8f98';
     const safeColor = (color) => SafeHtml.safeColour(color, NEUTRAL);
@@ -159,7 +159,7 @@
     //   foot: under the text; thread: inside the replies box (shown only if not empty).
     function noteHTML(note, parts = {}) {
         const author = parts.author || { key: note.userId || note.user, name: note.user };
-        const body = parts.body !== undefined ? parts.body : `<div class="note-text">${esc(note.text)}</div>`;
+        const body = parts.body !== undefined ? parts.body : `<div class="note-text">${Mentions.html(note.text, note.mentions)}</div>`;
         const edited = note.lastEdited
             ? `<div class="note-edited">Edited by ${esc(note.lastEditedBy || 'unknown')} at ${esc(clockTime(note.lastEdited))}</div>` : '';
         const foot = (parts.foot || '') + agreementsHTML(note, parts.agreementActor);
@@ -187,7 +187,7 @@
                         <span class="muted" title="${esc(fullTime(comment.timestamp))}">${esc(relativeTime(comment.timestamp))}${edited}</span>
                         ${tools}
                     </div>
-                    ${body !== undefined ? body : `<div class="comment-text">${esc(comment.text)}</div>`}
+                    ${body !== undefined ? body : `<div class="comment-text">${Mentions.html(comment.text, comment.mentions)}</div>`}
                 </div>
             </div>`;
     }
@@ -204,6 +204,7 @@
         if (filters.author && note.userId !== filters.author) return false;
         if (filters.tag !== 'all' && !note.tags.includes(filters.tag)) return false;
         if (filters.act !== 'all' && (note.act || 'Preshow') !== filters.act) return false;
+        if (filters.mentionedUserId && !Mentions.has(note, filters.mentionedUserId) && !(note.comments || []).some(c => Mentions.has(c, filters.mentionedUserId))) return false;
         if (filters.search) {
             const reference = /^#?(\d+)$/.exec(filters.search.trim());
             if (reference && NoteNumbers.label(note) === `#${Number(reference[1])}`) return true;
@@ -219,7 +220,7 @@
     }
 
     function filtersActive(filters) {
-        return !!filters.author || filters.tag !== 'all' || filters.act !== 'all' || filters.search !== '';
+        return !!filters.author || !!filters.mentionedUserId || filters.tag !== 'all' || filters.act !== 'all' || filters.search !== '';
     }
 
     // Names label accounts; they never identify them. No name-based fallback for old notes.
@@ -246,12 +247,12 @@
 
     function readFilters(params) {
         return { act: params.get('scene') || 'all', tag: params.get('tag') || 'all',
-            author: params.get('author') || '', search: (params.get('q') || '').trim().toLowerCase() };
+            author: params.get('author') || '', mentionedUserId: params.get('mentioned') || '', search: (params.get('q') || '').trim().toLowerCase() };
     }
 
     function writeFilters(params, filters, query) {
         for (const [key, value] of [['scene', filters.act === 'all' ? '' : filters.act],
-            ['tag', filters.tag === 'all' ? '' : filters.tag], ['author', filters.author], ['q', query.trim()]]) {
+            ['tag', filters.tag === 'all' ? '' : filters.tag], ['author', filters.author], ['mentioned', filters.mentionedUserId], ['q', query.trim()]]) {
             if (value) params.set(key, value); else params.delete(key);
         }
         return params;
@@ -269,7 +270,7 @@
         measure();
     }
 
-    function createAuthorSearch({ input, chip, popover, filters, getNotes, onChange, beforeOpen }) {
+    function createAuthorSearch({ input, chip, mentionChip, popover, filters, getNotes, onChange, beforeOpen }) {
         input.setAttribute('role', 'combobox');
         input.setAttribute('aria-autocomplete', 'list');
         input.setAttribute('aria-controls', popover.id);
@@ -285,15 +286,21 @@
         }
         function reposition() { if (!popover.hidden) placePopover(popover, input.closest('.search'), 'left'); }
         function refresh() {
-            people = authorOptions(getNotes());
-            const person = people.find(p => p.userId === filters.author);
-            const label = person?.label || filters.author;
-            const key = `${filters.author || ''}:${label || ''}`;
+            const notes = getNotes();
+            people = authorOptions(notes.flatMap(note => [note,
+                ...[...(note.mentions || []), ...(note.comments || []).flatMap(comment => comment.mentions || [])]
+                    .map(person => ({ userId: person.userId, user: person.name }))]));
+            const key = JSON.stringify([filters.author, filters.mentionedUserId, people]);
             if (key === chipKey) return;
             chipKey = key;
-            chip.hidden = !filters.author;
-            chip.setAttribute('aria-label', `Remove author filter: ${label || ''}`);
-            setHtml(chip, filters.author ? `${avatarHTML(filters.author, person?.name || label, 'sm')}<span>${esc(label)}</span><i data-icon="close"></i>` : '');
+            for (const [button, field, prefix] of [[chip, 'author', 'By'], [mentionChip, 'mentionedUserId', 'Mentions']]) {
+                if (!button) continue;
+                const person = people.find(p => p.userId === filters[field]);
+                const label = person?.label || filters[field];
+                button.hidden = !filters[field];
+                button.setAttribute('aria-label', `Remove ${prefix.toLowerCase()} filter: ${label || ''}`);
+                setHtml(button, filters[field] ? `${avatarHTML(filters[field], person?.name || label, 'sm')}<span>${esc(prefix)} ${esc(label)}</span><i data-icon="close"></i>` : '');
+            }
         }
         function suggest() {
             refresh();
@@ -301,13 +308,15 @@
             const matches = query ? people.filter(p => p.names.some(name => name.toLowerCase().includes(query))) : [];
             if (!matches.length) return close();
             beforeOpen?.();
-            setHtml(popover, matches.map((p, i) => `<button type="button" class="tag-option author-option" role="option" id="${esc(popover.id)}-${i}" data-author="${esc(p.userId)}" aria-selected="false">${avatarHTML(p.userId, p.name, 'sm')}<span>${esc(p.label)}</span></button>`).join(''));
+            const options = matches.flatMap(person => [{ person, field: 'author', prefix: 'By' },
+                ...(mentionChip ? [{ person, field: 'mentionedUserId', prefix: 'Mentions' }] : [])]);
+            setHtml(popover, options.map(({ person: p, field, prefix }, i) => `<button type="button" class="tag-option author-option" role="option" id="${esc(popover.id)}-${i}" data-person="${esc(p.userId)}" data-filter="${field}" aria-selected="false">${avatarHTML(p.userId, p.name, 'sm')}<span>${esc(prefix)} ${esc(p.label)}</span></button>`).join(''));
             active = -1;
             placePopover(popover, input.closest('.search'), 'left');
             input.setAttribute('aria-expanded', 'true');
         }
-        function select(userId) {
-            filters.author = userId;
+        function select(userId, field = 'author') {
+            filters[field] = userId;
             filters.search = '';
             input.value = '';
             close();
@@ -322,7 +331,7 @@
             if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); return; }
             const options = [...popover.querySelectorAll('[role="option"]')];
             if (event.key === 'Enter' && active >= 0) {
-                event.preventDefault(); select(options[active].dataset.author);
+                event.preventDefault(); select(options[active].dataset.person, options[active].dataset.filter);
             } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                 event.preventDefault();
                 active = Math.max(0, Math.min(options.length - 1, active + (event.key === 'ArrowDown' ? 1 : -1)));
@@ -333,11 +342,13 @@
         });
         input.addEventListener('blur', () => setTimeout(() => { if (!popover.contains(document.activeElement)) close(); }, 0));
         popover.addEventListener('click', event => {
-            const option = event.target.closest('[data-author]');
-            if (option) select(option.dataset.author);
+            const option = event.target.closest('[data-person]');
+            if (option) select(option.dataset.person, option.dataset.filter);
         });
         popover.addEventListener('keydown', event => { if (event.key === 'Escape') { close(); input.focus(); } });
-        chip.addEventListener('click', () => { filters.author = ''; refresh(); onChange(); input.focus(); });
+        for (const [button, field] of [[chip, 'author'], [mentionChip, 'mentionedUserId']]) {
+            button?.addEventListener('click', () => { filters[field] = ''; refresh(); onChange(); input.focus(); });
+        }
         document.addEventListener('click', event => { if (!popover.contains(event.target) && event.target !== input) close(); });
         document.addEventListener('focusin', event => { if (event.target !== input && !popover.contains(event.target)) close(); });
         window.addEventListener('scroll', reposition, { passive: true });

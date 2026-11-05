@@ -755,7 +755,7 @@ document.addEventListener('DOMContentLoaded', function() {
             html += `<button type="button" class="side-note" data-id="${esc(n.id)}">
                 <span class="body">
                     <span class="meta"><span class="author">${esc(NoteNumbers.label(n))} ${esc(n.user)}</span><span class="dots">${tagDots(n)}</span><span class="when mono">${esc(timed() ? videoTimeText(toVideo(p.at)) : clockText(p.at))}</span></span>
-                    <span class="text">${esc(n.text)}</span>
+                    <span class="text">${Mentions.html(n.text, n.mentions)}</span>
                 </span>
             </button>`;
         });
@@ -858,7 +858,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const n = p.note;
             const cue = T.cueLabel(n.lxCue);
             return `<div class="who"><strong>${esc(NoteNumbers.label(n))} ${esc(n.user)}</strong><span class="dots">${tagDots(n)}</span><span class="muted mono">${esc(clockText(p.at))}</span></div>
-                <div class="text">${esc(n.text)}</div>
+                <div class="text">${Mentions.html(n.text, n.mentions)}</div>
                 ${cue ? `<div class="muted">LX ${esc(cue)}</div>` : ''}`;
         }
         if (el.classList.contains('scene')) {

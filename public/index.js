@@ -103,7 +103,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     const actDropdown = filterDropdown(actFilter, actFilterPopover, 'act', updateActFilter);
     const tagDropdown = filterDropdown(tagFilter, tagFilterPopover, 'tag', updateFilterTags);
-    const authorSearch = NoteView.createAuthorSearch({ input: searchInput, chip: $('authorFilter'),
+    const authorSearch = NoteView.createAuthorSearch({ input: searchInput, chip: $('authorFilter'), mentionChip: $('mentionedFilter'),
         popover: $('authorSuggestions'), filters, getNotes: () => allNotes.filter(n => !deletedNotes.has(n.id)),
         beforeOpen: () => closePopovers(), onChange: filterNotes });
     const noteElements = new Map();
@@ -282,6 +282,7 @@ document.addEventListener('DOMContentLoaded', function() {
         filters.act = 'all';
         filters.search = '';
         filters.author = '';
+        filters.mentionedUserId = '';
         authorSearch.close();
         searchInput.value = '';
         updateActFilter();
@@ -419,6 +420,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     function resetComposer() {
+        mentionEditor.clear(noteInput);
         noteInput.value = '';
         sendNoteBtn.disabled = true;
         selectedTags = rememberedTags();
@@ -450,11 +452,12 @@ document.addEventListener('DOMContentLoaded', function() {
             if (phoneLayout.matches) { noteInput.blur(); cancelNoteBtn.blur(); updateComposer(); }
             return;
         }
-        const saved = { text, timecode: currentUser.frozenTimecode, lxCue: currentUser.frozenLxCue, act: currentUser.frozenAct };
+        const saved = { text, mentions: mentionEditor.get(noteInput, false), timecode: currentUser.frozenTimecode, lxCue: currentUser.frozenLxCue, act: currentUser.frozenAct };
         cancelNote();
         noteInput.blur();
         showToast('Note discarded', 'Undo', () => {
             noteInput.value = saved.text;
+            mentionEditor.set(noteInput, saved.mentions);
             applyRememberedTags();
             noteInput.focus();
             currentUser.frozenTimecode = saved.timecode;
@@ -602,6 +605,28 @@ document.addEventListener('DOMContentLoaded', function() {
         if (next) next.focus();
     });
 
+    const mentionUnread = Mentions.createUnread({ getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) });
+    const mentionEditor = Mentions.install({
+        getAccounts: () => Mentions.accounts(allNotes, chatMessagesList, lastUsers),
+        avatarHTML, place: NoteView.placePopover,
+        seed: el => {
+            const note = noteOf(el);
+            if (el.dataset.field === 'note-edit') return note;
+            if (el.dataset.field === 'comment-edit') return note?.comments?.find(c => c.id === el.dataset.commentId);
+            return null;
+        }
+    });
+    const mentionBadge = document.createElement('span');
+    mentionBadge.className = 'mention-badge'; mentionBadge.hidden = true;
+    chatToggle.append(mentionBadge);
+    function updateMentionBadge(log = []) {
+        const count = mentionUnread.receive(log, currentUser.sub, !chatDrawer.hidden && !document.hidden);
+        mentionBadge.hidden = count === 0;
+        mentionBadge.textContent = `@${count > 99 ? '99+' : count}`;
+        mentionBadge.setAttribute('aria-label', `${count} unseen mentions`);
+    }
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && !chatDrawer.hidden) { mentionUnread.clear(); updateMentionBadge(); } });
+
     // --- Chat ---
     function isMyChat(msg) {
         return msg.userId ? msg.userId === currentUser.sub : msg.user === currentUser.name;
@@ -628,7 +653,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 ${face}
                 <div class="chat-msg-main">${head}
                     ${msg.replyTo ? `<button type="button" class="chat-reply-context" data-chat-jump="${esc(msg.replyTo)}" aria-label="Jump to original message">${esc(ChatReplies.context(msg.replyTo, chatMessageById))}</button>` : ''}
-                    <div class="bubble" title="${esc(fullTime(msg.timestamp))}">${esc(msg.text)}</div>
+                    <div class="bubble" title="${esc(fullTime(msg.timestamp))}">${Mentions.html(msg.text, msg.mentions)}</div>
                     <button type="button" class="chat-reply-action" data-chat-reply="${esc(msg.id)}" aria-label="Reply to ${esc(msg.user)}">Reply</button>
                 </div>
             </div>`;
@@ -662,6 +687,7 @@ document.addEventListener('DOMContentLoaded', function() {
         updateChatLayout();
         if (open) {
             closePopovers();
+            mentionUnread.clear(); updateMentionBadge();
             unreadChat = 0;
             updateUnread();
             chatScroll.follow();
@@ -715,9 +741,10 @@ document.addEventListener('DOMContentLoaded', function() {
     function sendChatMessage() {
         const text = chatInput.value.trim();
         if (text) {
-            window.socket.emit('chat-message', { text, ...(chatReplyTo ? { replyTo: chatReplyTo } : {}) });
+            window.socket.emit('chat-message', { text, mentions: mentionEditor.get(chatInput), ...(chatReplyTo ? { replyTo: chatReplyTo } : {}) });
             chatReplyTo = null;
             updateChatReplyPreview();
+            mentionEditor.clear(chatInput);
             chatInput.value = '';
             sendChatBtn.disabled = true;
         }
@@ -1075,6 +1102,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (noteInput.value.trim() === '') return clearDraft();
             sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
                 text: noteInput.value,
+                mentions: mentionEditor.get(noteInput, false),
                 tags: selectedTags,
                 timecode: currentUser.frozenTimecode,
                 lxCue: currentUser.frozenLxCue,
@@ -1141,6 +1169,7 @@ document.addEventListener('DOMContentLoaded', function() {
         try { draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY)); } catch (e) { /* none */ }
         if (!draft || typeof draft.text !== 'string' || !draft.timecode) return;
         noteInput.value = draft.text;
+        mentionEditor.set(noteInput, draft.mentions);
         sendNoteBtn.disabled = draft.text.trim().length === 0;
         // Tags come from the latest per-user selection, never an older draft.
         applyRememberedTags();
@@ -1377,10 +1406,11 @@ document.addEventListener('DOMContentLoaded', function() {
         addNote(withLists(note));
     });
 
-    window.socket.on('note-edit-text', ({ noteId, newText, lastEditedBy, lastEdited }) => {
+    window.socket.on('note-edit-text', ({ noteId, newText, mentions, lastEditedBy, lastEdited }) => {
         const note = allNotes.find(n => n.id === noteId);
         if (note) {
             note.text = newText;
+            note.mentions = mentions;
             note.lastEdited = lastEdited;
             note.lastEditedBy = lastEditedBy;
             updateNoteElement(note);
@@ -1404,11 +1434,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    window.socket.on('comment-edit', ({ noteId, commentId, newText, lastEditedBy, lastEdited }) => {
+    window.socket.on('comment-edit', ({ noteId, commentId, newText, mentions, lastEditedBy, lastEdited }) => {
         const note = allNotes.find(n => n.id === noteId);
         const comment = note && note.comments && note.comments.find(c => c.id === commentId);
         if (comment) {
             comment.text = newText;
+            comment.mentions = mentions;
             comment.lastEdited = lastEdited;
             comment.lastEditedBy = lastEditedBy;
             updateNoteElement(note);
@@ -1455,6 +1486,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (chatMessagesList.some((m) => m.id === msg.id)) return;
         chatMessagesList.push(msg);
         chatMessageById.set(msg.id, msg);
+        updateMentionBadge([msg]);
         chatCopy.onMessageAdded(chatMessagesList);
         const mine = isMyChat(msg);
         if (chatDrawer.hidden && !mine) {
@@ -1486,6 +1518,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const offer = chatCopy.onServerLog(msgs);
         if (offer) window.socket.emit('chat-restore-offer', offer);
         chatMessagesList = msgs;
+        updateMentionBadge(msgs);
         updateChatMessages();
         chatLoading.finish();
     });
@@ -1496,6 +1529,7 @@ document.addEventListener('DOMContentLoaded', function() {
         chatCopy.onReset();
         chatReplyTo = null;
         updateChatReplyPreview();
+        mentionUnread.reset(); updateMentionBadge();
         for (const { element, feedbackTimer } of pendingNotes.values()) {
             clearTimeout(feedbackTimer);
             element.remove();
@@ -1664,6 +1698,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (text && currentUser.frozenTimecode) {
             submitNote({
                 text: text,
+                mentions: mentionEditor.get(noteInput),
                 timecode: currentUser.frozenTimecode,
                 lxCue: currentUser.frozenLxCue,
                 typingStartedAt: currentUser.typingStartedAt,
@@ -1795,7 +1830,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function saveNoteEdit(note) {
         const newText = (noteEditDrafts.get(note.id) || '').trim();
         noteEditDrafts.delete(note.id);
-        if (newText && newText !== note.text) window.socket.emit('note-edit-text', { noteId: note.id, newText });
+        if (newText) window.socket.emit('note-edit-text', { noteId: note.id, newText, mentions: mentionEditor.get(noteElements.get(note.id)?.querySelector('[data-field="note-edit"]')) });
         updateNoteElement(note);
     }
 
@@ -1804,8 +1839,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const comment = (note.comments || []).find(c => c.id === commentId);
         const newText = (commentEditDrafts.get(key) || '').trim();
         commentEditDrafts.delete(key);
-        if (comment && newText && newText !== comment.text) {
-            window.socket.emit('comment-edit', { noteId: note.id, commentId, newText });
+        if (comment && newText) {
+            window.socket.emit('comment-edit', { noteId: note.id, commentId, newText, mentions: mentionEditor.get(noteElements.get(note.id)?.querySelector(`[data-field="comment-edit"][data-comment-id="${CSS.escape(commentId)}"]`)) });
         }
         updateNoteElement(note);
     }
@@ -1813,7 +1848,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function submitComment(note) {
         const text = (commentDrafts.get(note.id) || '').trim();
         if (!text) return;
-        window.socket.emit('comment-submit', { noteId: note.id, text });
+        window.socket.emit('comment-submit', { noteId: note.id, text, mentions: mentionEditor.get(noteElements.get(note.id)?.querySelector('[data-field="comment"]')) });
         commentDrafts.delete(note.id);
         closeReplyBox(note);
     }
@@ -1908,6 +1943,7 @@ document.addEventListener('DOMContentLoaded', function() {
             noteEditDrafts.set(note.id, note.text);
             updateNoteElement(note);
             const textarea = noteElements.get(note.id).querySelector('[data-field="note-edit"]');
+            mentionEditor.set(textarea, note.mentions);
             textarea.focus();
             textarea.setSelectionRange(textarea.value.length, textarea.value.length);
         } else if (action === 'save-note') {
@@ -1921,7 +1957,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const comment = note.comments.find(c => c.id === commentId);
             commentEditDrafts.set(`${note.id}/${commentId}`, comment ? comment.text : '');
             updateNoteElement(note);
-            noteElements.get(note.id).querySelector(`[data-field="comment-edit"][data-comment-id="${CSS.escape(commentId)}"]`)?.focus();
+            const textarea = noteElements.get(note.id).querySelector(`[data-field="comment-edit"][data-comment-id="${CSS.escape(commentId)}"]`);
+            if (textarea) { mentionEditor.set(textarea, comment?.mentions); textarea.focus(); }
         } else if (action === 'save-comment') {
             saveCommentEdit(note, commentId);
         } else if (action === 'cancel-comment-edit') {

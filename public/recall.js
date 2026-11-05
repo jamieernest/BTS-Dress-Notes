@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let allNotes = [];
     let tagsById = new Map();
     const tagById = (id) => tagsById.get(id) || NoteView.unknownTag(id);
-    const filters = { act: 'all', tag: 'all', search: '', author: '' };
+    const filters = { act: 'all', tag: 'all', search: '', author: '', mentionedUserId: '' };
     NoteView.watchNavigation();
     const filterDropdown = (button, popover, key) => NoteView.createDropdown({
         button, popover,
@@ -40,7 +40,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     const actDropdown = filterDropdown(actFilter, $('actFilterPopover'), 'act');
     const tagDropdown = filterDropdown(tagFilter, $('tagFilterPopover'), 'tag');
-    const authorSearch = NoteView.createAuthorSearch({ input: searchInput, chip: $('authorFilter'),
+    const authorSearch = NoteView.createAuthorSearch({ input: searchInput, chip: $('authorFilter'), mentionChip: $('mentionedFilter'),
         popover: $('authorSuggestions'), filters, getNotes: () => allNotes,
         beforeOpen: () => { actDropdown.close(); tagDropdown.close(); },
         onChange: () => { render(); keepInUrl(); } });
@@ -145,7 +145,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!data) return;
             await loading.finish();
             openShowId = id;
-            load(data, { act: params.get('scene'), tag: params.get('tag'), search: params.get('q'), author: params.get('author') });
+            load(data, { act: params.get('scene'), tag: params.get('tag'), search: params.get('q'), author: params.get('author'), mentionedUserId: params.get('mentioned') });
             showName.textContent = data.name;
             showName.hidden = false;
             document.title = `${data.name} · ${pageTitle}`;
@@ -209,6 +209,7 @@ document.addEventListener('DOMContentLoaded', function() {
         filters.act = scenes.includes(start.act) ? start.act : 'all';
         filters.tag = usedTags.some(tag => tag.id === start.tag) ? start.tag : 'all';
         filters.author = NoteView.authorOptions(allNotes).some(p => p.userId === start.author) ? start.author : '';
+        filters.mentionedUserId = start.mentionedUserId || '';
         filters.search = (start.search || '').trim().toLowerCase();
         searchInput.value = start.search || '';
 
@@ -259,6 +260,7 @@ document.addEventListener('DOMContentLoaded', function() {
         filters.tag = 'all';
         filters.search = '';
         filters.author = '';
+        filters.mentionedUserId = '';
         authorSearch.close();
         searchInput.value = '';
         render();
@@ -278,7 +280,7 @@ document.addEventListener('DOMContentLoaded', function() {
         fileKey = params.get('file');
         const data = PlaybackContext.readFile(fileKey, sessionStorage);
         if (data) {
-            load(data, { act: params.get('scene'), tag: params.get('tag'), search: params.get('q'), author: params.get('author') });
+            load(data, { act: params.get('scene'), tag: params.get('tag'), search: params.get('q'), author: params.get('author'), mentionedUserId: params.get('mentioned') });
             showName.textContent = data.name || 'Notes file';
             showName.hidden = false;
         } else {

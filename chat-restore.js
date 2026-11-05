@@ -21,6 +21,7 @@
 const { z } = require('zod');
 const { validId } = require('./public/chat-replies');
 const replyToSchema = z.string().refine(validId);
+const Mentions = require('./public/mentions');
 
 const MAX_ID = 64;
 const MAX_NAME = 200;
@@ -37,7 +38,12 @@ const chatMessageSchema = z.object({
     userId: z.string().max(MAX_NAME),
     text: z.string().max(MAX_TEXT),
     replyTo: replyToSchema.optional(),
+    mentions: z.unknown().optional(),
     timestamp: z.string().max(MAX_TIMESTAMP).refine((s) => !Number.isNaN(Date.parse(s)))
+}).transform(m => {
+    const mentions = Mentions.clean(m.text, m.mentions);
+    if (mentions.length) m.mentions = mentions; else delete m.mentions;
+    return m;
 });
 const chatLogSchema = z.array(chatMessageSchema).min(1).max(MAX_OFFER_MESSAGES);
 
@@ -51,19 +57,20 @@ function sanitizeChatLog(raw) {
 
 // Bounds a live chat message to the limits sanitizeChatLog enforces, so every
 // stored message can later be restored. Returns null if the text is not a string.
-function boundChatMessage({ user, userId, text, replyTo }) {
+function boundChatMessage({ user, userId, text, replyTo, mentions }) {
     if (typeof text !== 'string' || (replyTo !== undefined && !validId(replyTo))) return null;
     return {
         user: String(user ?? '').slice(0, MAX_NAME),
         userId: String(userId ?? '').slice(0, MAX_NAME),
         text: text.slice(0, MAX_TEXT),
-        ...(replyTo !== undefined ? { replyTo } : {})
+        ...(replyTo !== undefined ? { replyTo } : {}),
+        ...(Mentions.clean(text.slice(0, MAX_TEXT), mentions).length ? { mentions: Mentions.clean(text.slice(0, MAX_TEXT), mentions) } : {})
     };
 }
 
 // Two messages are the same message only if every field is identical.
 function messageKey(m) {
-    return JSON.stringify([m.id, m.user, m.userId, m.text, m.timestamp, m.replyTo ?? null]);
+    return JSON.stringify([m.id, m.user, m.userId, m.text, m.timestamp, m.replyTo ?? null, Mentions.clean(m.text, m.mentions)]);
 }
 
 // True when every message of `inner` is in `outer` (see "Agreement" above).

@@ -11,6 +11,7 @@
 
 const { z } = require('zod');
 const { cleanAgreements } = require('./note-agreements');
+const Mentions = require('./public/mentions');
 
 const MAX_NOTE_LENGTH = 10000;
 const MAX_COMMENT_LENGTH = 5000;
@@ -89,6 +90,7 @@ const storedCommentSchema = z.object({
     id: idSchema,
     user: z.string().transform((s) => s.slice(0, MAX_NAME_LENGTH)).catch(''),
     userId: optionalString(MAX_NAME_LENGTH),
+    mentions: z.unknown().optional(),
     text: z.string().transform((s) => s.slice(0, MAX_COMMENT_LENGTH)),
     timestamp: timestampSchema.optional().catch(undefined),
     lastEdited: timestampSchema.optional().catch(undefined),
@@ -101,6 +103,7 @@ const storedNoteSchema = z.object({
     clientId: idSchema.optional().catch(undefined),
     user: z.string().transform((s) => s.slice(0, MAX_NAME_LENGTH)).catch(''),
     userId: optionalString(MAX_NAME_LENGTH),
+    mentions: z.unknown().optional(),
     text: z.string().transform((s) => s.slice(0, MAX_NOTE_LENGTH)),
     timecode: timecodeSchema.nullable().catch(null).default(null),
     lxCue: cueSchema.nullable().catch(null).default(null),
@@ -119,6 +122,10 @@ const storedNoteSchema = z.object({
 const storedTagSchema = tagSchema.extend({ id: idSchema });
 
 function withoutUndefined(object) {
+    if ('mentions' in object) {
+        const mentions = Mentions.clean(object.text, object.mentions);
+        object.mentions = mentions.length ? mentions : undefined;
+    }
     for (const key of Object.keys(object)) if (object[key] === undefined) delete object[key];
     return object;
 }
@@ -149,5 +156,5 @@ function cleanStoredTags(tags) {
 module.exports = {
     MAX_NOTE_LENGTH, MAX_COMMENT_LENGTH,
     cleanText, cleanId, cleanTags, cleanFrameRate, cleanTimecode, cleanCue, cleanTag,
-    cleanStoredNotes, cleanStoredTags
+    cleanMentions: Mentions.clean, cleanStoredNotes, cleanStoredTags
 };

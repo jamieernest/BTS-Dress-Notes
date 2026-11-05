@@ -179,11 +179,23 @@ test('offline authors deduplicate by identity, keep name aliases and distinguish
 
 test('filter URL round trips preserve other parameters and opaque author IDs', () => {
     const params = new URLSearchParams('show=rehearsal&note=n1');
-    const filters = { act: 'Act 2', tag: 'snd', search: 'sound', author: 'sub/a & b' };
+    const filters = { act: 'Act 2', tag: 'snd', search: 'sound', author: 'sub/a & b', mentionedUserId: 'sub-mention' };
     NoteView.writeFilters(params, filters, 'Sound');
     assert.deepEqual(NoteView.readFilters(new URLSearchParams(params.toString())), filters);
     assert.equal(params.get('show'), 'rehearsal');
     assert.equal(params.get('note'), 'n1');
     NoteView.writeFilters(params, { act: 'all', tag: 'all', author: '' }, '');
     assert.equal(params.toString(), 'show=rehearsal&note=n1');
+});
+
+test('author and mentioned-account filters distinguish senders from recipients and compose', () => {
+    const note = { userId: 'sub-alice', user: 'Alice', text: '@Bob check this',
+        tags: [], act: 'Act 1', mentions: [{ userId: 'sub-bob', name: 'Bob', start: 0, end: 4 }], comments: [] };
+    const any = { act: 'all', tag: 'all', search: '', author: '', mentionedUserId: '' };
+    assert.equal(NoteView.noteMatches(note, { ...any, author: 'sub-alice', mentionedUserId: 'sub-bob' }, () => ({})), true);
+    assert.equal(NoteView.noteMatches(note, { ...any, author: 'sub-bob' }, () => ({})), false);
+    assert.equal(NoteView.noteMatches(note, { ...any, mentionedUserId: 'sub-alice' }, () => ({})), false);
+    note.comments.push({ text: '@Alice reply', mentions: [{ userId: 'sub-alice', name: 'Alice', start: 0, end: 6 }] });
+    assert.equal(NoteView.noteMatches(note, { ...any, mentionedUserId: 'sub-alice' }, () => ({})), true);
+    assert.equal(NoteView.filtersActive({ ...any, mentionedUserId: 'sub-bob' }), true);
 });

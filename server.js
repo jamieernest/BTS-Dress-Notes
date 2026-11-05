@@ -1546,6 +1546,7 @@ io.on('connection', (socket) => {
             user: user.name,
             userId: user.id,
             text,
+            mentions: input.cleanMentions(text, data.mentions),
             timecode: noteTimecode,
             lxCue: input.cleanCue(data.lxCue) || globalState.currentLxCue,
             timestamp: new Date(now - ageMs).toISOString(),
@@ -1578,6 +1579,7 @@ io.on('connection', (socket) => {
                 user: user.name,
                 userId: user.id,
                 text,
+                mentions: input.cleanMentions(text, data.mentions),
                 timestamp: new Date().toISOString()
             };
             if (!note.comments) note.comments = [];
@@ -1591,7 +1593,7 @@ io.on('connection', (socket) => {
     on('chat-message', (data, ack) => {
         if (user.isOverlay) return; // Overlay users can't chat
 
-        const bounded = boundChatMessage({ user: user.name, userId: user.id, text: data && data.text, replyTo: data && data.replyTo });
+        const bounded = boundChatMessage({ user: user.name, userId: user.id, text: data && data.text, replyTo: data && data.replyTo, mentions: data && data.mentions });
         if (!bounded) {
             if (typeof ack === 'function') ack({ error: 'Invalid message' });
             return;
@@ -1631,11 +1633,13 @@ io.on('connection', (socket) => {
         // Only the author (by session identity) may edit; see public/note-author.js
         if (note && newText && canEditNote(note, user.id)) {
             note.text = newText;
+            note.mentions = input.cleanMentions(newText, data.mentions);
             note.lastEdited = new Date().toISOString();
             note.lastEditedBy = user.name;
             io.emit('note-edit-text', {
                 noteId: note.id,
                 newText,
+                mentions: input.cleanMentions(newText, data.mentions),
                 lastEditedBy: user.name,
                 lastEdited: note.lastEdited
             });
@@ -1650,12 +1654,14 @@ io.on('connection', (socket) => {
         const comment = note && Array.isArray(note.comments) && note.comments.find(c => c.id === data.commentId);
         if (comment && newText && canEditNote(comment, user.id)) {
             comment.text = newText;
+            comment.mentions = input.cleanMentions(newText, data.mentions);
             comment.lastEdited = new Date().toISOString();
             comment.lastEditedBy = user.name;
             io.emit('comment-edit', {
                 noteId: note.id,
                 commentId: comment.id,
                 newText,
+                mentions: input.cleanMentions(newText, data.mentions),
                 lastEditedBy: user.name,
                 lastEdited: comment.lastEdited
             });
