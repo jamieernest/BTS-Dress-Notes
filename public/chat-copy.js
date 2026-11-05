@@ -99,6 +99,10 @@
         }
 
         return {
+            // The saved log, drawn at start-up before the server's arrives.
+            saved() {
+                return copy.slice();
+            },
             // The server says whether it is still taking restore offers. It does so
             // on every connect, before sending its log.
             onRestoreStatus(open) {

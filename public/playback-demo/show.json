@@ -1,0 +1,720 @@
+{
+  "demo": true,
+  "notes": [
+    {
+      "id": "demo-note-1",
+      "user": "Alex Morgan",
+      "userId": "demo-user-0",
+      "text": "House fade felt a little abrupt.",
+      "tags": [
+        "lx"
+      ],
+      "timestamp": "2026-10-07T18:30:32.000Z",
+      "startedAt": "2026-10-07T18:30:24.000Z",
+      "act": "Preshow",
+      "lxCue": "1/2 House out",
+      "timecode": {
+        "hours": 1,
+        "minutes": 0,
+        "seconds": 24,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-2",
+      "user": "Riley Taylor",
+      "userId": "demo-user-1",
+      "text": "Overture needs a little more bass.",
+      "tags": [
+        "sound"
+      ],
+      "timestamp": "2026-10-07T18:31:04.000Z",
+      "startedAt": "2026-10-07T18:30:56.000Z",
+      "act": "Overture",
+      "lxCue": "1/3 Overture special",
+      "timecode": {
+        "hours": 1,
+        "minutes": 0,
+        "seconds": 56,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-3",
+      "user": "Sam Parker",
+      "userId": "demo-user-2",
+      "text": "Keep the doorway clear before the entrance.",
+      "tags": [
+        "stage"
+      ],
+      "timestamp": "2026-10-07T18:31:30.000Z",
+      "startedAt": "2026-10-07T18:31:22.000Z",
+      "act": "Overture",
+      "lxCue": "1/4 Blue wash",
+      "timecode": {
+        "hours": 1,
+        "minutes": 1,
+        "seconds": 22,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-4",
+      "user": "Jess Casey",
+      "userId": "demo-user-3",
+      "text": "Centre special is catching the scenery.",
+      "tags": [
+        "lx"
+      ],
+      "timestamp": "2026-10-07T18:32:18.000Z",
+      "startedAt": "2026-10-07T18:32:10.000Z",
+      "act": "Opening number",
+      "lxCue": "1/6 Opening state",
+      "timecode": {
+        "hours": 1,
+        "minutes": 2,
+        "seconds": 10,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-5",
+      "user": "Alex Morgan",
+      "userId": "demo-user-0",
+      "text": "First vocal line is low in the mix.",
+      "tags": [
+        "sound"
+      ],
+      "timestamp": "2026-10-07T18:32:39.000Z",
+      "startedAt": "2026-10-07T18:32:31.000Z",
+      "act": "Opening number",
+      "lxCue": "1/7 Centre special",
+      "timecode": {
+        "hours": 1,
+        "minutes": 2,
+        "seconds": 31,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-6",
+      "user": "Riley Taylor",
+      "userId": "demo-user-1",
+      "text": "Chorus entrance looks much cleaner.",
+      "tags": [
+        "stage"
+      ],
+      "timestamp": "2026-10-07T18:33:08.000Z",
+      "startedAt": "2026-10-07T18:33:00.000Z",
+      "act": "Opening number",
+      "lxCue": "1/9 Chorus build",
+      "timecode": {
+        "hours": 1,
+        "minutes": 3,
+        "seconds": 0,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-7",
+      "user": "Sam Parker",
+      "userId": "demo-user-2",
+      "text": "Warm front could come down slightly.",
+      "tags": [
+        "lx"
+      ],
+      "timestamp": "2026-10-07T18:33:36.000Z",
+      "startedAt": "2026-10-07T18:33:28.000Z",
+      "act": "Opening number",
+      "lxCue": "1/10 Warm front",
+      "timecode": {
+        "hours": 1,
+        "minutes": 3,
+        "seconds": 28,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-8",
+      "user": "Jess Casey",
+      "userId": "demo-user-3",
+      "text": "Good balance between the band and vocals here.",
+      "tags": [
+        "sound"
+      ],
+      "timestamp": "2026-10-07T18:33:57.000Z",
+      "startedAt": "2026-10-07T18:33:49.000Z",
+      "act": "Opening number",
+      "lxCue": "1/10 Warm front",
+      "timecode": {
+        "hours": 1,
+        "minutes": 3,
+        "seconds": 49,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-9",
+      "user": "Alex Morgan",
+      "userId": "demo-user-0",
+      "text": "Check the timing of the move into the hallway.",
+      "tags": [
+        "stage"
+      ],
+      "timestamp": "2026-10-07T18:34:18.000Z",
+      "startedAt": "2026-10-07T18:34:10.000Z",
+      "act": "Opening number",
+      "lxCue": "1/11 Backlight lift",
+      "timecode": {
+        "hours": 1,
+        "minutes": 4,
+        "seconds": 10,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-10",
+      "user": "Riley Taylor",
+      "userId": "demo-user-1",
+      "text": "Doorway special arrives a beat early.",
+      "tags": [
+        "lx",
+        "stage"
+      ],
+      "timestamp": "2026-10-07T18:34:46.000Z",
+      "startedAt": "2026-10-07T18:34:38.000Z",
+      "act": "Hallway scene",
+      "lxCue": "1/12 Doorway special",
+      "timecode": {
+        "hours": 1,
+        "minutes": 4,
+        "seconds": 38,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-11",
+      "user": "Sam Parker",
+      "userId": "demo-user-2",
+      "text": "Window practical is a little bright.",
+      "tags": [
+        "lx"
+      ],
+      "timestamp": "2026-10-07T18:35:12.000Z",
+      "startedAt": "2026-10-07T18:35:04.000Z",
+      "act": "Hallway scene",
+      "lxCue": "1/14 Window practical",
+      "timecode": {
+        "hours": 1,
+        "minutes": 5,
+        "seconds": 4,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-12",
+      "user": "Jess Casey",
+      "userId": "demo-user-3",
+      "text": "Watch the cable on the stage right exit.",
+      "tags": [
+        "stage"
+      ],
+      "timestamp": "2026-10-07T18:35:34.000Z",
+      "startedAt": "2026-10-07T18:35:26.000Z",
+      "act": "Hallway scene",
+      "lxCue": "1/15 Stage right pickup",
+      "timecode": {
+        "hours": 1,
+        "minutes": 5,
+        "seconds": 26,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-13",
+      "user": "Alex Morgan",
+      "userId": "demo-user-0",
+      "text": "More level on the dialogue in this section.",
+      "tags": [
+        "sound"
+      ],
+      "timestamp": "2026-10-07T18:35:52.000Z",
+      "startedAt": "2026-10-07T18:35:44.000Z",
+      "act": "Hallway scene",
+      "lxCue": "1/16 Cool front",
+      "timecode": {
+        "hours": 1,
+        "minutes": 5,
+        "seconds": 44,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-14",
+      "user": "Riley Taylor",
+      "userId": "demo-user-1",
+      "text": "The crossfade is much smoother now.",
+      "tags": [
+        "lx"
+      ],
+      "timestamp": "2026-10-07T18:36:17.000Z",
+      "startedAt": "2026-10-07T18:36:09.000Z",
+      "act": "Hallway scene",
+      "lxCue": "1/17 Tension build",
+      "timecode": {
+        "hours": 1,
+        "minutes": 6,
+        "seconds": 9,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-15",
+      "user": "Sam Parker",
+      "userId": "demo-user-2",
+      "text": "Hold the reveal until the actor is set.",
+      "tags": [
+        "stage"
+      ],
+      "timestamp": "2026-10-07T18:36:46.000Z",
+      "startedAt": "2026-10-07T18:36:38.000Z",
+      "act": "Hallway scene",
+      "lxCue": "1/18 Door reveal",
+      "timecode": {
+        "hours": 1,
+        "minutes": 6,
+        "seconds": 38,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-16",
+      "user": "Jess Casey",
+      "userId": "demo-user-3",
+      "text": "Lovely reveal; keep this state.",
+      "tags": [
+        "lx"
+      ],
+      "timestamp": "2026-10-07T18:37:20.000Z",
+      "startedAt": "2026-10-07T18:37:12.000Z",
+      "act": "The reveal",
+      "lxCue": "1/20 Reveal special",
+      "timecode": {
+        "hours": 1,
+        "minutes": 7,
+        "seconds": 12,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-17",
+      "user": "Alex Morgan",
+      "userId": "demo-user-0",
+      "text": "Chase is distracting from the dialogue.",
+      "tags": [
+        "lx"
+      ],
+      "timestamp": "2026-10-07T18:37:39.000Z",
+      "startedAt": "2026-10-07T18:37:31.000Z",
+      "act": "The reveal",
+      "lxCue": "1/21 Chase start",
+      "timecode": {
+        "hours": 1,
+        "minutes": 7,
+        "seconds": 31,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-18",
+      "user": "Riley Taylor",
+      "userId": "demo-user-1",
+      "text": "A little less reverb on this line.",
+      "tags": [
+        "sound"
+      ],
+      "timestamp": "2026-10-07T18:38:04.000Z",
+      "startedAt": "2026-10-07T18:37:56.000Z",
+      "act": "The reveal",
+      "lxCue": "1/22 Chase stop",
+      "timecode": {
+        "hours": 1,
+        "minutes": 7,
+        "seconds": 56,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-19",
+      "user": "Sam Parker",
+      "userId": "demo-user-2",
+      "text": "Make sure the door closes fully.",
+      "tags": [
+        "stage"
+      ],
+      "timestamp": "2026-10-07T18:38:30.000Z",
+      "startedAt": "2026-10-07T18:38:22.000Z",
+      "act": "The reveal",
+      "lxCue": "1/23 Warm restore",
+      "timecode": {
+        "hours": 1,
+        "minutes": 8,
+        "seconds": 22,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-20",
+      "user": "Jess Casey",
+      "userId": "demo-user-3",
+      "text": "The restore could be slower.",
+      "tags": [
+        "lx"
+      ],
+      "timestamp": "2026-10-07T18:39:02.000Z",
+      "startedAt": "2026-10-07T18:38:54.000Z",
+      "act": "The reveal",
+      "lxCue": "1/24 Finale state",
+      "timecode": {
+        "hours": 1,
+        "minutes": 8,
+        "seconds": 54,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-21",
+      "user": "Alex Morgan",
+      "userId": "demo-user-0",
+      "text": "Finale entrance is working well.",
+      "tags": [
+        "stage"
+      ],
+      "timestamp": "2026-10-07T18:39:47.000Z",
+      "startedAt": "2026-10-07T18:39:39.000Z",
+      "act": "Finale",
+      "lxCue": "1/26 Final build",
+      "timecode": {
+        "hours": 1,
+        "minutes": 9,
+        "seconds": 39,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-22",
+      "user": "Riley Taylor",
+      "userId": "demo-user-1",
+      "text": "Company special needs to be wider.",
+      "tags": [
+        "lx"
+      ],
+      "timestamp": "2026-10-07T18:40:20.000Z",
+      "startedAt": "2026-10-07T18:40:12.000Z",
+      "act": "Finale",
+      "lxCue": "1/28 House up",
+      "timecode": {
+        "hours": 1,
+        "minutes": 10,
+        "seconds": 12,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-23",
+      "user": "Sam Parker",
+      "userId": "demo-user-2",
+      "text": "Band is overpowering the last chorus.",
+      "tags": [
+        "sound"
+      ],
+      "timestamp": "2026-10-07T18:40:49.000Z",
+      "startedAt": "2026-10-07T18:40:41.000Z",
+      "act": "Finale",
+      "lxCue": "1/29 House up",
+      "timecode": {
+        "hours": 1,
+        "minutes": 10,
+        "seconds": 41,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-24",
+      "user": "Jess Casey",
+      "userId": "demo-user-3",
+      "text": "Great finish. Leave a beat before the bow.",
+      "tags": [
+        "stage"
+      ],
+      "timestamp": "2026-10-07T18:41:25.000Z",
+      "startedAt": "2026-10-07T18:41:17.000Z",
+      "act": "Finale",
+      "lxCue": "1/31 House up",
+      "timecode": {
+        "hours": 1,
+        "minutes": 11,
+        "seconds": 17,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    },
+    {
+      "id": "demo-note-25",
+      "user": "Alex Morgan",
+      "userId": "demo-user-0",
+      "text": "House up feels well timed.",
+      "tags": [
+        "lx"
+      ],
+      "timestamp": "2026-10-07T18:41:52.000Z",
+      "startedAt": "2026-10-07T18:41:44.000Z",
+      "act": "Finale",
+      "lxCue": "1/32 House up",
+      "timecode": {
+        "hours": 1,
+        "minutes": 11,
+        "seconds": 44,
+        "frames": 0,
+        "displayMode": "midi"
+      }
+    }
+  ],
+  "tags": [
+    {
+      "id": "lx",
+      "name": "Lighting",
+      "color": "#67cce6"
+    },
+    {
+      "id": "sound",
+      "name": "Sound",
+      "color": "#8fa8ff"
+    },
+    {
+      "id": "stage",
+      "name": "Stage",
+      "color": "#d3ac70"
+    }
+  ],
+  "showLog": [
+    {
+      "type": "scene",
+      "value": "Preshow",
+      "at": "2026-10-07T18:30:00.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/1 House to half",
+      "at": "2026-10-07T18:30:00.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/2 House out",
+      "at": "2026-10-07T18:30:15.000Z"
+    },
+    {
+      "type": "scene",
+      "value": "Overture",
+      "at": "2026-10-07T18:30:45.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/3 Overture special",
+      "at": "2026-10-07T18:30:45.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/4 Blue wash",
+      "at": "2026-10-07T18:31:02.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/5 Band lift",
+      "at": "2026-10-07T18:31:28.000Z"
+    },
+    {
+      "type": "scene",
+      "value": "Opening number",
+      "at": "2026-10-07T18:32:00.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/6 Opening state",
+      "at": "2026-10-07T18:32:00.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/7 Centre special",
+      "at": "2026-10-07T18:32:18.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/8 Stage left pickup",
+      "at": "2026-10-07T18:32:37.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/9 Chorus build",
+      "at": "2026-10-07T18:32:59.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/10 Warm front",
+      "at": "2026-10-07T18:33:23.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/11 Backlight lift",
+      "at": "2026-10-07T18:33:59.000Z"
+    },
+    {
+      "type": "scene",
+      "value": "Hallway scene",
+      "at": "2026-10-07T18:34:30.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/12 Doorway special",
+      "at": "2026-10-07T18:34:30.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/13 Hallway crossfade",
+      "at": "2026-10-07T18:34:44.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/14 Window practical",
+      "at": "2026-10-07T18:34:57.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/15 Stage right pickup",
+      "at": "2026-10-07T18:35:15.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/16 Cool front",
+      "at": "2026-10-07T18:35:32.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/17 Tension build",
+      "at": "2026-10-07T18:35:51.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/18 Door reveal",
+      "at": "2026-10-07T18:36:18.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/19 Full stage",
+      "at": "2026-10-07T18:36:42.000Z"
+    },
+    {
+      "type": "scene",
+      "value": "The reveal",
+      "at": "2026-10-07T18:37:00.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/20 Reveal special",
+      "at": "2026-10-07T18:37:00.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/21 Chase start",
+      "at": "2026-10-07T18:37:24.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/22 Chase stop",
+      "at": "2026-10-07T18:37:40.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/23 Warm restore",
+      "at": "2026-10-07T18:38:07.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/24 Finale state",
+      "at": "2026-10-07T18:38:36.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/25 Company special",
+      "at": "2026-10-07T18:39:05.000Z"
+    },
+    {
+      "type": "scene",
+      "value": "Finale",
+      "at": "2026-10-07T18:39:30.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/26 Final build",
+      "at": "2026-10-07T18:39:30.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/27 Curtain call",
+      "at": "2026-10-07T18:39:45.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/28 House up",
+      "at": "2026-10-07T18:40:04.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/29 House up",
+      "at": "2026-10-07T18:40:21.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/30 House up",
+      "at": "2026-10-07T18:40:43.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/31 House up",
+      "at": "2026-10-07T18:41:08.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/32 House up",
+      "at": "2026-10-07T18:41:30.000Z"
+    },
+    {
+      "type": "cue",
+      "value": "1/33 House up",
+      "at": "2026-10-07T18:41:50.000Z"
+    }
+  ]
+}

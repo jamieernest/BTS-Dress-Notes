@@ -2,6 +2,9 @@
 // restart without depending on anything outside the venue LAN. Sessions live
 // in memory and the logged-in ones are rewritten (atomically) whenever one is
 // saved or destroyed; expired sessions are dropped on load and on a timer.
+// The cookie rolls (each request pushes the expiry out), so a touch marks the
+// file stale and it is rewritten at most once per TOUCH_SAVE_MS: a restart
+// then keeps each login's latest expiry instead of the one from login time.
 // Sessions without a user (login still in progress) stay in memory only and
 // expire after LOGIN_TTL_MS, so cookieless clients cannot grow the file.
 const fs = require('fs');
@@ -10,6 +13,7 @@ const session = require('express-session');
 const DEFAULT_TTL_MS = 12 * 60 * 60 * 1000;
 const LOGIN_TTL_MS = 15 * 60 * 1000;
 const PRUNE_INTERVAL_MS = 15 * 60 * 1000;
+const TOUCH_SAVE_MS = 60 * 1000;
 
 function isLoggedIn(sess) {
     return Boolean(sess && sess.user);
@@ -23,10 +27,12 @@ function expiryOf(sess, now) {
 }
 
 class FileSessionStore extends session.Store {
-    constructor({ file, pruneIntervalMs = PRUNE_INTERVAL_MS, now = Date.now } = {}) {
+    constructor({ file, pruneIntervalMs = PRUNE_INTERVAL_MS, touchSaveMs = TOUCH_SAVE_MS, now = Date.now } = {}) {
         super();
         this.file = file;
         this.now = now;
+        this.touchSaveMs = touchSaveMs;
+        this.touchTimer = null;
         this.sessions = new Map(); // sid -> { sess, expires }
         this.load();
         if (pruneIntervalMs > 0) {
@@ -55,6 +61,8 @@ class FileSessionStore extends session.Store {
     }
 
     save() {
+        clearTimeout(this.touchTimer);
+        this.touchTimer = null;
         const persisted = {};
         for (const [sid, entry] of this.sessions) {
             if (isLoggedIn(entry.sess)) persisted[sid] = entry;
@@ -98,12 +106,18 @@ class FileSessionStore extends session.Store {
         if (callback) callback(null);
     }
 
-    // Called on every request for an unmodified session. The browser cookie
-    // keeps its original expiry (rolling is off), so this only refreshes the
-    // in-memory expiry and skips the disk write.
+    // Called on every request for an unmodified session, with the cookie's
+    // new (rolled) expiry. The disk write is batched rather than done per request.
     touch(sid, sess, callback) {
         const entry = this.sessions.get(sid);
-        if (entry) entry.expires = expiryOf(sess, this.now());
+        if (entry) {
+            entry.expires = expiryOf(sess, this.now());
+            if (entry.sess.cookie && sess.cookie) entry.sess.cookie.expires = sess.cookie.expires;
+            if (isLoggedIn(entry.sess) && !this.touchTimer) {
+                this.touchTimer = setTimeout(() => this.save(), this.touchSaveMs);
+                this.touchTimer.unref();
+            }
+        }
         if (callback) callback(null);
     }
 
@@ -114,7 +128,13 @@ class FileSessionStore extends session.Store {
         if (callback) callback(null);
     }
 
+    // Writes any batched expiry now (shutdown).
+    flush() {
+        if (this.touchTimer) this.save();
+    }
+
     close() {
+        this.flush();
         clearInterval(this.pruneTimer);
     }
 }

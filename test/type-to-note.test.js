@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { shouldFocusNote, escapeAction } = require('../public/type-to-note');
+const { shouldSubmit, shouldFocusNote, escapeAction } = require('../public/type-to-note');
 
 const body = { nodeType: 1, tagName: 'BODY', getAttribute: () => null };
 const el = (tagName, extra = {}) => ({ nodeType: 1, tagName, getAttribute: () => null, ...extra });
@@ -71,4 +71,38 @@ test('Escape is left alone elsewhere', () => {
     assert.equal(escapeAction(key('Escape', { defaultPrevented: true }), noteInput, { noteInput, noteValue: '' }), null);
     assert.equal(escapeAction(key('Escape', { isComposing: true }), noteInput, { noteInput, noteValue: '' }), null);
     assert.equal(escapeAction(key('a'), noteInput, { noteInput, noteValue: '' }), null);
+});
+
+test('an empty note box lets go of the frozen timecode, keeping the note if the box is still focused', () => {
+    const { emptyBoxAction, EMPTY_RELEASE_MS } = require('../public/type-to-note.js');
+    assert.equal(EMPTY_RELEASE_MS, 5000);
+    assert.equal(emptyBoxAction({ isTyping: true, noteValue: '', focused: true }), 'release');
+    assert.equal(emptyBoxAction({ isTyping: true, noteValue: ' \n', focused: true }), 'release');
+    assert.equal(emptyBoxAction({ isTyping: true, noteValue: '', focused: false }), 'cancel');
+    assert.equal(emptyBoxAction({ isTyping: true, noteValue: 'half a thought', focused: false }), null);
+    assert.equal(emptyBoxAction({ isTyping: true, noteValue: 'half a thought', focused: true }), null);
+    assert.equal(emptyBoxAction({ isTyping: false, noteValue: '', focused: true }), null);
+});
+
+test('leaving an empty note box for elsewhere on the page closes it; text, its own tags and other windows keep it', () => {
+    const { leaveAction } = require('../public/type-to-note.js');
+    assert.equal(leaveAction({ noteValue: '', focusInComposer: false, pageFocused: true }), 'cancel');
+    assert.equal(leaveAction({ noteValue: '  ', focusInComposer: false, pageFocused: true }), 'cancel');
+    assert.equal(leaveAction({ noteValue: 'half a thought', focusInComposer: false, pageFocused: true }), null);
+    assert.equal(leaveAction({ noteValue: '', focusInComposer: true, pageFocused: true }), null, 'tabbed to a tag');
+    assert.equal(leaveAction({ noteValue: '', focusInComposer: false, pageFocused: false }), null, 'switched window');
+});
+
+
+test('Enter submits with a desktop pointer, independently of layout width', () => {
+    assert.equal(shouldSubmit(key('Enter'), false), true);
+    assert.equal(shouldSubmit(key('Enter'), true), false);
+    assert.equal(shouldSubmit(key('Enter', { shiftKey: true }), false), false);
+    assert.equal(shouldSubmit(key('a'), false), false);
+});
+
+test('Enter never submits a composition or an already handled event', () => {
+    for (const extra of [{ isComposing: true }, { keyCode: 229 }, { defaultPrevented: true }]) {
+        assert.equal(shouldSubmit(key('Enter', extra), false), false);
+    }
 });

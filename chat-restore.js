@@ -18,6 +18,8 @@
 // cannot stay open forever. Messages sent in the meantime do not close it:
 // the caller merges a restored log into whatever the server already holds.
 
+const { z } = require('zod');
+
 const MAX_ID = 64;
 const MAX_NAME = 200;
 const MAX_TEXT = 5000;
@@ -27,26 +29,20 @@ const MAX_TIMESTAMP = 40;
 const MAX_OFFER_MESSAGES = 200000;
 const DEFAULT_WINDOW_MS = 30 * 60 * 1000;
 
-function cleanString(value, max) {
-    return typeof value === 'string' && value.length <= max ? value : null;
-}
+const chatMessageSchema = z.object({
+    id: z.string().max(MAX_ID),
+    user: z.string().max(MAX_NAME),
+    userId: z.string().max(MAX_NAME),
+    text: z.string().max(MAX_TEXT),
+    timestamp: z.string().max(MAX_TIMESTAMP).refine((s) => !Number.isNaN(Date.parse(s)))
+});
+const chatLogSchema = z.array(chatMessageSchema).min(1).max(MAX_OFFER_MESSAGES);
 
-// Returns a canonical copy of the offered log, or null if it is malformed.
+// Returns a canonical copy of the offered log (only the known fields, zod drops
+// the rest), or null if any message is malformed.
 function sanitizeChatLog(raw) {
-    if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_OFFER_MESSAGES) return null;
-    const log = [];
-    for (const m of raw) {
-        if (!m || typeof m !== 'object') return null;
-        const id = cleanString(m.id, MAX_ID);
-        const user = cleanString(m.user, MAX_NAME);
-        const userId = cleanString(m.userId, MAX_NAME);
-        const text = cleanString(m.text, MAX_TEXT);
-        const timestamp = cleanString(m.timestamp, MAX_TIMESTAMP);
-        if (id === null || user === null || userId === null || text === null || timestamp === null) return null;
-        if (Number.isNaN(Date.parse(timestamp))) return null;
-        log.push({ id, user, userId, text, timestamp });
-    }
-    return log;
+    const result = chatLogSchema.safeParse(raw);
+    return result.success ? result.data : null;
 }
 
 // Bounds a live chat message to the limits sanitizeChatLog enforces, so every

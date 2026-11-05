@@ -134,3 +134,31 @@ test('a session that loses its user is removed from the file', async () => {
     store.set('abc', { cookie: sess.cookie });
     assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, 'utf8')), {});
 });
+
+test('a touched session keeps its rolled expiry after a restart', async () => {
+    const file = tempFile();
+    const clock = { now: Date.parse('2026-09-24T18:00:00Z') };
+    const store = new FileSessionStore({ file, pruneIntervalMs: 0, touchSaveMs: 10, now: () => clock.now });
+    store.set('abc', sessionExpiringAt(clock.now + 12 * HOUR));
+
+    clock.now += 10 * HOUR;
+    store.touch('abc', sessionExpiringAt(clock.now + 12 * HOUR));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    clock.now += 4 * HOUR; // past the login-time expiry, within the rolled one
+    const after = newStore(file, clock);
+    assert.notStrictEqual(await get(after, 'abc'), null);
+    assert.strictEqual((await get(after, 'abc')).cookie.expires, new Date(clock.now + 8 * HOUR).toISOString());
+});
+
+test('close() writes a pending touch at once', async () => {
+    const file = tempFile();
+    const clock = { now: Date.parse('2026-09-24T18:00:00Z') };
+    const store = new FileSessionStore({ file, pruneIntervalMs: 0, now: () => clock.now });
+    store.set('abc', sessionExpiringAt(clock.now + 12 * HOUR));
+    clock.now += 10 * HOUR;
+    store.touch('abc', sessionExpiringAt(clock.now + 12 * HOUR));
+    store.close();
+    clock.now += 4 * HOUR;
+    assert.notStrictEqual(await get(newStore(file, clock), 'abc'), null);
+});

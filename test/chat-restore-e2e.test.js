@@ -104,8 +104,14 @@ test('a chat copy older than two hours is not offered', () => {
     const storage = { getItem: (k) => items.get(k) ?? null, setItem: (k, v) => items.set(k, v) };
     createChatCopy(storage, () => clock).onMessageAdded([{ id: 'a' }]);
     clock += MAX_AGE_MS - 1;
-    assert.deepStrictEqual(createChatCopy(storage, () => clock).onServerLog([]), [{ id: 'a' }]);
+    const reloaded = createChatCopy(storage, () => clock);
+    const saved = reloaded.saved();
+    assert.deepStrictEqual(saved, [{ id: 'a' }]);
+    saved.push({ id: 'local-only' });
+    assert.deepStrictEqual(reloaded.saved(), [{ id: 'a' }], 'drawing a copy cannot change the restore offer');
+    assert.deepStrictEqual(reloaded.onServerLog([]), [{ id: 'a' }]);
     clock += 1;
+    assert.deepStrictEqual(createChatCopy(storage, () => clock).saved(), [], 'expired chat is not drawn');
     assert.strictEqual(createChatCopy(storage, () => clock).onServerLog([]), null);
 });
 
