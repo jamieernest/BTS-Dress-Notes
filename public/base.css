@@ -205,7 +205,7 @@ a.btn { text-decoration: none; }
 .agreement-toggle, .agreement-mark { flex: none; border: 0; background: transparent; padding: 0; font: inherit; }
 .note-agreements .agreement-toggle[aria-pressed="true"] { color: var(--accent); }
 .agreement-people { flex: none; }
-.agreement-count { display: inline-flex; align-items: center; justify-content: flex-end; text-align: right; width: 26px; height: 26px; padding: 0; border-radius: 5px; color: var(--text-2); font-size: 12px; font-variant-numeric: tabular-nums; cursor: pointer; list-style: none; }
+.agreement-count { display: inline-flex; align-items: center; justify-content: center; text-align: center; width: 26px; height: 26px; padding: 0; border-radius: 5px; color: var(--text-2); font-size: 12px; font-variant-numeric: tabular-nums; cursor: pointer; list-style: none; }
 .agreement-count::-webkit-details-marker { display: none; }
 .agreement-count:hover { background: var(--hover); color: var(--text); }
 .agreement-popover { position: fixed; inset: auto; margin: 0; z-index: 20; width: max-content; max-width: min(260px, 65vw); max-height: 240px; overflow: auto; padding: 10px; border: 1px solid var(--border, #888); border-radius: 8px; background: var(--surface, #24262b); color: var(--text, #eee); box-shadow: 0 6px 24px #0004; }
