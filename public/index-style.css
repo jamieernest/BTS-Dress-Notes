@@ -561,7 +561,6 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
     .chat-open .drawer { box-shadow: none; }
 }
 .chat-resize { position: absolute; top: 0; bottom: 0; left: -5px; z-index: 2; width: 10px; cursor: col-resize; touch-action: none; }
-.chat-resize::before { content: ""; position: absolute; left: 4px; top: calc(50% - 12px); width: 3px; height: 24px; border-radius: 2px; background: var(--text-3); opacity: 0.65; }
 .chat-resize::after { content: ""; position: absolute; top: 0; bottom: 0; left: 4px; width: 2px; background: var(--accent); opacity: 0; }
 .chat-resize:hover::after, .chat-resize:focus-visible::after, .chat-resizing .chat-resize::after { opacity: 1; }
 .chat-resize:focus-visible { outline: none; }
