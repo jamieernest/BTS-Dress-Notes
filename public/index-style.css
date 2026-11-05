@@ -710,3 +710,13 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
     .chat-msg-head { flex-wrap: wrap; gap: 2px 8px; }
     .chat-compose textarea { max-height: 25dvh; }
 }
+
+/* Reply controls stay reachable by touch and keyboard without hover. */
+.chat-reply-action { border: 0; background: transparent; color: var(--text-2); font: inherit; font-size: 12px; min-height: 32px; padding: 4px 8px; cursor: pointer; }
+.chat-reply-context { max-width: 100%; text-align: left; border: 0; border-left: 3px solid var(--accent); border-radius: 4px; background: var(--accent-soft); color: var(--text-2); padding: 6px 8px; margin-bottom: 4px; font: inherit; font-size: 12px; cursor: pointer; overflow-wrap: anywhere; }
+.chat-reply-preview { display: flex; align-items: center; gap: 8px; padding-bottom: 8px; font-size: 12px; color: var(--text-2); }
+.chat-reply-preview[hidden] { display: none; }
+.chat-reply-preview > span { flex: 1; min-width: 0; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.chat-reply-preview .btn { flex: none; }
+.chat-msg:focus { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+@media (pointer: coarse) { .chat-reply-action { min-height: 44px; } }

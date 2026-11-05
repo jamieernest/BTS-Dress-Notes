@@ -19,6 +19,8 @@
 // the caller merges a restored log into whatever the server already holds.
 
 const { z } = require('zod');
+const { validId } = require('./public/chat-replies');
+const replyToSchema = z.string().refine(validId);
 
 const MAX_ID = 64;
 const MAX_NAME = 200;
@@ -34,6 +36,7 @@ const chatMessageSchema = z.object({
     user: z.string().max(MAX_NAME),
     userId: z.string().max(MAX_NAME),
     text: z.string().max(MAX_TEXT),
+    replyTo: replyToSchema.optional(),
     timestamp: z.string().max(MAX_TIMESTAMP).refine((s) => !Number.isNaN(Date.parse(s)))
 });
 const chatLogSchema = z.array(chatMessageSchema).min(1).max(MAX_OFFER_MESSAGES);
@@ -42,23 +45,25 @@ const chatLogSchema = z.array(chatMessageSchema).min(1).max(MAX_OFFER_MESSAGES);
 // the rest), or null if any message is malformed.
 function sanitizeChatLog(raw) {
     const result = chatLogSchema.safeParse(raw);
-    return result.success ? result.data : null;
+    if (!result.success || result.data.some((m) => m.replyTo === m.id)) return null;
+    return result.data;
 }
 
 // Bounds a live chat message to the limits sanitizeChatLog enforces, so every
 // stored message can later be restored. Returns null if the text is not a string.
-function boundChatMessage({ user, userId, text }) {
-    if (typeof text !== 'string') return null;
+function boundChatMessage({ user, userId, text, replyTo }) {
+    if (typeof text !== 'string' || (replyTo !== undefined && !validId(replyTo))) return null;
     return {
         user: String(user ?? '').slice(0, MAX_NAME),
         userId: String(userId ?? '').slice(0, MAX_NAME),
-        text: text.slice(0, MAX_TEXT)
+        text: text.slice(0, MAX_TEXT),
+        ...(replyTo !== undefined ? { replyTo } : {})
     };
 }
 
 // Two messages are the same message only if every field is identical.
 function messageKey(m) {
-    return JSON.stringify([m.id, m.user, m.userId, m.text, m.timestamp]);
+    return JSON.stringify([m.id, m.user, m.userId, m.text, m.timestamp, m.replyTo ?? null]);
 }
 
 // True when every message of `inner` is in `outer` (see "Agreement" above).

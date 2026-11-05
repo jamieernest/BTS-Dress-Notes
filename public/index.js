@@ -84,6 +84,8 @@ document.addEventListener('DOMContentLoaded', function() {
     let selectedTags = [];
     let autoResumeTimer = null;
     let chatMessagesList = [];
+    let chatMessageById = new Map();
+    let chatReplyTo = null;
     let unreadChat = 0;
     let currentAct = 'Preshow';
     let lastUsers = [];
@@ -613,10 +615,12 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>`;
         const face = mine ? '' : (cont ? '<span class="avatar-gap"></span>' : avatarHTML(msg.userId || msg.user, msg.user, 'sm'));
         return `
-            <div class="chat-msg${mine ? ' mine' : ''}${cont ? ' cont' : ''}">
+            <div data-chat-id="${esc(msg.id)}" tabindex="-1" class="chat-msg${mine ? ' mine' : ''}${cont ? ' cont' : ''}">
                 ${face}
                 <div class="chat-msg-main">${head}
+                    ${msg.replyTo ? `<button type="button" class="chat-reply-context" data-chat-jump="${esc(msg.replyTo)}" aria-label="Jump to original message">${esc(ChatReplies.context(msg.replyTo, chatMessageById))}</button>` : ''}
                     <div class="bubble" title="${esc(fullTime(msg.timestamp))}">${esc(msg.text)}</div>
+                    <button type="button" class="chat-reply-action" data-chat-reply="${esc(msg.id)}" aria-label="Reply to ${esc(msg.user)}">Reply</button>
                 </div>
             </div>`;
     }
@@ -626,6 +630,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateChatMessages() {
+        chatMessageById = new Map(chatMessagesList.map(m => [m.id, m]));
+        updateChatReplyPreview();
         chatCount.textContent = plural(chatMessagesList.length, 'shitpost');
         if (chatMessagesList.length === 0) {
             setHtml(chatMessages, '<div class="chat-empty">No shitposts yet.</div>');
@@ -700,7 +706,9 @@ document.addEventListener('DOMContentLoaded', function() {
     function sendChatMessage() {
         const text = chatInput.value.trim();
         if (text) {
-            window.socket.emit('chat-message', { text });
+            window.socket.emit('chat-message', { text, ...(chatReplyTo ? { replyTo: chatReplyTo } : {}) });
+            chatReplyTo = null;
+            updateChatReplyPreview();
             chatInput.value = '';
             sendChatBtn.disabled = true;
         }
@@ -1436,6 +1444,7 @@ document.addEventListener('DOMContentLoaded', function() {
         chatLoading.finish({ immediate: true });
         if (chatMessagesList.some((m) => m.id === msg.id)) return;
         chatMessagesList.push(msg);
+        chatMessageById.set(msg.id, msg);
         chatCopy.onMessageAdded(chatMessagesList);
         const mine = isMyChat(msg);
         if (chatDrawer.hidden && !mine) {
@@ -1474,6 +1483,8 @@ document.addEventListener('DOMContentLoaded', function() {
     // and the notes still waiting to be acknowledged, so neither comes back.
     window.socket.on('all-reset', () => {
         chatCopy.onReset();
+        chatReplyTo = null;
+        updateChatReplyPreview();
         for (const { element, feedbackTimer } of pendingNotes.values()) {
             clearTimeout(feedbackTimer);
             element.remove();
@@ -1706,9 +1717,46 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.target.closest('[data-action="clear-filters"]')) clearFilters();
     });
 
+    function updateChatReplyPreview() {
+        $('chatReplyPreview').hidden = !chatReplyTo;
+        $('chatReplyContext').textContent = chatReplyTo
+            ? `Replying to ${ChatReplies.context(chatReplyTo, chatMessageById)}` : '';
+    }
+    function cancelChatReply() {
+        chatReplyTo = null;
+        updateChatReplyPreview();
+        chatInput.focus();
+    }
+    $('chatReplyCancel').addEventListener('click', cancelChatReply);
+    chatMessages.addEventListener('click', (e) => {
+        const reply = e.target.closest('[data-chat-reply]');
+        if (reply) {
+            chatReplyTo = reply.dataset.chatReply;
+            updateChatReplyPreview();
+            chatInput.focus();
+        }
+        const jump = e.target.closest('[data-chat-jump]');
+        if (jump) {
+            const row = [...chatMessages.querySelectorAll('[data-chat-id]')]
+                .find(el => el.dataset.chatId === jump.dataset.chatJump);
+            if (row) {
+                row.scrollIntoView({ block: 'center' });
+                row.focus({ preventScroll: true });
+            } else {
+                jump.textContent = 'Original message unavailable';
+            }
+        }
+    });
+
     // --- Event listeners: chat ---
     chatInput.addEventListener('input', () => { sendChatBtn.disabled = chatInput.value.trim().length === 0; });
     chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && chatReplyTo) {
+            e.preventDefault();
+            e.stopPropagation();
+            cancelChatReply();
+            return;
+        }
         if (typeToNote.shouldSubmit(e, touchInput.matches)) {
             e.preventDefault();
             sendChatMessage();

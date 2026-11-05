@@ -1565,11 +1565,14 @@ io.on('connection', (socket) => {
     });
 
     // Handle chat message submission (only for non-overlay users)
-    on('chat-message', (data) => {
+    on('chat-message', (data, ack) => {
         if (user.isOverlay) return; // Overlay users can't chat
 
-        const bounded = boundChatMessage({ user: user.name, userId: user.id, text: data && data.text });
-        if (!bounded) return;
+        const bounded = boundChatMessage({ user: user.name, userId: user.id, text: data && data.text, replyTo: data && data.replyTo });
+        if (!bounded) {
+            if (typeof ack === 'function') ack({ error: 'Invalid message' });
+            return;
+        }
 
         const chatMessage = {
             id: newId(),
@@ -1579,6 +1582,7 @@ io.on('connection', (socket) => {
 
         globalState.chatMessages.push(chatMessage);
         io.emit('chat-message-added', chatMessage);
+        if (typeof ack === 'function') ack({ id: chatMessage.id });
     });
 
     // A client that still holds the chat log from before a restart offers it back
