@@ -1396,6 +1396,20 @@ io.on('connection', (socket) => {
         }
     });
 
+    on('note-vote', (data) => {
+        if (user.isOverlay || !data) return;
+        const note = globalState.notes.find(n => n.id === input.cleanId(data.noteId));
+        const direction = data.direction === 1 || data.direction === -1 ? data.direction : null;
+        if (!note || !direction) return;
+
+        const votes = input.cleanCommentVotes(note.votes) || {};
+        if (votes[user.id] === direction) delete votes[user.id];
+        else votes[user.id] = direction;
+        note.votes = votes;
+        io.emit('note-vote', { noteId: note.id, votes });
+        scheduleBackup();
+    });
+
     // Handle tag creation/updates
     on('create-tag', (tagData, ack) => {
         const reply = typeof ack === 'function' ? ack : () => {};
@@ -1690,6 +1704,21 @@ io.on('connection', (socket) => {
             io.emit('comment-delete', { noteId: note.id, commentId: comment.id });
             scheduleBackup();
         }
+    });
+
+    on('comment-vote', (data) => {
+        if (user.isOverlay || !data) return;
+        const note = globalState.notes.find(n => n.id === input.cleanId(data.noteId));
+        const comment = note && note.comments && note.comments.find(c => c.id === input.cleanId(data.commentId));
+        const direction = data.direction === 1 || data.direction === -1 ? data.direction : null;
+        if (!comment || !direction) return;
+
+        const votes = input.cleanCommentVotes(comment.votes) || {};
+        if (votes[user.id] === direction) delete votes[user.id];
+        else votes[user.id] = direction;
+        comment.votes = votes;
+        io.emit('comment-vote', { noteId: note.id, commentId: comment.id, votes });
+        scheduleBackup();
     });
 
     // Reconnect to the Eos console from the config page; same rule as the other controls.

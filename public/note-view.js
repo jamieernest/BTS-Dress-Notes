@@ -117,6 +117,17 @@
             </div>`;
     }
 
+    function voteRailHTML(votes, voteUserId, label, action, targetId) {
+        const safeVotes = votes || {};
+        const score = Object.values(safeVotes).reduce((total, vote) => total + (vote === 1 ? 1 : vote === -1 ? -1 : 0), 0);
+        const target = targetId ? ` data-comment-id="${esc(targetId)}"` : '';
+        return `<div class="comment-votes" aria-label="${esc(label)} score">
+            ${voteUserId ? `<button type="button" class="vote-button${safeVotes[voteUserId] === 1 ? ' selected up' : ''}" data-action="${esc(action)}"${target} data-direction="1" aria-label="Upvote ${esc(label.toLowerCase())}" aria-pressed="${safeVotes[voteUserId] === 1}"><i data-icon="up"></i></button>` : ''}
+            <span class="vote-score">${score}</span>
+            ${voteUserId ? `<button type="button" class="vote-button${safeVotes[voteUserId] === -1 ? ' selected down' : ''}" data-action="${esc(action)}"${target} data-direction="-1" aria-label="Downvote ${esc(label.toLowerCase())}" aria-pressed="${safeVotes[voteUserId] === -1}"><i data-icon="up" data-class="vote-down"></i></button>` : ''}
+        </div>`;
+    }
+
     // `parts` swaps in the page's own pieces; trusted HTML built from these templates.
     //   attrs, className: on the <article>; author: { key, name, emailPrefix } (defaults to the note's);
     //   side: end of the header (actions, badges); body: replaces the text;
@@ -128,6 +139,7 @@
             ? `<div class="note-edited">Edited by ${esc(note.lastEditedBy || 'unknown')} at ${esc(clockTime(note.lastEdited))}</div>` : '';
         return `
             <article class="note${parts.className ? ` ${parts.className}` : ''}"${parts.attrs ? ` ${parts.attrs}` : ''}>
+                ${voteRailHTML(note.votes, parts.voteUserId, 'Post', 'vote-note')}
                 ${avatarHTML(author.key, author.name, author.emailPrefix)}
                 <div class="note-main">
                     ${noteHeadHTML(note, author.name, parts.side)}
@@ -139,10 +151,12 @@
     }
 
     // One reply. `tools` goes at the end of its header; `body` replaces the text (editing).
-    function commentHTML(comment, { tools = '', body } = {}) {
+    function commentHTML(comment, { tools = '', body, voteUserId } = {}) {
         const edited = comment.lastEdited ? ' · edited' : '';
+        const voteRail = voteRailHTML(comment.votes, voteUserId, 'Reply', 'vote-comment', comment.id);
         return `
             <div class="comment" data-comment-id="${esc(comment.id)}">
+                ${voteRail}
                 ${avatarHTML(comment.userId || comment.user, comment.user, comment.emailPrefix, 'sm')}
                 <div class="comment-main">
                     <div class="comment-head">

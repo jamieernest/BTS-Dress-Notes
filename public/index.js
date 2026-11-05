@@ -759,7 +759,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <button type="button" class="btn primary" data-action="save-comment" data-comment-id="${esc(comment.id)}">Save</button>
                 </div>
             </div>` : undefined;
-        return NoteView.commentHTML(comment, { tools, body });
+        return NoteView.commentHTML(comment, { tools, body, voteUserId: currentUser.sub });
     }
 
     function noteHTML(note) {
@@ -806,7 +806,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         return NoteView.noteHTML(note, {
             attrs: `data-note-id="${esc(note.id)}"`,
-            side: actions, body, thread,
+            side: actions, body, thread, voteUserId: currentUser.sub,
             foot: tagTriggerHTML(note)
         });
     }
@@ -1444,6 +1444,21 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
+    window.socket.on('comment-vote', ({ noteId, commentId, votes }) => {
+        const note = allNotes.find(n => n.id === noteId);
+        const comment = note && note.comments && note.comments.find(c => c.id === commentId);
+        if (!comment) return;
+        comment.votes = votes || {};
+        updateNoteElement(note);
+    });
+
+    window.socket.on('note-vote', ({ noteId, votes }) => {
+        const note = allNotes.find(n => n.id === noteId);
+        if (!note) return;
+        note.votes = votes || {};
+        updateNoteElement(note);
+    });
+
     // The server sends each new message on its own, and the whole log only on
     // connecting and after a restore.
     window.socket.on('chat-message-added', (msg) => {
@@ -1843,6 +1858,13 @@ document.addEventListener('DOMContentLoaded', function() {
             () => window.socket.emit('comment-delete', { noteId: note.id, commentId }));
     }
 
+    function localVote(votes, userId, direction) {
+        const next = { ...(votes || {}) };
+        if (next[userId] === direction) delete next[userId];
+        else next[userId] = direction;
+        return next;
+    }
+
     notesList.addEventListener('click', (e) => {
         const button = e.target.closest('button[data-action]');
         if (!button) return;
@@ -1887,6 +1909,19 @@ document.addEventListener('DOMContentLoaded', function() {
             deleteNote(note);
         } else if (action === 'delete-comment') {
             deleteComment(note, commentId);
+        } else if (action === 'vote-comment') {
+            const comment = note.comments.find(c => c.id === commentId);
+            if (comment && currentUser.sub) {
+                comment.votes = localVote(comment.votes, currentUser.sub, Number(button.dataset.direction));
+                updateNoteElement(note);
+            }
+            window.socket.emit('comment-vote', { noteId: note.id, commentId, direction: Number(button.dataset.direction) });
+        } else if (action === 'vote-note') {
+            if (currentUser.sub) {
+                note.votes = localVote(note.votes, currentUser.sub, Number(button.dataset.direction));
+                updateNoteElement(note);
+            }
+            window.socket.emit('note-vote', { noteId: note.id, direction: Number(button.dataset.direction) });
         }
     });
 

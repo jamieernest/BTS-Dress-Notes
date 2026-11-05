@@ -142,6 +142,27 @@ test('avatar initials use letters, skipping punctuation, numbers and emoji', () 
     assert.ok(!NoteView.avatarHTML('sub-alice', 'Alice (Dev)', 'bad prefix!').includes('bts-crew.com'));
 });
 
+test('comment votes render inline with the score and current vote state', () => {
+    const html = NoteView.commentHTML({
+        id: 'c1', user: 'Sam', userId: 'sam', text: 'reply', timestamp: Date.now(),
+        votes: { sam: 1, other: -1 }
+    }, { voteUserId: 'sam' });
+    assert.ok(html.includes('class="comment-votes"'));
+    assert.ok(html.includes('class="vote-score">0</span>'));
+    assert.ok(html.includes('data-direction="1"') && html.includes('aria-pressed="true"'));
+    assert.ok(html.includes('data-direction="-1"'));
+    assert.ok(html.includes('data-comment-id="c1"'));
+});
+
+test('post votes render inline with the score and current vote state', () => {
+    const html = NoteView.noteHTML({
+        id: 'n1', user: 'Sam', userId: 'sam', text: 'post', timestamp: Date.now(), votes: { sam: -1, other: 1 }
+    }, { voteUserId: 'sam' });
+    assert.ok(html.includes('class="comment-votes"'));
+    assert.ok(html.includes('class="vote-score">0</span>'));
+    assert.ok(html.includes('data-action="vote-note"') && html.includes('aria-pressed="true"'));
+});
+
 test('search and filters match the same way on both notes pages', () => {
     const tagById = (id) => ({ lx: { name: 'Lighting' } }[id] || NoteView.unknownTag(id));
     const note = { text: 'Too dark', user: 'Ada', act: 'Act 2', lxCue: '45', tags: ['lx'], comments: [{ user: 'Sam', text: 'fixed' }] };

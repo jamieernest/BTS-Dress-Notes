@@ -90,3 +90,11 @@ test('a stored note keeps optional author identity snapshots', () => {
     }]);
     assert.strictEqual(external.email, undefined);
 });
+
+test('stored comment votes keep valid entries and drop malformed ones', () => {
+    const [note] = input.cleanStoredNotes([{
+        id: 'n1', user: 'Alice', text: 'hi', timestamp: '2026-10-16T10:00:00.000Z',
+        comments: [{ id: 'c1', user: 'Bob', text: 'reply', votes: { up: 1, down: -1, bad: 2, other: '1' } }]
+    }]);
+    assert.deepStrictEqual(note.comments[0].votes, { up: 1, down: -1 });
+});

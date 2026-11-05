@@ -325,7 +325,7 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
 
 .note {
     display: grid;
-    grid-template-columns: 28px 1fr;
+    grid-template-columns: 18px 28px minmax(0, 1fr);
     gap: 14px;
     padding: 16px 20px;
     border-bottom: 1px solid var(--border);
@@ -440,6 +440,15 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
     border-radius: 8px;
 }
 .comment { display: flex; gap: 10px; padding-top: 12px; }
+.comment-votes { width: 18px; flex: none; display: flex; flex-direction: column; align-items: center; gap: 0; }
+.vote-button { width: 18px; height: 18px; padding: 0; color: var(--text-3); border-radius: 3px; cursor: pointer; }
+.vote-button:hover { color: var(--text); background: var(--hover); }
+.vote-button.selected.up { color: var(--accent); }
+.vote-button.selected.down { color: var(--danger); }
+.vote-button svg, .vote-button use { pointer-events: none; }
+.vote-button svg { width: 12px; height: 12px; }
+.vote-down { transform: rotate(180deg); }
+.vote-score { min-height: 16px; font-size: 11px; line-height: 16px; color: var(--text-2); }
 .comment-main { flex: 1; min-width: 0; }
 .comment-head { display: flex; align-items: center; gap: 8px; min-height: 22px; font-size: 12px; color: var(--text-3); }
 .comment-user { color: var(--text); font-weight: 500; font-size: 13px; }
@@ -683,7 +692,8 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
     .notes-page .empty { border: 0; padding-top: 24px; }
     .empty .muted { font-size: 14px; }
 
-    .note { display: block; padding: 14px; }
+    .note { display: block; position: relative; padding: 14px 14px 14px 48px; }
+    .note > .comment-votes { position: absolute; top: 14px; left: 14px; }
     .note > .avatar { display: none; }
     .note-head { height: auto; flex-wrap: wrap; gap: 2px 8px; margin-bottom: 8px; }
     .note-author { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 14px; }

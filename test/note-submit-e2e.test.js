@@ -103,6 +103,40 @@ test('only a comment\'s author can edit or delete it', async (t) => {
     assert.deepStrictEqual(fresh.page.notes[0].comments.map((c) => c.text), ['swapped']);
 });
 
+test('a comment vote can be toggled and switched', async (t) => {
+    const { alice } = await setup(t);
+    const note = await ack(alice, 'note-submit', { clientId: 'vote-note', text: 'the note', tags: ['lx'] });
+    const noteScore = () => Object.values(alice.page.notes.find(n => n.id === note.id)?.votes || {})
+        .reduce((total, vote) => total + vote, 0);
+    alice.page.socket.on('note-vote', ({ noteId, votes }) => {
+        const stored = alice.page.notes.find(n => n.id === noteId);
+        if (stored) stored.votes = votes;
+    });
+    alice.page.socket.emit('note-vote', { noteId: note.id, direction: 1 });
+    await until(() => noteScore() === 1, 'the post upvote to arrive');
+    alice.page.socket.on('comment-submit', ({ noteId, comment }) => {
+        const stored = alice.page.notes.find(n => n.id === noteId);
+        if (stored) stored.comments = [...(stored.comments || []), comment];
+    });
+    alice.page.socket.on('comment-vote', ({ noteId, commentId, votes }) => {
+        const stored = alice.page.notes.find(n => n.id === noteId);
+        const reply = stored && stored.comments.find(c => c.id === commentId);
+        if (reply) reply.votes = votes;
+    });
+    alice.page.socket.emit('comment-submit', { noteId: note.id, text: 'the reply' });
+    await until(() => (alice.page.notes.find(n => n.id === note.id)?.comments || []).length === 1, 'the reply to arrive');
+    const commentId = alice.page.notes.find(n => n.id === note.id).comments[0].id;
+    const votes = () => alice.page.notes.find(n => n.id === note.id).comments[0].votes || {};
+    const score = () => Object.values(votes()).reduce((total, vote) => total + vote, 0);
+
+    alice.page.socket.emit('comment-vote', { noteId: note.id, commentId, direction: 1 });
+    await until(() => score() === 1, 'the upvote to arrive');
+    alice.page.socket.emit('comment-vote', { noteId: note.id, commentId, direction: 1 });
+    await until(() => score() === 0, 'the upvote toggle to arrive');
+    alice.page.socket.emit('comment-vote', { noteId: note.id, commentId, direction: -1 });
+    await until(() => score() === -1, 'the downvote to arrive');
+});
+
 test('only a note\'s author can delete it, and the deletion survives a restart', async (t) => {
     const { app, alice, bob } = await setup(t);
     const note = await ack(alice, 'note-submit', { clientId: 'c1', text: 'haze too thick', tags: ['lx'] });

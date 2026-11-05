@@ -87,6 +87,10 @@ const tagSchema = z.object({
 // fields that are not valid are dropped rather than failing the whole file.
 const optionalString = (max) => z.string().max(max).optional().catch(undefined);
 const bathEmail = z.string().max(MAX_NAME_LENGTH).refine((s) => /@bath\.ac\.uk$/i.test(s)).optional().catch(undefined);
+const commentVotesSchema = z.custom((value) => value && typeof value === 'object' && !Array.isArray(value))
+    .transform((value) => Object.fromEntries(Object.entries(value)
+        .filter(([id, vote]) => id.length <= MAX_NAME_LENGTH && (vote === 1 || vote === -1))))
+    .optional().catch(undefined);
 const timestampSchema = z.string().max(40).refine((s) => !Number.isNaN(Date.parse(s)));
 
 const storedCommentSchema = z.object({
@@ -96,6 +100,7 @@ const storedCommentSchema = z.object({
     emailPrefix: optionalString(MAX_NAME_LENGTH),
     username: optionalString(MAX_NAME_LENGTH),
     userId: optionalString(MAX_NAME_LENGTH),
+    votes: commentVotesSchema,
     text: z.string().transform((s) => s.slice(0, MAX_COMMENT_LENGTH)),
     timestamp: timestampSchema.optional().catch(undefined),
     lastEdited: timestampSchema.optional().catch(undefined),
@@ -110,6 +115,7 @@ const storedNoteSchema = z.object({
     emailPrefix: optionalString(MAX_NAME_LENGTH),
     username: optionalString(MAX_NAME_LENGTH),
     userId: optionalString(MAX_NAME_LENGTH),
+    votes: commentVotesSchema,
     text: z.string().transform((s) => s.slice(0, MAX_NOTE_LENGTH)),
     timecode: timecodeSchema.nullable().catch(null).default(null),
     lxCue: cueSchema.nullable().catch(null).default(null),
@@ -139,6 +145,7 @@ function cleanFrameRate(value) { return parse(frameRateSchema, value); }
 function cleanTimecode(value) { return parse(timecodeSchema, value); }
 function cleanCue(value) { return parse(cueSchema, value); }
 function cleanTag(value) { return parse(tagSchema, value); }
+function cleanCommentVotes(value) { return parse(commentVotesSchema, value); }
 
 // The notes of a backup that has passed checkBackup() (notes-backup.js),
 // rebuilt field by field; a note that cannot be rebuilt is left out. Put in
@@ -157,5 +164,5 @@ function cleanStoredTags(tags) {
 module.exports = {
     MAX_NOTE_LENGTH, MAX_COMMENT_LENGTH,
     cleanText, cleanId, cleanTags, cleanFrameRate, cleanTimecode, cleanCue, cleanTag,
-    cleanStoredNotes, cleanStoredTags
+    cleanStoredNotes, cleanStoredTags, cleanCommentVotes
 };
