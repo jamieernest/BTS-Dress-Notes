@@ -155,7 +155,7 @@
             <span id="chatCount" class="muted"></span>
             <button type="button" id="chatClose" class="btn ghost icon-only" aria-label="Close shitposts"><svg class="icon"><use href="icons.svg#i-close"/></svg></button>
         </div>
-        <div id="chatMessages" class="chat-log" data-loading-content></div>
+        <div id="chatMessages" class="chat-log" data-loading-content><div id="chatMessageContent" class="chat-log-content"></div></div>
         <div class="chat-log skeleton" data-loading-placeholder aria-hidden="true">
             <div class="chat-msg skeleton"><span class="bone avatar-bone sm"></span><span class="bone bubble-bone w-60"></span></div>
             <div class="chat-msg skeleton cont"><span class="avatar-gap"></span><span class="bone bubble-bone w-40"></span></div>
@@ -178,6 +178,7 @@
     <script src="keepalive.js"></script>
     <script src="chat-copy.js"></script>
     <script src="chat-replies.js"></script>
+    <script src="chat-scroll.js"></script>
     <script src="note-order.js"></script>
     <script src="note-author.js"></script>
     <script src="type-to-note.js"></script>

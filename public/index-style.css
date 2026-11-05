@@ -565,6 +565,8 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
 .drawer-head .muted { font-size: 12px; }
 
 .chat-log { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 16px 16px; display: flex; flex-direction: column; }
+.chat-log { overflow-anchor: none; }
+.chat-log-content { flex: none; display: flex; flex-direction: column; }
 .chat-msg { display: flex; gap: 8px; align-items: flex-end; margin-top: 12px; max-width: 85%; }
 .chat-msg.cont { margin-top: 3px; }
 .chat-msg.mine { align-self: flex-end; }

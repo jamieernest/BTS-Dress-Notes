@@ -634,21 +634,20 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>`;
     }
 
-    function chatNearBottom() {
-        return chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 80;
-    }
+    const chatMessageContent = $('chatMessageContent');
+    const chatScroll = createChatScroll(chatMessages, chatMessageContent);
 
     function updateChatMessages() {
         chatMessageById = new Map(chatMessagesList.map(m => [m.id, m]));
         updateChatReplyPreview();
         chatCount.textContent = plural(chatMessagesList.length, 'shitpost');
         if (chatMessagesList.length === 0) {
-            setHtml(chatMessages, '<div class="chat-empty">No shitposts yet.</div>');
+            setHtml(chatMessageContent, '<div class="chat-empty">No shitposts yet.</div>');
             return;
         }
         const sorted = [...chatMessagesList].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-        setHtml(chatMessages, sorted.map((m, i) => renderChatMessage(m, sorted[i - 1])).join(''));
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        setHtml(chatMessageContent, sorted.map((m, i) => renderChatMessage(m, sorted[i - 1])).join(''));
+        chatScroll.layoutChanged();
     }
 
     function updateUnread() {
@@ -665,7 +664,7 @@ document.addEventListener('DOMContentLoaded', function() {
             closePopovers();
             unreadChat = 0;
             updateUnread();
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+            chatScroll.follow();
         }
     }
 
@@ -699,6 +698,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const viewport = window.visualViewport;
         document.documentElement.style.setProperty('--visible-height', `${viewport?.height ?? window.innerHeight}px`);
         document.documentElement.style.setProperty('--visible-top', `${viewport?.offsetTop ?? 0}px`);
+        chatScroll.layoutChanged();
     }
     window.visualViewport?.addEventListener('resize', updateVisibleViewport);
     window.visualViewport?.addEventListener('scroll', updateVisibleViewport);
@@ -1462,13 +1462,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         // Only the new message is drawn, open or not: redrawing the whole
         // (uncapped) log per message gets slower as the log grows.
-        const stick = !chatDrawer.hidden && (mine || chatNearBottom());
-        if (chatMessagesList.length === 1) setHtml(chatMessages, '');
+        const stick = !chatDrawer.hidden && (mine || chatScroll.followsBottom());
+        if (chatMessagesList.length === 1) setHtml(chatMessageContent, '');
         const holder = document.createElement('div');
         setHtml(holder, renderChatMessage(msg, chatMessagesList[chatMessagesList.length - 2]));
-        chatMessages.append(...holder.childNodes);
+        chatMessageContent.append(...holder.childNodes);
         chatCount.textContent = plural(chatMessagesList.length, 'shitpost');
-        if (stick) chatMessages.scrollTop = chatMessages.scrollHeight;
+        if (stick) chatScroll.follow();
+        else chatScroll.layoutChanged();
     });
 
     // The chat log kept in localStorage so it survives a reload. After a server
