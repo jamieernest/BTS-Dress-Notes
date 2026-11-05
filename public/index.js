@@ -811,6 +811,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return NoteView.noteHTML(note, {
             attrs: `data-note-id="${esc(note.id)}"`,
             side: actions, body, thread,
+            agreementActor: currentUser.sub,
             foot: tagTriggerHTML(note)
         });
     }
@@ -1709,7 +1710,7 @@ document.addEventListener('DOMContentLoaded', function() {
             ...ctx,
             noteHasText: noteInput.value.trim().length > 0,
             touchInput: touchInput.matches,
-            modalOpen: ctx.modalOpen || !!document.querySelector('.popover:not([hidden]), dialog[open], [aria-modal="true"]:not([hidden])')
+            modalOpen: ctx.modalOpen || !!document.querySelector('.popover:not([hidden]), [popover]:popover-open, dialog[open], [aria-modal="true"]:not([hidden])')
         })) {
             e.preventDefault();
             noteInput.focus();
@@ -1888,7 +1889,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const action = button.dataset.action;
         const commentId = button.dataset.commentId;
 
-        if (action === 'edit-tags') {
+        if (action === 'agree') {
+            if (!window.socket.connected) return showToast('Reconnect to agree with this note.');
+            window.socket.timeout(5000).emit('note-agreement-toggle', { noteId: note.id }, (error, result) => {
+                if (error) showToast('Agreement not confirmed. Check the count before trying again.');
+                else if (result?.error) showToast(result.error);
+            });
+        } else if (action === 'edit-tags') {
             if (tagPickerNoteId === note.id) closeTagPicker();
             else openTagPicker(note.id, button);
         } else if (action === 'reply') {

@@ -26,6 +26,7 @@ const RECORDINGS_DIR = process.env.RECORDINGS_DIR || path.join(__dirname, 'recor
 // One uploaded part at most; a full dress from Vor is a few GB.
 const RECORDING_MAX_BYTES = Number(process.env.RECORDING_MAX_BYTES) || 32 * 1024 ** 3;
 const { sanitizeAge, insertionIndex } = require('./public/note-order');
+const { toggleAgreement } = require('./note-agreements');
 const { canEditNote } = require('./public/note-author');
 const input = require('./note-input');
 const noteNumbers = require('./public/note-numbers');
@@ -1368,6 +1369,21 @@ io.on('connection', (socket) => {
         // Overlay users get minimal user info
         socket.emit('users-update', []);
     }
+
+    on('note-agreement-toggle', (data, ack) => {
+        const respond = typeof ack === 'function' ? ack : () => {};
+        if (user.isOverlay) return respond({ error: 'Cannot agree from this page.' });
+        const noteId = input.cleanId(data?.noteId);
+        const note = globalState.notes.find(n => n.id === noteId);
+        if (!note) return respond({ error: 'Note not found.' });
+        if (!toggleAgreement(note, { userId: user.id, name: user.name })) {
+            return respond({ error: 'This note has reached its agreement limit.' });
+        }
+        // Existing consumers (including live playback) refresh on notes-update.
+        io.emit('notes-update', globalState.notes);
+        scheduleBackup();
+        respond({ agreements: note.agreements });
+    });
 
     // Handle note tag updates
     on('note-update-tags', (data) => {

@@ -200,3 +200,17 @@ a.btn { text-decoration: none; }
 }
 
 .note-reference { color: var(--text-2); font-size: 12px; font-weight: 400; margin-right: 5px; }
+/* Shared live/Past notes agreement controls and people disclosure. */
+.note-agreements { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; position: relative; font-size: 12px; }
+.agreement-toggle, .agreement-mark, .agreement-people summary, .agreement-count { padding: 3px 7px; border-radius: 6px; }
+.agreement-toggle { color: inherit; background: transparent; border: 1px solid currentColor; cursor: pointer; font: inherit; }
+.agreement-toggle[aria-pressed="true"] { color: var(--accent, #5c83e6); background: color-mix(in srgb, currentColor 14%, transparent); font-weight: 700; }
+.agreement-people summary { cursor: pointer; list-style: none; }
+.agreement-people summary::-webkit-details-marker { display: none; }
+.agreement-people summary:hover { text-decoration: underline; }
+.agreement-popover { position: fixed; inset: auto; margin: 0; z-index: 20; width: max-content; max-width: min(260px, 65vw); max-height: 240px; overflow: auto; padding: 10px; border: 1px solid var(--border, #888); border-radius: 8px; background: var(--surface, #24262b); color: var(--text, #eee); box-shadow: 0 6px 24px #0004; }
+.agreement-person { display: flex; align-items: center; gap: 8px; padding: 4px; overflow-wrap: anywhere; }
+
+@media (max-width: 640px), (pointer: coarse) {
+    .agreement-toggle, .agreement-people summary { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
+}

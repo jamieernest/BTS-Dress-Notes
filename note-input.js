@@ -10,6 +10,7 @@
 // is about shape and size, not HTML.
 
 const { z } = require('zod');
+const { cleanAgreements } = require('./note-agreements');
 
 const MAX_NOTE_LENGTH = 10000;
 const MAX_COMMENT_LENGTH = 5000;
@@ -108,6 +109,7 @@ const storedNoteSchema = z.object({
     frameRate: frameRateSchema.nullable().catch(null).default(null),
     tags: tagsSchema.catch([]).default([]),
     act: cueSchema.nullable().catch(null).default(null),
+    agreements: z.unknown().transform(cleanAgreements).optional(),
     comments: z.array(z.unknown()).catch([]).default([])
         .transform((list) => list.map((c) => parse(storedCommentSchema, c)).filter(Boolean)),
     lastEdited: timestampSchema.optional().catch(undefined),

@@ -15,6 +15,22 @@
 
     function setHtml(element, html) {
         SafeHtml.setHtml(element, html);
+        for (const details of element.querySelectorAll('.agreement-people')) {
+            const panel = details.querySelector('.agreement-popover');
+            const summary = details.querySelector('summary');
+            // Top-layer popovers escape the notes list's clipped rounded corners.
+            panel.setAttribute('popover', 'auto');
+            details.addEventListener('toggle', () => {
+                if (!details.isConnected) return;
+                if (details.open) {
+                    panel.showPopover();
+                    placePopover(panel, summary, 'right');
+                } else if (panel.matches(':popover-open')) panel.hidePopover();
+            });
+            panel.addEventListener('toggle', event => {
+                if (event.newState === 'closed') details.open = false;
+            });
+        }
         for (const placeholder of element.querySelectorAll('i[data-icon]')) {
             const svg = document.createElementNS(SVG_NS, 'svg');
             svg.setAttribute('class', `icon ${placeholder.dataset.class || ''}`.trim());
@@ -24,6 +40,16 @@
             svg.appendChild(use);
             placeholder.replaceWith(svg);
         }
+    }
+
+    if (typeof window !== 'undefined') {
+        const closeAgreementPanels = (event) => {
+            if (event?.target?.closest?.('.agreement-popover')) return;
+            document.querySelectorAll('.agreement-popover:popover-open').forEach(panel => panel.hidePopover());
+        };
+        window.addEventListener('resize', closeAgreementPanels);
+        window.addEventListener('scroll', closeAgreementPanels, true);
+        window.visualViewport?.addEventListener('resize', closeAgreementPanels);
     }
 
     // --- Words and times ---
@@ -92,6 +118,23 @@
     }
 
     // --- Notes ---
+    // A native disclosure keeps the people list keyboard accessible on both pages.
+    function agreementsHTML(note, actor) {
+        const seen = new Set();
+        const people = (Array.isArray(note.agreements) ? note.agreements : []).slice(0, 500)
+            .filter(p => p && typeof p.userId === 'string' && typeof p.name === 'string'
+                && p.userId && !seen.has(p.userId) && seen.add(p.userId));
+        if (!actor && !people.length) return '';
+        const active = people.some(p => p.userId === actor);
+        const toggle = actor ? `<button type="button" class="agreement-toggle" data-action="agree"
+            aria-pressed="${active}" aria-label="${active ? 'Remove your agreement' : 'Agree with this note'}">+1</button>` : '<span class="agreement-mark">+1</span>';
+        const list = people.length ? `<details class="agreement-people"><summary aria-label="See who agrees (${people.length})">${people.length}</summary>
+            <div class="agreement-popover" role="group" aria-label="People who agree">${people.map(p =>
+                `<div class="agreement-person">${avatarHTML(p.userId, p.name, 'sm')}<span>${esc(p.name)}</span></div>`).join('')}</div>
+            </details>` : '<span class="agreement-count">0</span>';
+        return `<span class="note-agreements">${toggle}${list}</span>`;
+    }
+
     function playbackLinkHTML(href) {
         return `<a class="icon-btn note-playback" href="${esc(href)}" aria-label="View this note in video" title="View this note in video"><i data-icon="video"></i></a>`;
     }
@@ -119,13 +162,14 @@
         const body = parts.body !== undefined ? parts.body : `<div class="note-text">${esc(note.text)}</div>`;
         const edited = note.lastEdited
             ? `<div class="note-edited">Edited by ${esc(note.lastEditedBy || 'unknown')} at ${esc(clockTime(note.lastEdited))}</div>` : '';
+        const foot = (parts.foot || '') + agreementsHTML(note, parts.agreementActor);
         return `
             <article class="note${parts.className ? ` ${parts.className}` : ''}"${parts.attrs ? ` ${parts.attrs}` : ''}>
                 ${avatarHTML(author.key, author.name)}
                 <div class="note-main">
                     ${noteHeadHTML(note, author.name, parts.side)}
                     ${body}${edited}
-                    ${parts.foot ? `<div class="note-foot">${parts.foot}</div>` : ''}
+                    ${foot ? `<div class="note-foot">${foot}</div>` : ''}
                     ${parts.thread ? `<div class="comments">${parts.thread}</div>` : ''}
                 </div>
             </article>`;
@@ -438,7 +482,7 @@
     }
 
     return {
-        esc, safeColor, setHtml, playbackLinkHTML,
+        esc, safeColor, setHtml, playbackLinkHTML, agreementsHTML,
         clockTime, fullTime, relativeTime, plural,
         initials, personColor, avatarHTML,
         unknownTag, tagChipHTML, tagChipsHTML, dotHTML,
