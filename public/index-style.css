@@ -157,8 +157,7 @@
 
 /* --- Composer --- */
 .composer {
-    position: sticky;
-    top: calc(var(--topbar-h) + 12px);
+    position: relative;
     z-index: 30;
     background: var(--surface);
     border: 1px solid var(--border);
@@ -166,7 +165,7 @@
     box-shadow: 0 0 0 12px var(--bg);
     transition: border-color 0.15s;
 }
-.connection-banner:not([hidden]) ~ .page .composer { top: calc(var(--topbar-h) + var(--connection-banner-h, 37px) + 12px); }
+
 .composer:focus-within, .composer.open { border-color: var(--border-strong); }
 
 #noteInput {
@@ -720,3 +719,18 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
 .chat-reply-preview .btn { flex: none; }
 .chat-msg:focus { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
 @media (pointer: coarse) { .chat-reply-action { min-height: 44px; } }
+/* Keep every navigation control together below the measured header and banner. */
+.notes > .toolbar {
+    position: sticky;
+    top: var(--navigation-top, var(--topbar-h));
+    z-index: 35;
+    padding-top: 12px;
+    background: var(--bg);
+    box-shadow: 0 -1px var(--bg), 0 1px var(--border);
+}
+.author-filter { height: auto; min-height: 30px; max-width: 100%; gap: 6px; }
+.author-filter .avatar, .author-option .avatar { flex: none; margin: 0; border: 0; }
+.author-filter > span:not(.avatar), .author-option > span:not(.avatar) { overflow-wrap: anywhere; min-width: 0; text-align: left; }
+.author-suggestions { width: 320px; max-width: calc(100vw - 16px); }
+.author-option { white-space: normal; }
+.author-option[aria-selected="true"] { background: var(--hover); }

@@ -83,6 +83,7 @@
                 </label>
                 <button type="button" id="actFilter" class="select" aria-haspopup="listbox" aria-expanded="false" title="Filter by scene"></button>
                 <button type="button" id="tagFilter" class="select" aria-haspopup="listbox" aria-expanded="false" title="Filter by tag"></button>
+                <button type="button" id="authorFilter" class="btn outline author-filter" hidden></button>
                 <button type="button" id="clearFilters" class="btn outline clear-filters" title="Show all notes again" hidden><svg class="icon" aria-hidden="true"><use href="icons.svg#i-close"/></svg>Clear filters</button>
                 <div class="toolbar-end">
                     <span id="notesCount" class="muted"></span>
@@ -96,6 +97,7 @@
         </section>
     </main>
 
+    <div id="authorSuggestions" class="popover filter-popover author-suggestions" role="listbox" aria-label="Filter by author" hidden></div>
     <div id="actFilterPopover" class="popover filter-popover" role="listbox" aria-label="Filter by scene" hidden></div>
     <div id="tagFilterPopover" class="popover filter-popover" role="listbox" aria-label="Filter by tag" hidden></div>
 

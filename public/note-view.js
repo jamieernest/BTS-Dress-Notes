@@ -154,8 +154,10 @@
     }
 
     // --- Search and filters ---
-    // filters: { act, tag ('all' for any), search (lower case) }.
+    // filters.author is an exact Keycloak userId; empty means any author.
+    // act/tag use 'all'; search is lower case.
     function noteMatches(note, filters, tagById) {
+        if (filters.author && note.userId !== filters.author) return false;
         if (filters.tag !== 'all' && !note.tags.includes(filters.tag)) return false;
         if (filters.act !== 'all' && (note.act || 'Preshow') !== filters.act) return false;
         if (filters.search) {
@@ -170,7 +172,130 @@
     }
 
     function filtersActive(filters) {
-        return filters.tag !== 'all' || filters.act !== 'all' || filters.search !== '';
+        return !!filters.author || filters.tag !== 'all' || filters.act !== 'all' || filters.search !== '';
+    }
+
+    // Names label accounts; they never identify them. No name-based fallback for old notes.
+    function authorOptions(notes) {
+        const people = new Map();
+        for (const note of notes) {
+            if (typeof note.userId !== 'string' || !note.userId) continue;
+            const previous = people.get(note.userId);
+            const name = String(note.user || 'Unknown');
+            people.set(note.userId, { userId: note.userId, name,
+                names: [...new Set([...(previous?.names || []), name])] });
+        }
+        const result = [...people.values()].sort((a, b) => a.name.localeCompare(b.name) || a.userId.localeCompare(b.userId));
+        for (const person of result) person.label = result.some(other => other.userId !== person.userId && other.name === person.name)
+            ? `${person.name} · ${person.userId}` : person.name;
+        return result;
+    }
+
+    // Only an authors manifest establishes identities in saved/local exports.
+    function storedAuthorId(note, authors) {
+        return typeof note.userId === 'string' && Array.isArray(authors) &&
+            authors.some(author => author && author.userId === note.userId) ? note.userId : undefined;
+    }
+
+    function readFilters(params) {
+        return { act: params.get('scene') || 'all', tag: params.get('tag') || 'all',
+            author: params.get('author') || '', search: (params.get('q') || '').trim().toLowerCase() };
+    }
+
+    function writeFilters(params, filters, query) {
+        for (const [key, value] of [['scene', filters.act === 'all' ? '' : filters.act],
+            ['tag', filters.tag === 'all' ? '' : filters.tag], ['author', filters.author], ['q', query.trim()]]) {
+            if (value) params.set(key, value); else params.delete(key);
+        }
+        return params;
+    }
+
+    // Measure the real header: Past notes can wrap and the connection banner can grow.
+    function watchNavigation() {
+        const header = document.querySelector('.topbar');
+        const banner = document.querySelector('.connection-banner');
+        const measure = () => document.documentElement.style.setProperty('--navigation-top',
+            `${header.offsetHeight + (banner && !banner.hidden ? banner.offsetHeight : 0)}px`);
+        const observer = new ResizeObserver(measure);
+        observer.observe(header);
+        if (banner) observer.observe(banner);
+        measure();
+    }
+
+    function createAuthorSearch({ input, chip, popover, filters, getNotes, onChange, beforeOpen }) {
+        input.setAttribute('role', 'combobox');
+        input.setAttribute('aria-autocomplete', 'list');
+        input.setAttribute('aria-controls', popover.id);
+        input.setAttribute('aria-expanded', 'false');
+        let people = [];
+        let active = -1;
+        let chipKey = null;
+        function close() {
+            popover.hidden = true;
+            active = -1;
+            input.setAttribute('aria-expanded', 'false');
+            input.removeAttribute('aria-activedescendant');
+        }
+        function reposition() { if (!popover.hidden) placePopover(popover, input.closest('.search'), 'left'); }
+        function refresh() {
+            people = authorOptions(getNotes());
+            const person = people.find(p => p.userId === filters.author);
+            const label = person?.label || filters.author;
+            const key = `${filters.author || ''}:${label || ''}`;
+            if (key === chipKey) return;
+            chipKey = key;
+            chip.hidden = !filters.author;
+            chip.setAttribute('aria-label', `Remove author filter: ${label || ''}`);
+            setHtml(chip, filters.author ? `${avatarHTML(filters.author, person?.name || label, 'sm')}<span>${esc(label)}</span><i data-icon="close"></i>` : '');
+        }
+        function suggest() {
+            refresh();
+            const query = input.value.trim().toLowerCase();
+            const matches = query ? people.filter(p => p.names.some(name => name.toLowerCase().includes(query))) : [];
+            if (!matches.length) return close();
+            beforeOpen?.();
+            setHtml(popover, matches.map((p, i) => `<button type="button" class="tag-option author-option" role="option" id="${esc(popover.id)}-${i}" data-author="${esc(p.userId)}" aria-selected="false">${avatarHTML(p.userId, p.name, 'sm')}<span>${esc(p.label)}</span></button>`).join(''));
+            active = -1;
+            placePopover(popover, input.closest('.search'), 'left');
+            input.setAttribute('aria-expanded', 'true');
+        }
+        function select(userId) {
+            filters.author = userId;
+            filters.search = '';
+            input.value = '';
+            close();
+            refresh();
+            onChange();
+            input.focus({ preventScroll: true });
+        }
+        input.addEventListener('input', suggest);
+        input.addEventListener('focus', suggest);
+        input.addEventListener('keydown', event => {
+            if (popover.hidden) return;
+            if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); return; }
+            const options = [...popover.querySelectorAll('[role="option"]')];
+            if (event.key === 'Enter' && active >= 0) {
+                event.preventDefault(); select(options[active].dataset.author);
+            } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                active = Math.max(0, Math.min(options.length - 1, active + (event.key === 'ArrowDown' ? 1 : -1)));
+                options.forEach((option, i) => option.setAttribute('aria-selected', String(i === active)));
+                input.setAttribute('aria-activedescendant', options[active].id);
+                options[active].scrollIntoView({ block: 'nearest' });
+            }
+        });
+        input.addEventListener('blur', () => setTimeout(() => { if (!popover.contains(document.activeElement)) close(); }, 0));
+        popover.addEventListener('click', event => {
+            const option = event.target.closest('[data-author]');
+            if (option) select(option.dataset.author);
+        });
+        popover.addEventListener('keydown', event => { if (event.key === 'Escape') { close(); input.focus(); } });
+        chip.addEventListener('click', () => { filters.author = ''; refresh(); onChange(); input.focus(); });
+        document.addEventListener('click', event => { if (!popover.contains(event.target) && event.target !== input) close(); });
+        document.addEventListener('focusin', event => { if (event.target !== input && !popover.contains(event.target)) close(); });
+        window.addEventListener('scroll', reposition, { passive: true });
+        watchPopoverResize(close, reposition);
+        return { refresh, close, reposition };
     }
 
     // The scene and tag dropdowns' choices.
@@ -264,6 +389,7 @@
 
         // options: [{ value, label, color? }]; 'all' is the unfiltered choice.
         function render(options, value) {
+            if (value !== 'all' && !options.some(o => o.value === value)) options = [...options, { value, label: value }];
             const current = options.find(o => o.value === value) || options[0];
             setHtml(button, `${dotHTML(current.color)}<span>${esc(current.label)}</span>`);
             button.classList.toggle('active', value !== 'all');
@@ -273,6 +399,7 @@
                 </button>`).join(''));
         }
 
+        button.setAttribute('aria-controls', popover.id);
         button.setAttribute('aria-haspopup', 'listbox');
         button.setAttribute('aria-expanded', 'false');
         button.addEventListener('click', (e) => {
@@ -314,6 +441,7 @@
         unknownTag, tagChipHTML, tagChipsHTML, dotHTML,
         noteHeadHTML, noteHTML, commentHTML, groupHeadHTML,
         noteMatches, filtersActive, sceneOptions, tagOptions,
+        authorOptions, storedAuthorId, readFilters, writeFilters, watchNavigation, createAuthorSearch,
         placePopover, fitPopoverInViewport, watchPopoverResize, createDropdown
     };
 }));

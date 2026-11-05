@@ -89,7 +89,9 @@ document.addEventListener('DOMContentLoaded', function() {
     let unreadChat = 0;
     let currentAct = 'Preshow';
     let lastUsers = [];
-    const filters = { tag: 'all', act: 'all', search: '' };
+    const filters = NoteView.readFilters(new URLSearchParams(location.search));
+    searchInput.value = new URLSearchParams(location.search).get('q') || '';
+    NoteView.watchNavigation();
     const filterDropdown = (button, popover, key, update) => NoteView.createDropdown({
         button, popover,
         beforeOpen: () => closePopovers(),
@@ -101,6 +103,9 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     const actDropdown = filterDropdown(actFilter, actFilterPopover, 'act', updateActFilter);
     const tagDropdown = filterDropdown(tagFilter, tagFilterPopover, 'tag', updateFilterTags);
+    const authorSearch = NoteView.createAuthorSearch({ input: searchInput, chip: $('authorFilter'),
+        popover: $('authorSuggestions'), filters, getNotes: () => allNotes.filter(n => !deletedNotes.has(n.id)),
+        beforeOpen: () => closePopovers(), onChange: filterNotes });
     const noteElements = new Map();
     // Notes submitted but not yet acknowledged by the server, keyed by the
     // clientId sent with them: clientId -> { note, element, writtenAt, sub }.
@@ -175,7 +180,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateFilterTags() {
-        if (filters.tag !== 'all' && !availableTags.some(t => t.id === filters.tag)) filters.tag = 'all';
         tagDropdown.render(NoteView.tagOptions(availableTags), filters.tag);
         tagFilter.hidden = availableTags.length === 0;
     }
@@ -189,6 +193,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // drawn for a moment after a rebuild (see rebuildFullNotesList). Headings
     // are the runs of one act in newest-first order, the same as drawn.
     function filterNotes() {
+        authorSearch.refresh();
+        const params = NoteView.writeFilters(new URLSearchParams(location.search), filters, searchInput.value);
+        history.replaceState(null, '', `${location.pathname}${params.size ? '?' + params : ''}${location.hash}`);
         const notesById = new Map(allNotes.map(n => [n.id, n]));
         const isShown = (note) => !!note && !deletedNotes.has(note.id) && noteMatches(note);
         const runCounts = [];
@@ -266,7 +273,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function updateActFilter() {
         const acts = [...new Set(allNotes.filter(n => !deletedNotes.has(n.id)).map(note => note.act || 'Preshow'))];
-        if (filters.act !== 'all' && !acts.includes(filters.act)) filters.act = 'all';
         actDropdown.render(NoteView.sceneOptions(acts), filters.act);
         actFilter.hidden = acts.length < 2 && filters.act === 'all';
     }
@@ -275,6 +281,8 @@ document.addEventListener('DOMContentLoaded', function() {
         filters.tag = 'all';
         filters.act = 'all';
         filters.search = '';
+        filters.author = '';
+        authorSearch.close();
         searchInput.value = '';
         updateActFilter();
         updateFilterTags();
@@ -515,6 +523,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function closePopovers() {
         let closed = false;
+        authorSearch.close();
         for (const dropdown of [actDropdown, tagDropdown]) closed = dropdown.close() || closed;
         for (const [popover, button] of [[usersPopover, usersButton], [menuPopover, menuButton]]) {
             if (popover.hidden) continue;
@@ -1535,7 +1544,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     document.addEventListener('click', (e) => {
-        if (!e.target.closest('.popover') && !e.target.closest('[data-action="edit-tags"]')) closePopovers();
+        if (!e.target.closest('.popover') && !e.target.closest('.search') && !e.target.closest('[data-action="edit-tags"]')) closePopovers();
     });
     NoteView.watchPopoverResize(closePopovers, () => {
         document.querySelectorAll('.popover:not([hidden])').forEach(NoteView.fitPopoverInViewport);
@@ -1953,13 +1962,8 @@ document.addEventListener('DOMContentLoaded', function() {
         clearTimeout(scrollTimeout);
         scrollTimeout = setTimeout(toggleScrollButton, 50);
         if (!tagPicker.hidden && !tagPicker.contains(document.activeElement)) closeTagPicker();
-        if (modalChatLayout.matches || touchInput.matches) {
-            actDropdown.reposition();
-            tagDropdown.reposition();
-        } else {
-            actDropdown.close();
-            tagDropdown.close();
-        }
+        actDropdown.reposition();
+        tagDropdown.reposition();
     }, { passive: true });
 
     // --- Initialization ---
