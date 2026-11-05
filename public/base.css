@@ -218,6 +218,7 @@ a.btn { text-decoration: none; }
 .mention-picker { position: fixed; z-index: 1000; max-height: 260px; overflow-y: auto; min-width: 240px; max-width: calc(100vw - 16px); }
 .mention-picker button { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: transparent; color: inherit; text-align: left; padding: 8px 12px; cursor: pointer; }
 .mention-picker button[aria-selected="true"] { background: #8070d526; }
+.mention-picker .avatar { flex: none; margin: 0; border: 0; }
 .mention-picker small { display: block; color: var(--muted); max-width: 240px; overflow: hidden; text-overflow: ellipsis; font-size: 10px; }
 .mention-badge { border-radius: 10px; background: #8070d526; color: var(--accent, #6657cd); padding: 1px 5px; font-size: 11px; font-weight: 700; }
 .mention-badge[hidden], .mention-picker[hidden] { display: none; }

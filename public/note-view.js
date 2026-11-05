@@ -327,11 +327,14 @@
         input.addEventListener('input', suggest);
         input.addEventListener('focus', suggest);
         input.addEventListener('keydown', event => {
-            if (popover.hidden) return;
+            if (popover.hidden || event.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;
+            if (event.key === 'Tab' && event.shiftKey) { close(); return; }
             if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); return; }
             const options = [...popover.querySelectorAll('[role="option"]')];
-            if (event.key === 'Enter' && active >= 0) {
-                event.preventDefault(); select(options[active].dataset.person, options[active].dataset.filter);
+            if ((event.key === 'Enter' && active >= 0) || (event.key === 'Tab' && options.length)) {
+                event.preventDefault();
+                const option = options[Math.max(0, active)];
+                select(option.dataset.person, option.dataset.filter);
             } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                 event.preventDefault();
                 active = Math.max(0, Math.min(options.length - 1, active + (event.key === 'ArrowDown' ? 1 : -1)));

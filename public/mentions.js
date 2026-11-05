@@ -111,11 +111,12 @@
         document.addEventListener('input', e => { if (eligible(e.target)) draw(e.target); }, true);
         document.addEventListener('focusin', e => { if (eligible(e.target)) state(e.target); else if (!menu.contains(e.target)) close(); });
         document.addEventListener('keydown', e => {
-            if (menu.hidden || e.target !== active || e.isComposing) return;
+            if (menu.hidden || e.target !== active || e.isComposing || e.ctrlKey || e.altKey || e.metaKey) return;
+            if (e.key === 'Tab' && e.shiftKey) { close(); return; }
             if (['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'Tab'].includes(e.key)) {
                 e.preventDefault(); e.stopImmediatePropagation();
-                if (e.key === 'Escape' || e.key === 'Tab') close();
-                else if (e.key === 'Enter') choose(selected);
+                if (e.key === 'Escape') close();
+                else if (e.key === 'Enter' || e.key === 'Tab') choose(selected);
                 else { selected = (selected + (e.key === 'ArrowDown' ? 1 : -1) + choices.length) % choices.length; paint(); }
             }
         }, true);
