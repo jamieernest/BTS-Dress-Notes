@@ -1704,7 +1704,18 @@ document.addEventListener('DOMContentLoaded', function() {
             noteInput.focus();
         }
 
-        // Escape leaves the note box; an empty note is also cancelled.
+        if (e.key === 'Enter' && typeToNote.shouldSubmitDraft(e, document.activeElement, {
+            ...ctx,
+            noteHasText: noteInput.value.trim().length > 0,
+            touchInput: touchInput.matches,
+            modalOpen: ctx.modalOpen || !!document.querySelector('.popover:not([hidden]), dialog[open], [aria-modal="true"]:not([hidden])')
+        })) {
+            e.preventDefault();
+            noteInput.focus();
+            if (!sendNoteBtn.disabled) sendNoteBtn.click();
+        }
+
+        // Only an empty note releases focus on Escape.
         const action = typeToNote.escapeAction(e, document.activeElement, {
             modalOpen: ctx.modalOpen,
             noteInput,

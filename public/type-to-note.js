@@ -40,14 +40,21 @@
         return true;
     }
 
-    // Escape in the note box: 'cancel' (box empty: drop the started note and
-    // release the frozen timecode), 'blur' (has text: only leave the box, so a
-    // slipped finger cannot discard it) or null (not ours to handle).
+    // Enter on the page background can send a restored or deliberately blurred
+    // draft. Focused controls and open menus/dialogs always keep their keys.
+    function shouldSubmitDraft(e, activeElement, ctx = {}) {
+        return shouldSubmit(e, ctx.touchInput) && !e.ctrlKey && !e.metaKey && !e.altKey
+            && !!ctx.body && activeElement === ctx.body && !!ctx.noteHasText
+            && !ctx.modalOpen;
+    }
+
+    // Escape cancels an empty note and releases its stamp. A written note
+    // keeps focus, text, tags and stamp so Enter can still send it.
     function escapeAction(e, activeElement, ctx = {}) {
         if (e.defaultPrevented || e.isComposing || e.keyCode === 229) return null;
         if (e.key !== 'Escape' || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return null;
         if (ctx.modalOpen || !activeElement || activeElement !== ctx.noteInput) return null;
-        return String(ctx.noteValue || '').trim() === '' ? 'cancel' : 'blur';
+        return String(ctx.noteValue || '').trim() === '' ? 'cancel' : null;
     }
 
     // Focus has moved out of the note box: 'cancel' when the box is empty and
@@ -72,5 +79,5 @@
         return ctx.focused ? 'release' : 'cancel';
     }
 
-    return { shouldSubmit, shouldFocusNote, isTextEntry, escapeAction, leaveAction, emptyBoxAction, EMPTY_RELEASE_MS };
+    return { shouldSubmit, shouldSubmitDraft, shouldFocusNote, isTextEntry, escapeAction, leaveAction, emptyBoxAction, EMPTY_RELEASE_MS };
 }));

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { shouldSubmit, shouldFocusNote, escapeAction } = require('../public/type-to-note');
+const { shouldSubmit, shouldSubmitDraft, shouldFocusNote, escapeAction } = require('../public/type-to-note');
 
 const body = { nodeType: 1, tagName: 'BODY', getAttribute: () => null };
 const el = (tagName, extra = {}) => ({ nodeType: 1, tagName, getAttribute: () => null, ...extra });
@@ -54,12 +54,12 @@ test('space only counts when nothing is focused and the note already has text', 
     assert.ok(!shouldFocusNote(key(' '), el('INPUT', { type: 'checkbox' }), ctx({ noteHasText: true })));
 });
 
-test('Escape in the note box cancels an empty note and only leaves a written one', () => {
+test('Escape in the note box cancels an empty note and keeps focus on a written one', () => {
     const noteInput = el('TEXTAREA');
     const esc = (value, extra, over) => escapeAction(key('Escape', extra), noteInput, { noteInput, noteValue: value, ...over });
     assert.equal(esc(''), 'cancel');
     assert.equal(esc('  \n '), 'cancel');
-    assert.equal(esc('hello'), 'blur');
+    assert.equal(esc('hello'), null);
 });
 
 test('Escape is left alone elsewhere', () => {
@@ -105,4 +105,21 @@ test('Enter never submits a composition or an already handled event', () => {
     for (const extra of [{ isComposing: true }, { keyCode: 229 }, { defaultPrevented: true }]) {
         assert.equal(shouldSubmit(key('Enter', extra), false), false);
     }
+});
+
+
+test('Enter can submit a written draft only from BODY on desktop without a menu or modal', () => {
+    const draft = ctx({ noteHasText: true });
+    assert.ok(shouldSubmitDraft(key('Enter'), body, draft));
+    for (const target of [null, el('INPUT', { type: 'search' }), el('TEXTAREA'), el('BUTTON'), el('A'), el('SELECT'), el('INPUT', { type: 'checkbox' })]) {
+        assert.ok(!shouldSubmitDraft(key('Enter'), target, draft));
+    }
+    for (const extra of [{ modalOpen: true }, { touchInput: true }, { noteHasText: false }]) {
+        assert.ok(!shouldSubmitDraft(key('Enter'), body, { ...draft, ...extra }));
+    }
+    for (const flag of ['shiftKey', 'ctrlKey', 'altKey', 'metaKey', 'isComposing', 'defaultPrevented']) {
+        assert.ok(!shouldSubmitDraft(key('Enter', { [flag]: true }), body, draft));
+    }
+    assert.ok(!shouldSubmitDraft(key('Enter', { keyCode: 229 }), body, draft));
+    for (const k of ['a', 'Escape', 'Tab', ' ']) assert.ok(!shouldSubmitDraft(key(k), body, draft));
 });
