@@ -28,6 +28,7 @@ const RECORDING_MAX_BYTES = Number(process.env.RECORDING_MAX_BYTES) || 32 * 1024
 const { sanitizeAge, insertionIndex } = require('./public/note-order');
 const { canEditNote } = require('./public/note-author');
 const input = require('./note-input');
+const noteNumbers = require('./public/note-numbers');
 const showLog = require('./show-log');
 const crypto = require('crypto');
 const helmet = require('helmet');
@@ -588,6 +589,7 @@ const globalState = {
         source: 'network'
     },
     notes: [],
+    nextNoteNumber: 1,
     chatMessages: [],
     users: new Map(),
     timeMode: 'midi',
@@ -1056,6 +1058,7 @@ let lastBackupFile = null;
 function notesExport() {
     return {
         notes: globalState.notes,
+        nextNoteNumber: globalState.nextNoteNumber,
         exportedAt: new Date().toISOString(),
         totalNotes: globalState.notes.length,
         authors: authorsOf(globalState.notes),
@@ -1143,6 +1146,7 @@ function restoreNotes() {
         }
         if (found.file) {
             globalState.notes = applyAuthors(input.cleanStoredNotes(found.data.notes), found.data.authors);
+            globalState.nextNoteNumber = noteNumbers.migrate(globalState.notes, found.data.nextNoteNumber);
             if (found.data.tags) globalState.tags = storedTags(found.data.tags);
             globalState.showLog = showLog.cleanShowLog(found.data.showLog);
             console.log(`Notes restore: loaded ${found.data.notes.length} notes from backups/${found.file}`);
@@ -1162,6 +1166,7 @@ if (PLAYBACK_DEMO) {
     const sample = JSON.parse(fs.readFileSync(path.join(__dirname, 'public/playback-demo/show.json'), 'utf8'));
     if (!globalState.notes.length) {
         globalState.notes = input.cleanStoredNotes(sample.notes);
+        globalState.nextNoteNumber = noteNumbers.migrate(globalState.notes);
         globalState.tags = storedTags(sample.tags);
         globalState.showLog = showLog.cleanShowLog(sample.showLog);
         backup(true);
@@ -1518,8 +1523,10 @@ io.on('connection', (socket) => {
         const now = Date.now();
         const ageMs = sanitizeAge(data.ageMs);
 
+        if (!noteNumbers.valid(globalState.nextNoteNumber)) return respond({ error: 'No more note numbers are available. Start a new show.' });
         const note = {
             id: newId(),
+            noteNumber: globalState.nextNoteNumber++,
             user: user.name,
             userId: user.id,
             text,
@@ -1695,6 +1702,7 @@ io.on('connection', (socket) => {
         if (!kept) return respond({ error: "Those notes are no longer kept." });
         const live = new Set(globalState.notes.map(n => n.id));
         const added = applyAuthors(input.cleanStoredNotes(kept.notes), kept.authors).filter(n => !live.has(n.id));
+        globalState.nextNoteNumber = noteNumbers.merge(added, globalState.nextNoteNumber, kept.nextNoteNumber);
         for (const note of added) globalState.notes.splice(insertionIndex(globalState.notes, note), 0, note);
         const events = new Set(globalState.showLog.map(e => JSON.stringify(e)));
         globalState.showLog = showLog.cleanShowLog([...globalState.showLog,
@@ -1763,6 +1771,7 @@ io.on('connection', (socket) => {
         }
         console.log(`Backup with ${data.notes.length} notes imported by ${user.name}`);
         globalState.notes = applyAuthors(input.cleanStoredNotes(data.notes), data.authors);
+        globalState.nextNoteNumber = noteNumbers.migrate(globalState.notes, Math.max(globalState.nextNoteNumber, noteNumbers.counter(data.nextNoteNumber) ? data.nextNoteNumber : 1));
         // Notes that fail the per-note checks are dropped; say so rather than report a clean import.
         const skipped = data.notes.length - globalState.notes.length;
         if (skipped) console.warn(`Import skipped ${skipped} of ${data.notes.length} notes that could not be read`);
@@ -1846,6 +1855,7 @@ function resetNotesAndChat(resetBy) {
     }
     resetCount++;
     globalState.notes = [];
+    globalState.nextNoteNumber = 1;
     globalState.chatMessages = [];
     globalState.showLog = [];
     recordings.removeCollection(RECORDINGS_DIR, 'live');

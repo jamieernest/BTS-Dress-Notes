@@ -96,6 +96,7 @@ const storedCommentSchema = z.object({
 
 const storedNoteSchema = z.object({
     id: idSchema,
+    noteNumber: z.number().int().positive().max(Number.MAX_SAFE_INTEGER - 1).optional().catch(undefined),
     clientId: idSchema.optional().catch(undefined),
     user: z.string().transform((s) => s.slice(0, MAX_NAME_LENGTH)).catch(''),
     userId: optionalString(MAX_NAME_LENGTH),

@@ -194,6 +194,8 @@ document.addEventListener('DOMContentLoaded', function() {
             comments: Array.isArray(note.comments) ? note.comments.filter(c => c && typeof c === 'object') : []
         }));
 
+        NoteNumbers.migrate(allNotes, data.nextNoteNumber);
+
         // Newer files carry the tag list with names and colours; older ones only the ids on each note.
         tagsById = new Map();
         (Array.isArray(data.tags) ? data.tags : []).forEach(tag => {

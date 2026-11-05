@@ -198,3 +198,5 @@ a.btn { text-decoration: none; }
     .brand { min-width: 0; white-space: normal; }
     .empty { padding: 32px 20px; }
 }
+
+.note-reference { color: var(--text-2); font-size: 12px; font-weight: 400; margin-right: 5px; }

@@ -147,6 +147,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function loadNotes(parsed, preserveFilters = false) {
         data = parsed;
+        NoteNumbers.migrate(data.notes, data.nextNoteNumber);
         tagsById = new Map((data.tags || []).map(tag => [tag.id, tag]));
         scenes = T.changes(data, 'scene').list;
         const lx = T.changes(data, 'cue');
@@ -753,7 +754,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const n = p.note;
             html += `<button type="button" class="side-note" data-id="${esc(n.id)}">
                 <span class="body">
-                    <span class="meta"><span class="author">${esc(n.user)}</span><span class="dots">${tagDots(n)}</span><span class="when mono">${esc(timed() ? videoTimeText(toVideo(p.at)) : clockText(p.at))}</span></span>
+                    <span class="meta"><span class="author">${esc(NoteNumbers.label(n))} ${esc(n.user)}</span><span class="dots">${tagDots(n)}</span><span class="when mono">${esc(timed() ? videoTimeText(toVideo(p.at)) : clockText(p.at))}</span></span>
                     <span class="text">${esc(n.text)}</span>
                 </span>
             </button>`;
@@ -856,7 +857,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!p) return '';
             const n = p.note;
             const cue = T.cueLabel(n.lxCue);
-            return `<div class="who"><strong>${esc(n.user)}</strong><span class="dots">${tagDots(n)}</span><span class="muted mono">${esc(clockText(p.at))}</span></div>
+            return `<div class="who"><strong>${esc(NoteNumbers.label(n))} ${esc(n.user)}</strong><span class="dots">${tagDots(n)}</span><span class="muted mono">${esc(clockText(p.at))}</span></div>
                 <div class="text">${esc(n.text)}</div>
                 ${cue ? `<div class="muted">LX ${esc(cue)}</div>` : ''}`;
         }

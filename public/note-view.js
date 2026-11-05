@@ -4,9 +4,9 @@
 // Icons come from icons.svg: write <i data-icon="name"> and setHtml() swaps in
 // the SVG, since DOMPurify strips <svg><use>.
 (function (root, factory) {
-    if (typeof module === 'object' && module.exports) module.exports = factory(require('./safe-html.js'), require('./timecode-format.js'));
-    else root.NoteView = factory(root.SafeHtml, root.TimecodeFormat);
-}(typeof self !== 'undefined' ? self : this, function (SafeHtml, TimecodeFormat) {
+    if (typeof module === 'object' && module.exports) module.exports = factory(require('./safe-html.js'), require('./timecode-format.js'), require('./note-numbers.js'));
+    else root.NoteView = factory(root.SafeHtml, root.TimecodeFormat, root.NoteNumbers);
+}(typeof self !== 'undefined' ? self : this, function (SafeHtml, TimecodeFormat, NoteNumbers) {
     const { escapeHtml: esc } = SafeHtml;
     const NEUTRAL = '#8a8f98';
     const safeColor = (color) => SafeHtml.safeColour(color, NEUTRAL);
@@ -101,7 +101,7 @@
         const title = note.timestamp ? `${rate} · sent ${fullTime(note.timestamp)}` : rate;
         return `
             <div class="note-head">
-                <span class="note-author">${esc(name)}</span>
+                <span class="note-author">${NoteNumbers.label(note) ? `<span class="note-reference mono">${esc(NoteNumbers.label(note))}</span> ` : ''}${esc(name)}</span>
                 <span class="note-meta">
                     <span class="note-cue">Cue ${esc(note.lxCue || '–')}</span>
                     <span class="note-tc mono" title="${esc(title)}">${esc(TimecodeFormat.formatNoteTimecode(note))}</span>
@@ -161,8 +161,11 @@
         if (filters.tag !== 'all' && !note.tags.includes(filters.tag)) return false;
         if (filters.act !== 'all' && (note.act || 'Preshow') !== filters.act) return false;
         if (filters.search) {
+            const reference = /^#?(\d+)$/.exec(filters.search.trim());
+            if (reference && NoteNumbers.label(note) === `#${Number(reference[1])}`) return true;
+            if (reference && filters.search.trim().startsWith('#')) return false;
             const haystack = [
-                note.text, note.user, note.lxCue, note.act,
+                NoteNumbers.label(note), note.text, note.user, note.lxCue, note.act,
                 ...note.tags.map(id => tagById(id).name),
                 ...(note.comments || []).map(c => `${c.user} ${c.text}`)
             ].join(' ').toLowerCase();
