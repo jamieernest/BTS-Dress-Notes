@@ -32,7 +32,8 @@
             <h2 id="tagsTitle">Show tags</h2>
             <p class="section-note">Add tags such as Crew for this show. Reset and Save and reset restore the six default tags. Saved notes keep their tags.</p>
             <div class="rows" id="tagRows"></div>
-            <form id="addTagForm" class="rows tag-add">
+            <h3 id="newTagTitle" class="subhead">New tag</h3>
+            <form id="addTagForm" class="rows tag-add" aria-labelledby="newTagTitle">
                 <div class="row tag-row">
                     <label class="sr-only" for="newTagName">New tag name</label>
                     <input id="newTagName" class="input" placeholder="New tag name" maxlength="60" required>

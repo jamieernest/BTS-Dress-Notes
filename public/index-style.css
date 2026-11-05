@@ -640,6 +640,9 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
         border: 0;
         box-shadow: none;
     }
+    /* Keep the modal surface opaque while the keyboard/browser chrome animates;
+       the drawer's controls still track the measured visible viewport. */
+    .drawer::before { content: ""; position: fixed; inset: 0; z-index: -1; background: var(--surface); pointer-events: none; }
     html.chat-open, .chat-open body { overflow: hidden; }
     .drawer-head { flex: none; padding-top: max(8px, env(safe-area-inset-top)); }
     .chat-compose { flex: none; padding-bottom: max(12px, env(safe-area-inset-bottom)); }

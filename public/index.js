@@ -41,7 +41,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const tagFilterPopover = $('tagFilterPopover');
     const tagPicker = $('tagPicker');
     const tagPickerList = $('tagPickerList');
-    const tagPickerHint = $('tagPickerHint');
     const chatToggle = $('chatToggle');
     const chatDrawer = $('chatDrawer');
     const chatClose = $('chatClose');
@@ -566,7 +565,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!note) return closeTagPicker();
         // The last tag on a note can't be taken off, only swapped by ticking another first.
         const onlyTag = note.tags.length === 1 ? note.tags[0] : null;
-        tagPickerHint.hidden = !onlyTag;
         const focused = tagPicker.contains(document.activeElement) ? document.activeElement.dataset.tag : null;
         setHtml(tagPickerList, availableTags.map(tag => `
             <button type="button" class="tag-option" role="menuitemcheckbox" data-tag="${esc(tag.id)}" aria-checked="${note.tags.includes(tag.id)}"${tag.id === onlyTag ? ' aria-disabled="true"' : ''} style="--tag: ${safeColor(tag.color)}">
@@ -751,15 +749,25 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    let visibleViewportFrame = null;
     function updateVisibleViewport() {
-        const viewport = window.visualViewport;
-        document.documentElement.style.setProperty('--visible-height', `${viewport?.height ?? window.innerHeight}px`);
-        document.documentElement.style.setProperty('--visible-top', `${viewport?.offsetTop ?? 0}px`);
-        chatScroll.layoutChanged();
+        if (visibleViewportFrame !== null) return;
+        // Keyboard/browser-toolbar events can fire before their geometry settles.
+        // Read at paint time, not while handling the earlier resize notification.
+        visibleViewportFrame = requestAnimationFrame(() => {
+            visibleViewportFrame = null;
+            const viewport = window.visualViewport;
+            document.documentElement.style.setProperty('--visible-height', `${viewport?.height ?? window.innerHeight}px`);
+            document.documentElement.style.setProperty('--visible-top', `${viewport?.offsetTop ?? 0}px`);
+            chatScroll.layoutChanged();
+        });
     }
     window.visualViewport?.addEventListener('resize', updateVisibleViewport);
     window.visualViewport?.addEventListener('scroll', updateVisibleViewport);
     window.addEventListener('resize', updateVisibleViewport);
+    window.addEventListener('pageshow', updateVisibleViewport);
+    document.addEventListener('focusin', updateVisibleViewport);
+    document.addEventListener('focusout', updateVisibleViewport);
     modalChatLayout.addEventListener('change', () => {
         updateChatLayout();
         if (!chatDrawer.hidden && modalChatLayout.matches && !chatDrawer.contains(document.activeElement)) chatClose.focus();
