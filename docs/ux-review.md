@@ -35,3 +35,9 @@ The navigation/settings review used the running synthetic preview at 390×844 an
 ## Remaining limits
 
 Viewport checks do not reproduce a physical phone keyboard, touch hardware or every assistive technology. The new behaviour has not been tested with representative nontechnical rehearsal users; this review cannot establish that every interaction is easy for them. Existing storage-dependent preferences can be unavailable when a browser disables storage. Website photo identity assumes its username matches the OIDC username; a missing image or claim falls back to initials rather than guessing from an editable email alias.
+
+## Independent review outcome
+
+[Kimi K3.1 Pro round 1](reviews/pr54-kimi-ux-round1.md) rated the follow-up **9.0/10** against PR30 base `26ec19fb61bab745490c8b4f9c232652bf8812a4` at implementation head `9c75eadda2b55af9906e94688976e508ae65d65f`. It found no material novice-user barrier or required implementation fix. Browser checks covered desktop 1280px and phone 390/320px widths; the report distinguishes real interactions, intercepted routing and local fixtures.
+
+The only optional polish finding was the 280px-high active-filter toolbar at 320px. The result is an expert assessment, not an end-user study; physical touch/IME, real multi-user failures and valid remote-photo loading remain outside this review's reproduced evidence. No implementation changes followed the passing review.
