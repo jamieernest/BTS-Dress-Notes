@@ -511,12 +511,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const MAX = 4;
         setHtml(avatarStack, list.slice(0, MAX).map(p =>
-            avatarHTML(p.key, p.name, p.emailPrefix, p.isTyping ? 'typing' : '')
+            avatarHTML(p.key, p.name, p.isTyping ? 'typing' : '', p.emailPrefix)
         ).join('') + (list.length > MAX ? `<span class="avatar more">+${list.length - MAX}</span>` : ''));
 
         setHtml(usersList, list.map(p => `
             <li>
-                ${avatarHTML(p.key, p.name, p.emailPrefix)}
+                ${avatarHTML(p.key, p.name, '', p.emailPrefix)}
                 <span>${esc(p.name)}</span>${p.me ? '<span class="you">you</span>' : ''}
                 ${p.isTyping ? '<span class="writing">writing…</span>' : ''}
             </li>`).join(''));
@@ -648,7 +648,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     ${mine ? '' : `<span class="chat-msg-user">${esc(msg.user)}</span>`}
                     <span class="chat-msg-time">${esc(clockTime(msg.timestamp))}</span>
                 </div>`;
-        const face = mine ? '' : (cont ? '<span class="avatar-gap"></span>' : avatarHTML(msg.userId || msg.user, msg.user, msg.emailPrefix, 'sm'));
+        const face = mine ? '' : (cont ? '<span class="avatar-gap"></span>' : avatarHTML(msg.userId || msg.user, msg.user, 'sm', msg.emailPrefix));
         return `
             <div data-chat-id="${esc(msg.id)}" tabindex="-1" class="chat-msg${mine ? ' mine' : ''}${cont ? ' cont' : ''}">
                 ${face}
@@ -825,7 +825,7 @@ document.addEventListener('DOMContentLoaded', function() {
             ${comments.map(c => commentHTML(note, c)).join('')}
             ${replying ? `
             <div class="comment-input">
-                ${avatarHTML(currentUser.sub || currentUser.name, currentUser.name, currentUser.emailPrefix, 'sm')}
+                ${avatarHTML(currentUser.sub || currentUser.name, currentUser.name, 'sm', currentUser.emailPrefix)}
                 <div class="comment-box">
                     <textarea rows="1" data-field="comment" placeholder="Write a reply…" aria-label="Write a reply">${esc(draft)}</textarea>
                     <div class="comment-box-actions">

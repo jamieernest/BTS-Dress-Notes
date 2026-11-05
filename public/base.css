@@ -222,3 +222,9 @@ a.btn { text-decoration: none; }
 .mention-picker small { display: block; color: var(--muted); max-width: 240px; overflow: hidden; text-overflow: ellipsis; font-size: 10px; }
 .mention-badge { border-radius: 10px; background: #8070d526; color: var(--accent, #6657cd); padding: 1px 5px; font-size: 11px; font-weight: 700; }
 .mention-badge[hidden], .mention-picker[hidden] { display: none; }
+
+/* Photos cover initials without clipping the online typing indicator. Shared
+   with Past notes and playback, whose avatars have the same positioning. */
+.avatar { position: relative; }
+.avatar-photo { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: inherit; object-fit: cover; z-index: 1; }
+.avatar-initials { position: relative; z-index: 0; }

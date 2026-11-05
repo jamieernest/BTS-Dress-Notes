@@ -90,3 +90,16 @@ were assessed for reuse for [#36](https://github.com/jamieernest/BTS-Dress-Notes
 Its `config-tags.js` payload helper couples settings to slash commands, and the PR
 includes a broader UI/playback overhaul. This implementation uses the existing
 tag events and settings layout, without importing that overhaul or adding commands.
+
+### Website profile photos
+
+Profile photos retain Ewan’s work from [PR41](https://github.com/jamieernest/BTS-Dress-Notes/pull/41), source commit `7348f59b76491b935ac29fb38a24cc4ac6a72e45`, cherry-picked with his authorship preserved. His unrelated tag-file changes were excluded; the existing tag editor and six defaults remain.
+
+The website source at `643bec9abcd819107e608d5d9d217fb439360b88` confirms the contract:
+
+- [User creation](https://github.com/backstage-technical-services/website/blob/643bec9abcd819107e608d5d9d217fb439360b88/app/Models/Users/User.php#L146) initially uses `<username>@bath.ac.uk` and provisions that username in Keycloak. Contact email can subsequently change, so we use OIDC `preferred_username`, not the email prefix, as the photo filename.
+- [Avatar storage](https://github.com/backstage-technical-services/website/blob/643bec9abcd819107e608d5d9d217fb439360b88/app/Models/Users/User.php#L747) uses `/images/profiles/<username>.jpg`; Intervention Image crops/re-encodes uploads to 500×500. [Its tests](https://github.com/backstage-technical-services/website/blob/643bec9abcd819107e608d5d9d217fb439360b88/tests/Feature/Users/ProfileUpdateTest.php#L163) check the JPEG format and dimensions. A missing custom image falls back to initials in Dress Notes.
+
+Only an account whose validated OIDC email is exactly on `bath.ac.uk`, with a valid website username, receives a photo identifier. Accounts without those claims keep initials; older sessions need a fresh login. Stable identity and colours still use Keycloak `sub`. The shared field `emailPrefix` contains only the website username for compatibility; full addresses and duplicate usernames are not added to notes, chat, user broadcasts or exports.
+
+Security uses the existing DOMPurify HTML sanitizer, Zod schemas, Helmet CSP and openid-client OIDC validation. Browser image URLs are fixed HTTPS paths on `www.bts-crew.com`, with `referrerpolicy="no-referrer"`, no inline handlers, no arbitrary remote URL input, no server-side fetch/proxy and no new upload endpoint. There is no custom HTML or image sanitizer. The browser decodes the remote image; DOMPurify sanitizes markup, not image bytes. A failed/missing image reveals the normal initials in notes, comments, chat and pickers. The website still sees the requesting browser’s IP and photo path. This verifies our integration contract, not a full security audit of the separate website or its upload dependencies.

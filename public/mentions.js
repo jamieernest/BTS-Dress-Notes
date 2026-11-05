@@ -1,8 +1,8 @@
 // Explicit UTF-16 ranges into text; names are snapshots, identities are OIDC sub.
 (function (root, factory) {
-    if (typeof module === 'object' && module.exports) module.exports = factory(require('./safe-html.js'));
-    else root.Mentions = factory(root.SafeHtml);
-}(typeof self !== 'undefined' ? self : this, function (SafeHtml) {
+    if (typeof module === 'object' && module.exports) module.exports = factory(require('./safe-html.js'), require('./profile-photos.js'));
+    else root.Mentions = factory(root.SafeHtml, root.ProfilePhotos);
+}(typeof self !== 'undefined' ? self : this, function (SafeHtml, ProfilePhotos) {
     function clean(text, raw) {
         if (typeof text !== 'string' || !Array.isArray(raw)) return [];
         const result = [];
@@ -39,9 +39,9 @@
     }
     function accounts(notes, chat, online) {
         const people = new Map();
-        const add = (id, name) => { if (typeof id === 'string' && id && id.length <= 200 && typeof name === 'string' && name.trim() && name.length <= 200 && !/[\r\n]/.test(name)) people.set(id, { userId: id, name }); };
-        for (const n of [...notes, ...chat]) { add(n.userId, n.user); for (const c of n.comments || []) add(c.userId, c.user); }
-        for (const u of online) add(u.id, u.name);
+        const add = (id, name, emailPrefix) => { if (typeof id === 'string' && id && id.length <= 200 && typeof name === 'string' && name.trim() && name.length <= 200 && !/[\r\n]/.test(name)) people.set(id, { userId: id, name, ...(ProfilePhotos.validUsername(emailPrefix) ? { emailPrefix } : people.get(id)?.emailPrefix ? { emailPrefix: people.get(id).emailPrefix } : {}) }); };
+        for (const n of [...notes, ...chat]) { add(n.userId, n.user, n.emailPrefix); for (const c of n.comments || []) add(c.userId, c.user, c.emailPrefix); }
+        for (const u of online) add(u.id, u.name, u.emailPrefix);
         return [...people.values()].sort((a, b) => a.name.localeCompare(b.name) || a.userId.localeCompare(b.userId));
     }
     function createUnread(storage) {
@@ -105,7 +105,7 @@
             paint(); place(menu, el);
         }
         function paint() {
-            SafeHtml.setHtml(menu, choices.map((p, i) => `<button type="button" role="option" aria-selected="${i === selected}" data-choice="${i}">${avatarHTML(p.userId, p.name, 'sm')}<span>${SafeHtml.escapeHtml(p.name)}${choices.filter(c => c.name === p.name).length > 1 ? `<small>Account ${SafeHtml.escapeHtml(p.userId)}</small>` : ''}</span></button>`).join(''));
+            SafeHtml.setHtml(menu, choices.map((p, i) => `<button type="button" role="option" aria-selected="${i === selected}" data-choice="${i}">${avatarHTML(p.userId, p.name, 'sm', p.emailPrefix)}<span>${SafeHtml.escapeHtml(p.name)}${choices.filter(c => c.name === p.name).length > 1 ? `<small>Account ${SafeHtml.escapeHtml(p.userId)}</small>` : ''}</span></button>`).join(''));
         }
         menu.addEventListener('pointerdown', e => { const b = e.target.closest('[data-choice]'); if (b) { e.preventDefault(); choose(Number(b.dataset.choice)); } });
         document.addEventListener('input', e => { if (eligible(e.target)) draw(e.target); }, true);

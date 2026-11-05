@@ -19,6 +19,7 @@
 // the caller merges a restored log into whatever the server already holds.
 
 const { z } = require('zod');
+const { optionalUsernameSchema } = require('./profile-photos');
 const { validId } = require('./public/chat-replies');
 const replyToSchema = z.string().refine(validId);
 const Mentions = require('./public/mentions');
@@ -36,7 +37,7 @@ const chatMessageSchema = z.object({
     id: z.string().max(MAX_ID),
     user: z.string().max(MAX_NAME),
     userId: z.string().max(MAX_NAME),
-    emailPrefix: z.string().max(MAX_NAME).optional(),
+    emailPrefix: optionalUsernameSchema,
     text: z.string().max(MAX_TEXT),
     replyTo: replyToSchema.optional(),
     mentions: z.unknown().optional(),
@@ -44,6 +45,7 @@ const chatMessageSchema = z.object({
 }).transform(m => {
     const mentions = Mentions.clean(m.text, m.mentions);
     if (mentions.length) m.mentions = mentions; else delete m.mentions;
+    if (!m.emailPrefix) delete m.emailPrefix;
     return m;
 });
 const chatLogSchema = z.array(chatMessageSchema).min(1).max(MAX_OFFER_MESSAGES);
@@ -60,10 +62,11 @@ function sanitizeChatLog(raw) {
 // stored message can later be restored. Returns null if the text is not a string.
 function boundChatMessage({ user, userId, emailPrefix, text, replyTo, mentions }) {
     if (typeof text !== 'string' || (replyTo !== undefined && !validId(replyTo))) return null;
+    const photo = optionalUsernameSchema.parse(emailPrefix);
     return {
         user: String(user ?? '').slice(0, MAX_NAME),
         userId: String(userId ?? '').slice(0, MAX_NAME),
-        ...(emailPrefix ? { emailPrefix: String(emailPrefix).slice(0, MAX_NAME) } : {}),
+        ...(photo ? { emailPrefix: photo } : {}),
         text: text.slice(0, MAX_TEXT),
         ...(replyTo !== undefined ? { replyTo } : {}),
         ...(Mentions.clean(text.slice(0, MAX_TEXT), mentions).length ? { mentions: Mentions.clean(text.slice(0, MAX_TEXT), mentions) } : {})
@@ -72,7 +75,7 @@ function boundChatMessage({ user, userId, emailPrefix, text, replyTo, mentions }
 
 // Two messages are the same message only if every field is identical.
 function messageKey(m) {
-    return JSON.stringify([m.id, m.user, m.userId, m.text, m.timestamp, m.replyTo ?? null, Mentions.clean(m.text, m.mentions)]);
+    return JSON.stringify([m.id, m.user, m.userId, m.text, m.timestamp, m.replyTo ?? null, Mentions.clean(m.text, m.mentions), m.emailPrefix ?? null]);
 }
 
 // True when every message of `inner` is in `outer` (see "Agreement" above).

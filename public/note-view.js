@@ -4,9 +4,9 @@
 // Icons come from icons.svg: write <i data-icon="name"> and setHtml() swaps in
 // the SVG, since DOMPurify strips <svg><use>.
 (function (root, factory) {
-    if (typeof module === 'object' && module.exports) module.exports = factory(require('./safe-html.js'), require('./timecode-format.js'), require('./note-numbers.js'), require('./mentions.js'));
-    else root.NoteView = factory(root.SafeHtml, root.TimecodeFormat, root.NoteNumbers, root.Mentions);
-}(typeof self !== 'undefined' ? self : this, function (SafeHtml, TimecodeFormat, NoteNumbers, Mentions) {
+    if (typeof module === 'object' && module.exports) module.exports = factory(require('./safe-html.js'), require('./timecode-format.js'), require('./note-numbers.js'), require('./mentions.js'), require('./profile-photos.js'));
+    else root.NoteView = factory(root.SafeHtml, root.TimecodeFormat, root.NoteNumbers, root.Mentions, root.ProfilePhotos);
+}(typeof self !== 'undefined' ? self : this, function (SafeHtml, TimecodeFormat, NoteNumbers, Mentions, ProfilePhotos) {
     const { escapeHtml: esc } = SafeHtml;
     const NEUTRAL = '#8a8f98';
     const safeColor = (color) => SafeHtml.safeColour(color, NEUTRAL);
@@ -39,9 +39,6 @@
             use.setAttribute('href', `${ICONS}#i-${placeholder.dataset.icon}`);
             svg.appendChild(use);
             placeholder.replaceWith(svg);
-        }
-        for (const image of element.querySelectorAll('img.avatar-photo')) {
-            image.addEventListener('error', () => image.remove(), { once: true });
         }
     }
 
@@ -93,12 +90,13 @@
         return `hsl(${h % 360}, 45%, 42%)`;
     }
 
-    function avatarHTML(key, name, emailPrefix, extraClass) {
-        const safePrefix = /^[a-z0-9._+-]+$/i.test(String(emailPrefix || '')) ? String(emailPrefix) : '';
-        const image = safePrefix
-            ? `<img class="avatar-photo" src="https://www.bts-crew.com/images/profiles/${encodeURIComponent(safePrefix)}.jpg" alt="" loading="lazy" referrerpolicy="no-referrer">`
+    // Keep the original third argument (CSS class) compatible with all callers.
+    function avatarHTML(key, name, extraClass, emailPrefix) {
+        const url = ProfilePhotos.imageUrl(emailPrefix);
+        const image = url
+            ? `<img class="avatar-photo" src="${esc(url)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
             : '';
-        return `<span class="avatar${extraClass ? ` ${extraClass}` : ''}" style="background:${personColor(key)}" aria-hidden="true">${image}<span class="avatar-initials">${esc(initials(name))}</span></span>`;
+        return `<span class="avatar${extraClass ? ` ${esc(extraClass)}` : ''}" style="background:${personColor(key)}" aria-hidden="true">${image}<span class="avatar-initials">${esc(initials(name))}</span></span>`;
     }
 
     // --- Tags ---
@@ -137,7 +135,7 @@
             aria-pressed="${active}" aria-label="${active ? 'Remove your agreement' : 'Agree with this note'}">+1</button>` : '<span class="agreement-mark">+1</span>';
         const list = people.length ? `<details class="agreement-people"><summary aria-label="See who agrees (${people.length})">${people.length}</summary>
             <div class="agreement-popover" role="group" aria-label="People who agree">${people.map(p =>
-                `<div class="agreement-person">${avatarHTML(p.userId, p.name, 'sm')}<span>${esc(p.name)}</span></div>`).join('')}</div>
+                `<div class="agreement-person">${avatarHTML(p.userId, p.name, 'sm', p.emailPrefix)}<span>${esc(p.name)}</span></div>`).join('')}</div>
             </details>` : '<span class="agreement-count">0</span>';
         return `<span class="note-agreements">${toggle}${list}</span>`;
     }
@@ -172,7 +170,7 @@
         const foot = (parts.foot || '') + agreementsHTML(note, parts.agreementActor);
         return `
             <article class="note${parts.className ? ` ${parts.className}` : ''}"${parts.attrs ? ` ${parts.attrs}` : ''}>
-                ${avatarHTML(author.key, author.name, author.emailPrefix)}
+                ${avatarHTML(author.key, author.name, '', author.emailPrefix)}
                 <div class="note-main">
                     ${noteHeadHTML(note, author.name, parts.side)}
                     ${body}${edited}
@@ -187,7 +185,7 @@
         const edited = comment.lastEdited ? ' · edited' : '';
         return `
             <div class="comment" data-comment-id="${esc(comment.id)}">
-                ${avatarHTML(comment.userId || comment.user, comment.user, comment.emailPrefix, 'sm')}
+                ${avatarHTML(comment.userId || comment.user, comment.user, 'sm', comment.emailPrefix)}
                 <div class="comment-main">
                     <div class="comment-head">
                         <span class="comment-user">${esc(comment.user)}</span>
@@ -238,6 +236,7 @@
             const previous = people.get(note.userId);
             const name = String(note.user || 'Unknown');
             people.set(note.userId, { userId: note.userId, name,
+                ...(ProfilePhotos.validUsername(note.emailPrefix) ? { emailPrefix: note.emailPrefix } : previous?.emailPrefix ? { emailPrefix: previous.emailPrefix } : {}),
                 names: [...new Set([...(previous?.names || []), name])] });
         }
         const result = [...people.values()].sort((a, b) => a.name.localeCompare(b.name) || a.userId.localeCompare(b.userId));
@@ -306,7 +305,7 @@
                 const label = person?.label || filters[field];
                 button.hidden = !filters[field];
                 button.setAttribute('aria-label', `Remove ${prefix.toLowerCase()} filter: ${label || ''}`);
-                setHtml(button, filters[field] ? `${avatarHTML(filters[field], person?.name || label, 'sm')}<span>${esc(prefix)} ${esc(label)}</span><i data-icon="close"></i>` : '');
+                setHtml(button, filters[field] ? `${avatarHTML(filters[field], person?.name || label, 'sm', person?.emailPrefix)}<span>${esc(prefix)} ${esc(label)}</span><i data-icon="close"></i>` : '');
             }
         }
         function suggest() {
@@ -317,7 +316,7 @@
             beforeOpen?.();
             const options = matches.flatMap(person => [{ person, field: 'author', prefix: 'By' },
                 ...(mentionChip ? [{ person, field: 'mentionedUserId', prefix: 'Mentions' }] : [])]);
-            setHtml(popover, options.map(({ person: p, field, prefix }, i) => `<button type="button" class="tag-option author-option" role="option" id="${esc(popover.id)}-${i}" data-person="${esc(p.userId)}" data-filter="${field}" aria-selected="false">${avatarHTML(p.userId, p.name, 'sm')}<span>${esc(prefix)} ${esc(p.label)}</span></button>`).join(''));
+            setHtml(popover, options.map(({ person: p, field, prefix }, i) => `<button type="button" class="tag-option author-option" role="option" id="${esc(popover.id)}-${i}" data-person="${esc(p.userId)}" data-filter="${field}" aria-selected="false">${avatarHTML(p.userId, p.name, 'sm', p.emailPrefix)}<span>${esc(prefix)} ${esc(p.label)}</span></button>`).join(''));
             active = -1;
             placePopover(popover, input.closest('.search'), 'left');
             input.setAttribute('aria-expanded', 'true');

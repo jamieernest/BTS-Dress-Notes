@@ -33,6 +33,7 @@ const noteNumbers = require('./public/note-numbers');
 const showLog = require('./show-log');
 const crypto = require('crypto');
 const helmet = require('helmet');
+const { usernameFromClaims } = require('./profile-photos');
 const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
 
 const app = express();
@@ -146,15 +147,6 @@ function originOf(url) {
     } catch (error) {
         return [];
     }
-}
-
-function bathEmailOf(value) {
-    const email = typeof value === 'string' ? value.trim() : '';
-    return /@bath\.ac\.uk$/i.test(email) ? email : null;
-}
-
-function bathEmailPrefix(email) {
-    return email ? email.slice(0, email.lastIndexOf('@')).trim().slice(0, 100) || null : null;
 }
 
 // Security headers. The Content-Security-Policy only lets the pages run
@@ -321,16 +313,13 @@ app.get('/callback', async (req, res) => {
         // A fresh session id on login (no session fixation), saved before the
         // redirect so the next page load already sees the user.
         await new Promise((resolve, reject) => req.session.regenerate((err) => (err ? reject(err) : resolve())));
-        const email = bathEmailOf(claims.email);
-        const username = String(claims.preferred_username || bathEmailPrefix(email) || '').trim().slice(0, 100) || null;
-        // Keep only the part used to find the profile image; the full email stays server-side.
-        const emailPrefix = bathEmailPrefix(email);
+        // emailPrefix is the historical wire name for the website's username.
+        const emailPrefix = usernameFromClaims(claims);
         req.session.user = {
             sub: claims.sub,
             name: claims.name || claims.preferred_username || claims.email || claims.sub,
-            username,
             emailPrefix,
-            email: email || null,
+            email: claims.email || null,
             idToken: tokens.id_token || null
         };
         await new Promise((resolve, reject) => req.session.save((err) => (err ? reject(err) : resolve())));
@@ -1316,8 +1305,8 @@ io.on('connection', (socket) => {
     const user = {
         id: sessionUser.sub,
         name: sessionUser.name,
-        email: bathEmailOf(sessionUser.email),
-        emailPrefix: bathEmailPrefix(bathEmailOf(sessionUser.email)),
+        emailPrefix: usernameFromClaims({ email: sessionUser.email,
+            preferred_username: sessionUser.username ?? sessionUser.emailPrefix }),
         isTyping: false,
         currentTimecode: null,
         currentLxCue: null,
@@ -1562,9 +1551,7 @@ io.on('connection', (socket) => {
             id: newId(),
             noteNumber: globalState.nextNoteNumber++,
             user: user.name,
-            email: user.email || undefined,
             emailPrefix: user.emailPrefix || undefined,
-            username: user.username || undefined,
             userId: user.id,
             text,
             mentions: input.cleanMentions(text, data.mentions),
@@ -1598,9 +1585,7 @@ io.on('connection', (socket) => {
             const comment = {
                 id: newId(),
                 user: user.name,
-                email: user.email || undefined,
                 emailPrefix: user.emailPrefix || undefined,
-                username: user.username || undefined,
                 userId: user.id,
                 text,
                 mentions: input.cleanMentions(text, data.mentions),

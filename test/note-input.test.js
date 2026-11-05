@@ -77,14 +77,14 @@ test('a stored note keeps a valid startedAt and drops a bad one', () => {
     assert.strictEqual(dropped.startedAt, undefined);
 });
 
-test('a stored note keeps optional author identity snapshots', () => {
+test('a stored note keeps only the photo username from author snapshots', () => {
     const [note] = input.cleanStoredNotes([{
         id: 'n1', user: 'Alice', email: 'alice@bath.ac.uk', emailPrefix: 'alice', username: 'alice',
         text: 'hi', timestamp: '2026-10-16T10:00:00.000Z'
     }]);
-    assert.strictEqual(note.email, 'alice@bath.ac.uk');
+    assert.strictEqual(note.email, undefined);
     assert.strictEqual(note.emailPrefix, 'alice');
-    assert.strictEqual(note.username, 'alice');
+    assert.strictEqual(note.username, undefined);
     const [external] = input.cleanStoredNotes([{
         id: 'n2', user: 'Other', email: 'other@example.com', text: 'hi', timestamp: '2026-10-16T10:00:00.000Z'
     }]);
