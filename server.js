@@ -543,31 +543,25 @@ app.get('/favicon.ico', (req, res) => {
 
 // Load tags from JSON file (TAGS_FILE is for the tests, which must not change the tracked one)
 const TAGS_FILE = process.env.TAGS_FILE || path.join(__dirname, 'tags.json');
-let tags = [];
+const defaultTags = require('./default-tags.json').tags;
+let tags;
 try {
-    const tagsData = fs.readFileSync(TAGS_FILE, 'utf8');
-    const tagsConfig = JSON.parse(tagsData);
-    tags = tagsConfig.tags;
-    console.log(`Loaded ${tags.length} tags from tags.json`);
+    tags = input.cleanStoredTags(JSON.parse(fs.readFileSync(TAGS_FILE, 'utf8')).tags);
 } catch (error) {
-    console.log('Error loading tags.json, using default tags:', error.message);
-    tags = [
-        { id: 'safety', name: 'Safety/Show Critical', color: '#E63946' },
-        { id: 'lighting', name: 'Lighting', color: '#00B4D8' },
-        { id: 'sound', name: 'Sound', color: '#06D6A0' },
-        { id: 'stage', name: 'Stage', color: '#118AB2' },
-        { id: 'dsm', name: 'DSM', color: '#8AC926' },
-        { id: 'set', name: 'Set', color: '#FF6f91' }
-    ];
+    tags = defaultTags.map(tag => ({ ...tag }));
 }
 
-// Saves the current tags. globalState.tags, not the list loaded at start:
-// deleting a tag or importing a backup replaces the array.
-function saveTagsToFile() {
+// Write before changing live state; a failed write must leave the show intact.
+function saveTagsToFile(nextTags = globalState.tags) {
+    const temp = TAGS_FILE + '.tmp';
     try {
-        fs.writeFileSync(TAGS_FILE, JSON.stringify({ tags: globalState.tags }, null, 2));
+        fs.writeFileSync(temp, JSON.stringify({ tags: nextTags }, null, 2));
+        fs.renameSync(temp, TAGS_FILE);
+        return true;
     } catch (error) {
         console.log('Error saving tags to file:', error.message);
+        try { fs.unlinkSync(temp); } catch (_) { /* no temporary file */ }
+        return false;
     }
 }
 
@@ -1400,36 +1394,43 @@ io.on('connection', (socket) => {
     });
 
     // Handle tag creation/updates
-    on('create-tag', (tagData) => {
-        if (user.isOverlay) return;
+    on('create-tag', (tagData, ack) => {
+        const respond = typeof ack === 'function' ? ack : () => {};
+        if (user.isOverlay) return respond({ error: 'Tags cannot be changed here.' });
         const tag = input.cleanTag(tagData);
-        if (!tag) return;
-        const existingIndex = tag.id ? globalState.tags.findIndex(t => t.id === tag.id) : -1;
-        const newTag = {
-            id: tag.id || generateId(),
-            name: tag.name,
-            color: tag.color || (existingIndex >= 0 && globalState.tags[existingIndex].color) || getRandomColor()
-        };
-        if (existingIndex >= 0) {
-            globalState.tags[existingIndex] = newTag;
-        } else {
-            globalState.tags.push(newTag);
+        if (!tag || (tagData.color != null && !/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(tagData.color))) {
+            return respond({ error: 'Enter a tag name and a valid colour.' });
         }
-
-        saveTagsToFile();
-        io.emit('tags-update', globalState.tags);
+        const existing = globalState.tags.find(t => t.id === tag.id);
+        if (tag.id && !existing) return respond({ error: 'That tag no longer exists.' });
+        if (globalState.tags.some(t => t.id !== tag.id && t.name.toLowerCase() === tag.name.toLowerCase())) {
+            return respond({ error: 'A tag with that name already exists.' });
+        }
+        const newTag = { id: existing ? existing.id : generateId(), name: tag.name,
+            color: tag.color || (existing && existing.color) || getRandomColor() };
+        const next = existing ? globalState.tags.map(t => t.id === existing.id ? newTag : t) : [...globalState.tags, newTag];
+        if (!saveTagsToFile(next)) return respond({ error: 'The tags could not be changed. Try again.' });
+        globalState.tags = next;
+        io.emit('tags-update', next);
         scheduleBackup();
+        respond({ tag: newTag });
     });
 
-    // Handle tag deletion
-    on('delete-tag', (tagId) => {
-        if (user.isOverlay) return;
+    on('delete-tag', (tagId, ack) => {
+        const respond = typeof ack === 'function' ? ack : () => {};
+        if (user.isOverlay) return respond({ error: 'Tags cannot be changed here.' });
         const id = input.cleanId(tagId);
-        if (!id) return;
-        globalState.tags = globalState.tags.filter(tag => tag.id !== id);
-        saveTagsToFile();
-        io.emit('tags-update', globalState.tags);
+        if (!id || !globalState.tags.some(t => t.id === id)) return respond({ error: 'That tag no longer exists.' });
+        if (globalState.notes.some(note => note.tags.includes(id))) {
+            return respond({ error: 'This tag is used by notes. Change their tags before deleting it.' });
+        }
+        const next = globalState.tags.filter(tag => tag.id !== id);
+        if (!next.length) return respond({ error: 'Keep at least one tag.' });
+        if (!saveTagsToFile(next)) return respond({ error: 'The tags could not be changed. Try again.' });
+        globalState.tags = next;
+        io.emit('tags-update', next);
         scheduleBackup();
+        respond({});
     });
 
     // Handle user starting to type (only for non-overlay users)
@@ -1705,7 +1706,7 @@ io.on('connection', (socket) => {
         const respond = typeof ack === 'function' ? ack : () => {};
         if (user.isOverlay) return;
         console.log(`Reset of all notes and chat requested by ${user.name}`);
-        respond(resetNotesAndChat(user.name) ? {} : { error: "The notes couldn't be kept, so nothing was reset." });
+        respond(resetNotesAndChat(user.name) ? {} : { error: "The notes or default tags could not be saved. Nothing was reset." });
     });
 
     // Notes kept from recent resets, for the config page to restore.
@@ -1724,6 +1725,24 @@ io.on('connection', (socket) => {
         if (!kept) return respond({ error: "Those notes are no longer kept." });
         const live = new Set(globalState.notes.map(n => n.id));
         const added = applyAuthors(input.cleanStoredNotes(kept.notes), kept.authors).filter(n => !live.has(n.id));
+        // Restore only definitions needed by added notes. If an id was renamed
+        // in this show, give the old definition a new id rather than changing
+        // the meaning of either show's notes.
+        const nextTags = globalState.tags.map(tag => ({ ...tag }));
+        for (const tag of storedTags(kept.tags || [])) {
+            if (!added.some(note => note.tags.includes(tag.id))) continue;
+            const existing = nextTags.find(t => t.id === tag.id);
+            if (!existing) nextTags.push(tag);
+            else if (existing.name !== tag.name || existing.color.toLowerCase() !== tag.color.toLowerCase()) {
+                const matching = nextTags.find(t => t.name === tag.name && t.color.toLowerCase() === tag.color.toLowerCase());
+                const restoredId = matching ? matching.id : generateId();
+                if (!matching) nextTags.push({ ...tag, id: restoredId });
+                for (const note of added) note.tags = note.tags.map(id => id === tag.id ? restoredId : id);
+            }
+        }
+        if (!saveTagsToFile(nextTags)) return respond({ error: 'The tags could not be restored. Nothing was restored.' });
+        globalState.tags = nextTags;
+        io.emit('tags-update', globalState.tags);
         globalState.nextNoteNumber = noteNumbers.merge(added, globalState.nextNoteNumber, kept.nextNoteNumber);
         for (const note of added) globalState.notes.splice(insertionIndex(globalState.notes, note), 0, note);
         const events = new Set(globalState.showLog.map(e => JSON.stringify(e)));
@@ -1772,7 +1791,7 @@ io.on('connection', (socket) => {
             }
             console.log(`Show "${name}" (${show.totalNotes} notes, ${parts} video parts) saved by ${user.name}${reset ? ', then reset' : ''}`);
             if (reset && !resetNotesAndChat(user.name)) {
-                return respond({ error: "The notes were saved, but couldn't be kept for undoing a reset. Nothing was reset." });
+                return respond({ error: "The notes were saved, but the reset could not be completed. Nothing was reset." });
             }
             respond({ show: { ...show, recordingParts: parts } });
         }, (error) => {
@@ -1875,6 +1894,9 @@ function resetNotesAndChat(resetBy) {
         }
         resetsChanged();
     }
+    const nextTags = defaultTags.map(tag => ({ ...tag }));
+    if (!saveTagsToFile(nextTags)) return false;
+    globalState.tags = nextTags;
     resetCount++;
     globalState.notes = [];
     globalState.nextNoteNumber = 1;
@@ -1883,6 +1905,7 @@ function resetNotesAndChat(resetBy) {
     recordings.removeCollection(RECORDINGS_DIR, 'live');
     recordingsChanged('live');
     chatRestore.close();
+    io.emit('tags-update', globalState.tags);
     io.emit('all-reset'); // each page also drops its saved chat copy and unsent notes
     io.emit('notes-update', globalState.notes);
     io.emit('show-log-update', globalState.showLog);

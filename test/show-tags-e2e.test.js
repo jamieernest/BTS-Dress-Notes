@@ -1,0 +1,73 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { startOidc, createApp, login, Browser, freePort, until } = require('./e2e-harness');
+const defaults = require('../default-tags.json').tags;
+
+test('show tags validate, persist, protect used ids, travel with saved/reset notes and reset to defaults', async t => {
+    const oidc = await startOidc();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'show-tags-'));
+    const app = createApp({ issuer: oidc.issuer, sessionsFile: path.join(dir, 'sessions.json'), port: await freePort() });
+    let config, alice;
+    t.after(async () => { config?.close(); alice?.close(); await app.stop(); oidc.close(); fs.rmSync(dir, { recursive: true, force: true }); });
+    await app.start();
+    alice = new Browser(app, await login(app, oidc, 'alice'));
+    config = Browser.configSocket(app, alice.cookie);
+    let tags;
+    config.on('tags-update', value => { tags = value; });
+    alice.load();
+    await until(() => tags && alice.page.socket.connected, 'connections');
+    const ack = (event, data) => config.timeout(5000).emitWithAck(event, data);
+    const disk = () => JSON.parse(fs.readFileSync(path.join(dir, 'tags.json'))).tags;
+    for (const data of [{ name: ' ' }, { name: 'Crew', color: 'red' }, { name: 'Sound' }, { id: 'missing', name: 'Crew' }]) {
+        assert.ok((await ack('create-tag', data)).error);
+    }
+    const { tag: crew } = await ack('create-tag', { name: 'Crew', color: '#9966cc' });
+    assert.ok(disk().some(tag => tag.id === crew.id));
+    const updated = await ack('create-tag', { ...crew, name: 'Running Crew', color: '#123456' });
+    assert.equal(updated.tag.id, crew.id);
+    alice.note('Synthetic crew entrance', { tags: [crew.id] });
+    await until(() => alice.noteTexts().length === 1, 'crew note');
+    assert.ok((await ack('delete-tag', crew.id)).error);
+    // Rename a default too: restore must not relabel a new show's default notes.
+    await ack('create-tag', { id: 'sound', name: 'Band', color: '#ff00ff' });
+    alice.note('Synthetic band entrance', { tags: ['sound'] });
+    await until(() => alice.noteTexts().length === 2, 'band note');
+    const saved = await ack('save-show', { name: 'Synthetic show', reset: true });
+    assert.ok(saved.show);
+    const show = JSON.parse(fs.readFileSync(path.join(app.savedShowsDir, saved.show.id + '.json')));
+    assert.ok(show.tags.some(tag => tag.name === 'Running Crew'));
+    assert.ok(show.tags.some(tag => tag.name === 'Band'));
+    await until(() => JSON.stringify(tags) === JSON.stringify(defaults), 'default tags broadcast');
+    assert.deepEqual(disk(), defaults);
+    const [reset] = await config.timeout(5000).emitWithAck('resets-list');
+    const kept = JSON.parse(fs.readFileSync(path.join(app.resetsDir, reset.id + '.json')));
+    assert.ok(kept.tags.some(tag => tag.id === crew.id));
+    assert.deepEqual(await ack('restore-reset', { id: reset.id }), { restored: 2 });
+    await until(() => alice.noteTexts().length === 2 && tags.some(tag => tag.name === 'Band'), 'restored tags');
+    const band = tags.find(tag => tag.name === 'Band');
+    assert.notEqual(band.id, 'sound');
+    assert.equal(alice.page.notes.find(note => note.text.includes('band')).tags[0], band.id);
+    assert.deepEqual(await ack('restore-reset', { id: reset.id }), { restored: 0 });
+    // A failed tag write refuses the entire reset and a failed edit leaves live tags alone.
+    const file = path.join(dir, 'tags.json');
+    fs.renameSync(file, file + '.old');
+    fs.mkdirSync(file);
+    assert.ok((await config.timeout(5000).emitWithAck('reset-all')).error);
+    assert.ok((await ack('create-tag', { name: 'Failed tag' })).error);
+    assert.equal(alice.noteTexts().length, 2);
+    assert.ok(tags.some(tag => tag.name === 'Band'));
+    fs.rmdirSync(file);
+    fs.renameSync(file + '.old', file);
+    assert.deepEqual(await config.timeout(5000).emitWithAck('reset-all'), {});
+    await until(() => tags.length === 6 && alice.noteTexts().length === 0, 'reset defaults');
+    assert.deepEqual(disk(), defaults);
+    const spare = await ack('create-tag', { name: 'Unused' });
+    assert.deepEqual(await ack('delete-tag', spare.tag.id), {});
+    assert.ok(!disk().some(tag => tag.id === spare.tag.id));
+    await app.stop();
+    await app.start();
+    assert.deepEqual(disk(), defaults);
+});

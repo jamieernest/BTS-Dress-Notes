@@ -150,3 +150,12 @@
     .debug-grid { grid-template-columns: 1fr; gap: 2px; }
     .debug-grid dd { margin-bottom: 6px; }
 }
+
+.tag-add { margin-top: 10px; }
+.tag-row input[type="color"] { width: 36px; height: 34px; padding: 2px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); cursor: pointer; }
+.tag-row .input { min-width: 0; }
+@media (max-width: 640px) {
+    .tag-row .input { flex-basis: calc(100% - 50px); width: auto; }
+}
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+#tags { scroll-margin-top: 64px; }

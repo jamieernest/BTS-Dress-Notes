@@ -42,6 +42,56 @@ document.addEventListener('DOMContentLoaded', function() {
     // `page` tells the server which page this is (see pageOf() in server.js).
     const socket = io({ auth: { page: 'config' } });
 
+    const tagRows = byId('tagRows');
+    const tagResult = byId('tagResult');
+    function tagAction(event, data, button, done) {
+        button.disabled = true;
+        socket.timeout(10000).emit(event, data, (err, reply) => {
+            button.disabled = false;
+            tagResult.textContent = err || !reply ? 'Could not change tags. Try again.' : reply.error || 'Tags updated.';
+            tagResult.hidden = false;
+            if (!err && reply && !reply.error && done) done();
+        });
+    }
+    socket.on('tags-update', tags => {
+        tagRows.replaceChildren(...tags.map(tag => {
+            const form = document.createElement('form');
+            form.className = 'row tag-row';
+            const name = document.createElement('input');
+            name.className = 'input';
+            name.value = tag.name;
+            name.maxLength = 60;
+            name.required = true;
+            name.setAttribute('aria-label', 'Tag name: ' + tag.name);
+            const colour = document.createElement('input');
+            colour.type = 'color';
+            const hex = tag.color.slice(1);
+            colour.value = hex.length === 3 ? '#' + [...hex].map(c => c + c).join('') : tag.color;
+            colour.setAttribute('aria-label', 'Tag colour: ' + tag.name);
+            const save = document.createElement('button');
+            save.type = 'submit';
+            save.className = 'btn outline';
+            save.textContent = 'Save';
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'btn danger-outline';
+            remove.textContent = 'Delete';
+            remove.setAttribute('aria-label', 'Delete tag: ' + tag.name);
+            form.addEventListener('submit', e => {
+                e.preventDefault();
+                tagAction('create-tag', { id: tag.id, name: name.value, color: colour.value }, save);
+            });
+            remove.addEventListener('click', () => tagAction('delete-tag', tag.id, remove));
+            form.append(name, colour, save, remove);
+            return form;
+        }));
+    });
+    byId('addTagForm').addEventListener('submit', e => {
+        e.preventDefault();
+        tagAction('create-tag', { name: byId('newTagName').value, color: byId('newTagColour').value },
+            e.submitter, () => { byId('newTagName').value = ''; byId('newTagName').focus(); });
+    });
+
     socket.on('connect', () => {
         setStatus(connectionStatus, 'Connected', 'ok');
     });

@@ -76,3 +76,17 @@ JSON downloads are named `BTS Dress Notes YYYY-MM-DD.json` (the download date in
 Under **Video** in Settings, choose **Current notes** or a saved show, then **Add video**. Everyone who opens those notes can watch the shared video; live notes and saved shows use that shared video. Notes opened from a JSON file in Past notes can instead use **Choose video from this device** in playback; those videos stay on the device and are not uploaded. A recording in several parts can be uploaded together or one at a time: the parts play as one timeline in start-time order, with blank time where the recording stopped. Start times come from Vor's dated file names (`Show.2026-10-07 19-30-00.mp4`) and can be adjusted under **Adjust timing**; parts without one play back to back. Playback's **Add video in Settings** link selects the relevant show automatically.
 
 Uploads are kept in `recordings/` (`RECORDINGS_DIR`), up to 32 GiB a file (`RECORDING_MAX_BYTES`, in bytes). The live notes' recording goes with them when the show is saved on `/config.html`, and is removed by **Reset all notes and chat** (the saved show keeps its copy). Anyone logged in can upload or remove a part. Leave room on the disk: a full-length HD recording is several gigabytes.
+
+
+Show tags can be added, renamed, recoloured and deleted in Settings. For example,
+add Crew when the current show needs it. Tags used by current notes cannot be
+deleted. Reset and Save and reset restore the six tags in `default-tags.json`;
+saved shows and reset snapshots keep the custom definitions with their notes.
+Restoring reset notes also restores the definitions they need, keeping conflicting
+definitions separate so existing notes retain their meaning.
+
+The tag settings in [PR #41](https://github.com/jamieernest/BTS-Dress-Notes/pull/41)
+were assessed for reuse for [#36](https://github.com/jamieernest/BTS-Dress-Notes/issues/36).
+Its `config-tags.js` payload helper couples settings to slash commands, and the PR
+includes a broader UI/playback overhaul. This implementation uses the existing
+tag events and settings layout, without importing that overhaul or adding commands.

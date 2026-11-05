@@ -1340,6 +1340,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Sent on every connect, usually the same tags the page already has.
         if (JSON.stringify(tags) === JSON.stringify(availableTags)) return;
         availableTags = tags;
+        composerTags.reconcile(currentUser.sub, availableTags);
         saveTagsToStorage();
         if (selectedTags.length) updateTagsDisplay();
         else applyRememberedTags();
