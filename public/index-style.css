@@ -56,6 +56,7 @@
 .avatars:hover, .avatars[aria-expanded="true"] { background: var(--hover); color: var(--text); }
 .avatar-stack { display: inline-flex; }
 .avatar {
+    flex-shrink: 0;
     width: 24px;
     height: 24px;
     border-radius: 50%;
