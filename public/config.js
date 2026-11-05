@@ -63,14 +63,19 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     function refreshTagEditor(editor) {
-        const { tag, name, colour, save, remove, help } = editor;
+        const { tag, name, colour, save, remove, help, deleteReason } = editor;
         const used = [...tagNotes.values()].some(ids => ids.includes(tag.id));
         const dirty = name.value !== tag.name || colour.value !== hexColour(tag.color);
         save.disabled = editor.saving || editor.deleted || !dirty || !name.value.trim();
-        remove.disabled = editor.deleting || (!editor.deleted && (used || tagCount < 2));
+        editor.deleteBlocked = !editor.deleted && (used || tagCount < 2);
+        remove.disabled = editor.deleting;
+        remove.setAttribute('aria-disabled', String(editor.deleting || editor.deleteBlocked));
         remove.textContent = editor.deleted ? 'Dismiss' : 'Delete';
-        remove.title = editor.deleted ? 'Dismiss these unsaved changes' : used ? 'Change the notes’ tags before deleting this tag' : tagCount < 2 ? 'Keep at least one tag' : '';
-        help.textContent = editor.deleted ? 'Removed in another window. Copy any unsaved changes before dismissing.' : used ? 'Used by notes. Change their tags before deleting.' : tagCount < 2 ? 'Keep at least one tag.' : '';
+        remove.title = editor.deleted ? 'Dismiss these unsaved changes' : '';
+        deleteReason.textContent = editor.deleteBlocked ? used ? 'Used by notes. Change their tags before deleting.' : 'Keep at least one tag.' : '';
+        deleteReason.hidden = !editor.deleteBlocked;
+        remove.setAttribute('aria-describedby', editor.deleted ? help.id : deleteReason.id);
+        help.textContent = editor.deleted ? 'Removed in another window. Copy any unsaved changes before dismissing.' : '';
         help.hidden = !help.textContent;
     }
     function refreshTagUsage() { tagEditors.forEach(refreshTagEditor); }
@@ -87,8 +92,24 @@ document.addEventListener('DOMContentLoaded', function() {
         const save = document.createElement('button'); save.type = 'submit'; save.className = 'btn outline'; save.textContent = 'Save';
         const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn danger-outline';
         const help = document.createElement('span'); help.className = 'tag-usage'; help.id = 'tag-usage-' + (++tagHelpNumber);
-        remove.setAttribute('aria-describedby', help.id);
-        const editor = { form, tag, name, colour, save, remove, help, saving: false, deleting: false, deleted: false };
+        const deleteControl = document.createElement('span'); deleteControl.className = 'tag-delete-control';
+        const deleteReason = document.createElement('span'); deleteReason.className = 'tag-delete-reason';
+        deleteReason.id = 'tag-delete-reason-' + tagHelpNumber; deleteReason.setAttribute('role', 'tooltip');
+        deleteControl.append(remove, deleteReason);
+        const editor = { form, tag, name, colour, save, remove, help, deleteControl, deleteReason, saving: false, deleting: false, deleted: false, deleteBlocked: false };
+        const showDeleteReason = () => {
+            deleteControl.classList.remove('tooltip-dismissed', 'tooltip-above');
+            deleteReason.style.transform = '';
+            if (editor.deleteBlocked && deleteReason.getBoundingClientRect().bottom > window.innerHeight - 8) deleteControl.classList.add('tooltip-above');
+            const bounds = deleteReason.getBoundingClientRect();
+            const shift = bounds.left < 8 ? 8 - bounds.left : Math.min(0, document.documentElement.clientWidth - 8 - bounds.right);
+            if (shift) deleteReason.style.transform = `translateX(${shift}px)`;
+        };
+        deleteControl.addEventListener('pointerenter', showDeleteReason);
+        deleteControl.addEventListener('focusin', showDeleteReason);
+        deleteControl.addEventListener('keydown', event => {
+            if (event.key === 'Escape') deleteControl.classList.add('tooltip-dismissed');
+        });
         name.value = tag.name; colour.value = hexColour(tag.color);
         form.addEventListener('input', () => refreshTagEditor(editor));
         form.addEventListener('submit', event => {
@@ -110,14 +131,23 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         remove.addEventListener('click', () => {
             if (remove.disabled) return;
+            if (editor.deleteBlocked) { showDeleteReason(); remove.focus(); return; }
             if (editor.deleted) { form.remove(); tagEditors.delete(editor.tag.id); return; }
             editor.deleting = true; refreshTagEditor(editor);
             tagAction('delete-tag', editor.tag.id, remove, undefined,
                 () => { editor.deleting = false; refreshTagEditor(editor); });
         });
-        form.append(name, colour, save, remove, help);
+        form.append(name, colour, save, deleteControl, help);
         return editor;
     }
+    document.addEventListener('pointerdown', event => {
+        for (const editor of tagEditors.values()) {
+            if (!editor.deleteControl.contains(event.target)) editor.deleteControl.classList.add('tooltip-dismissed');
+        }
+    });
+    window.addEventListener('resize', () => {
+        for (const editor of tagEditors.values()) editor.deleteControl.classList.add('tooltip-dismissed');
+    });
     socket.on('tags-update', tags => {
         tagCount = tags.length;
         const present = new Set();

@@ -7,6 +7,17 @@
     const counter = n => Number.isSafeInteger(n) && n > 0;
     const label = note => valid(note.noteNumber) ? `#${note.noteNumber}` : '';
 
+    // Bare # browses every assigned reference; digits narrow the menu by prefix.
+    // Keep ordinary words as text searches, including an unqualified "note".
+    function suggestions(notes, query) {
+        const text = String(query).trim();
+        const match = /^(?:#|note\s*#)\s*(\d*)$|^(?:note\s*)?(\d+)$/i.exec(text);
+        if (!match) return [];
+        const prefix = match[1] ?? match[2];
+        return notes.filter(note => valid(note.noteNumber) && String(note.noteNumber).startsWith(prefix))
+            .sort((a, b) => a.noteNumber - b.noteNumber);
+    }
+
     // Mutates notes, preserving the first occurrence of every valid reference.
     // Legacy/malformed references are assigned deterministically oldest first.
     // The counter, including gaps from deleted notes, is persisted separately.
@@ -37,5 +48,5 @@
         }
         return migrate(added, Math.max(nextNoteNumber, counter(incomingNext) ? incomingNext : 1));
     }
-    return { valid, counter, label, migrate, merge };
+    return { valid, counter, label, suggestions, migrate, merge };
 }));

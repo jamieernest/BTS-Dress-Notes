@@ -22,7 +22,6 @@ test('comment agreements reuse the quiet controls with a reply target, escaped p
     const live = NoteView.commentHTML(comment, { agreementActor: 'a' });
     assert.match(live, /data-action="agree-comment"/);
     assert.match(live, /Agree with this reply/);
-    assert.match(live, /class="comment-foot"/);
     assert.match(live, /&lt;Bob&gt;/);
     const past = NoteView.commentHTML(comment);
     assert.match(past, /See who agrees \(1\)/);

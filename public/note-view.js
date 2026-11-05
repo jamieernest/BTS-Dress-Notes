@@ -240,12 +240,13 @@
                 ${avatarHTML(comment.userId || comment.user, comment.user, 'sm', comment.emailPrefix)}
                 <div class="comment-main">
                     <div class="comment-head">
-                        <span class="comment-user">${esc(comment.user)}</span>
-                        <span class="muted" title="${esc(fullTime(comment.timestamp))}">${esc(relativeTime(comment.timestamp))}${edited}</span>
-                        ${tools}
+                        <span class="comment-heading">
+                            <span class="comment-user">${esc(comment.user)}</span>
+                            <span class="muted" title="${esc(fullTime(comment.timestamp))}">${esc(relativeTime(comment.timestamp))}${edited}</span>
+                        </span>
+                        ${agreements || tools ? `<span class="comment-actions">${agreements}${tools}</span>` : ''}
                     </div>
                     ${body !== undefined ? body : `<div class="comment-text">${Mentions.html(comment.text, comment.mentions)}</div>`}
-                    ${agreements ? `<div class="comment-foot">${agreements}</div>` : ''}
                 </div>
             </div>`;
     }
@@ -456,9 +457,7 @@
             const query = input.value.trim().toLowerCase();
             const personQuery = query.replace(/^@/, '').trim().replace(/\s+/g, ' ');
             const matches = query ? people.filter(p => p.names.some(name => name.toLowerCase().trim().replace(/\s+/g, ' ').includes(personQuery))).slice(0, 8) : [];
-            const numberQuery = /^(?:#|note\s*#?\s*)?(\d+)$/i.exec(query);
-            const references = numberQuery ? getNotes().filter(note => NoteNumbers.label(note) && String(note.noteNumber).startsWith(numberQuery[1]))
-                .sort((a, b) => a.noteNumber - b.noteNumber).slice(0, 6) : [];
+            const references = NoteNumbers.suggestions(getNotes(), query);
             const ownId = getCurrentUserId?.();
             const showSelfFilter = query === '@' && !!ownId && !!mentionChip;
             if (!matches.length && !references.length && !showSelfFilter) return close();
