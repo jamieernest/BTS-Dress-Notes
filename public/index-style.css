@@ -68,7 +68,10 @@
     border: 2px solid var(--bg);
     margin-left: -4px;
     position: relative;
+    overflow: hidden;
 }
+.avatar-photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: 1; }
+.avatar-initials { position: relative; z-index: 0; }
 .avatar:first-child { margin-left: 0; }
 .avatar.more { background: var(--surface-2); color: var(--text-2); }
 .avatar.typing::after {

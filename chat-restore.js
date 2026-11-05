@@ -33,6 +33,7 @@ const chatMessageSchema = z.object({
     id: z.string().max(MAX_ID),
     user: z.string().max(MAX_NAME),
     userId: z.string().max(MAX_NAME),
+    emailPrefix: z.string().max(MAX_NAME).optional(),
     text: z.string().max(MAX_TEXT),
     timestamp: z.string().max(MAX_TIMESTAMP).refine((s) => !Number.isNaN(Date.parse(s)))
 });
@@ -47,11 +48,12 @@ function sanitizeChatLog(raw) {
 
 // Bounds a live chat message to the limits sanitizeChatLog enforces, so every
 // stored message can later be restored. Returns null if the text is not a string.
-function boundChatMessage({ user, userId, text }) {
+function boundChatMessage({ user, userId, emailPrefix, text }) {
     if (typeof text !== 'string') return null;
     return {
         user: String(user ?? '').slice(0, MAX_NAME),
         userId: String(userId ?? '').slice(0, MAX_NAME),
+        ...(emailPrefix ? { emailPrefix: String(emailPrefix).slice(0, MAX_NAME) } : {}),
         text: text.slice(0, MAX_TEXT)
     };
 }

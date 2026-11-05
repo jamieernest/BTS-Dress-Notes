@@ -24,6 +24,9 @@
             svg.appendChild(use);
             placeholder.replaceWith(svg);
         }
+        for (const image of element.querySelectorAll('img.avatar-photo')) {
+            image.addEventListener('error', () => image.remove(), { once: true });
+        }
     }
 
     // --- Words and times ---
@@ -64,8 +67,12 @@
         return `hsl(${h % 360}, 45%, 42%)`;
     }
 
-    function avatarHTML(key, name, extraClass) {
-        return `<span class="avatar${extraClass ? ` ${extraClass}` : ''}" style="background:${personColor(key)}" aria-hidden="true">${esc(initials(name))}</span>`;
+    function avatarHTML(key, name, emailPrefix, extraClass) {
+        const safePrefix = /^[a-z0-9._+-]+$/i.test(String(emailPrefix || '')) ? String(emailPrefix) : '';
+        const image = safePrefix
+            ? `<img class="avatar-photo" src="https://www.bts-crew.com/images/profiles/${encodeURIComponent(safePrefix)}.jpg" alt="" loading="lazy" referrerpolicy="no-referrer">`
+            : '';
+        return `<span class="avatar${extraClass ? ` ${extraClass}` : ''}" style="background:${personColor(key)}" aria-hidden="true">${image}<span class="avatar-initials">${esc(initials(name))}</span></span>`;
     }
 
     // --- Tags ---
@@ -111,17 +118,17 @@
     }
 
     // `parts` swaps in the page's own pieces; trusted HTML built from these templates.
-    //   attrs, className: on the <article>; author: { key, name } (defaults to the note's);
+    //   attrs, className: on the <article>; author: { key, name, emailPrefix } (defaults to the note's);
     //   side: end of the header (actions, badges); body: replaces the text;
     //   foot: under the text; thread: inside the replies box (shown only if not empty).
     function noteHTML(note, parts = {}) {
-        const author = parts.author || { key: note.userId || note.user, name: note.user };
+        const author = parts.author || { key: note.userId || note.user, name: note.user, emailPrefix: note.emailPrefix };
         const body = parts.body !== undefined ? parts.body : `<div class="note-text">${esc(note.text)}</div>`;
         const edited = note.lastEdited
             ? `<div class="note-edited">Edited by ${esc(note.lastEditedBy || 'unknown')} at ${esc(clockTime(note.lastEdited))}</div>` : '';
         return `
             <article class="note${parts.className ? ` ${parts.className}` : ''}"${parts.attrs ? ` ${parts.attrs}` : ''}>
-                ${avatarHTML(author.key, author.name)}
+                ${avatarHTML(author.key, author.name, author.emailPrefix)}
                 <div class="note-main">
                     ${noteHeadHTML(note, author.name, parts.side)}
                     ${body}${edited}
@@ -136,7 +143,7 @@
         const edited = comment.lastEdited ? ' · edited' : '';
         return `
             <div class="comment" data-comment-id="${esc(comment.id)}">
-                ${avatarHTML(comment.userId || comment.user, comment.user, 'sm')}
+                ${avatarHTML(comment.userId || comment.user, comment.user, comment.emailPrefix, 'sm')}
                 <div class="comment-main">
                     <div class="comment-head">
                         <span class="comment-user">${esc(comment.user)}</span>

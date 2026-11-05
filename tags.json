@@ -3,17 +3,20 @@
     {
       "id": "safety",
       "name": "Safety/Show Critical",
-      "color": "#E63946"
+      "color": "#E63946",
+      "command": "critical"
     },
     {
       "id": "lighting",
       "name": "Lighting",
-      "color": "#FFFFFF"
+      "color": "#FFFFFF",
+      "command": "lighting"
     },
     {
       "id": "sound",
       "name": "Sound",
-      "color": "#06D6A0"
+      "color": "#06D6A0",
+      "command": "sound"
     },
     {
       "id": "stage",
@@ -29,6 +32,11 @@
       "id": "set",
       "name": "Set",
       "color": "#FF6F91"
+    },
+    {
+      "id": "41bd731b-c728-4c04-a976-49addefaf84a",
+      "name": "I hate you",
+      "color": "#008000"
     }
   ]
 }

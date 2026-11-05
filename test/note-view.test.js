@@ -115,7 +115,10 @@ test('the same person gets the same face on every page', () => {
     assert.strictEqual(NoteView.initials('Ada  Lovelace'), 'AL');
     assert.strictEqual(NoteView.initials(''), '?');
     assert.strictEqual(NoteView.personColor('sub-1'), NoteView.personColor('sub-1'));
-    assert.ok(NoteView.avatarHTML('sub-1', 'Ada', 'sm').startsWith('<span class="avatar sm"'));
+    assert.ok(NoteView.avatarHTML('sub-1', 'Ada', null, 'sm').startsWith('<span class="avatar sm"'));
+    const profileAvatar = NoteView.avatarHTML('sub-1', 'Ewan', 'ejws20');
+    assert.ok(profileAvatar.includes('https://www.bts-crew.com/images/profiles/ejws20.jpg'));
+    assert.ok(profileAvatar.includes('class="avatar-initials">E</span>'));
 });
 
 test('avatar initials use letters, skipping punctuation, numbers and emoji', () => {
@@ -135,7 +138,8 @@ test('avatar initials use letters, skipping punctuation, numbers and emoji', () 
         [null, '?']
     ]) assert.strictEqual(NoteView.initials(name), expected, String(name));
 
-    assert.ok(NoteView.avatarHTML('sub-alice', 'Alice (Dev)').includes('>AD</span>'));
+    assert.ok(NoteView.avatarHTML('sub-alice', 'Alice (Dev)', null).includes('>AD</span>'));
+    assert.ok(!NoteView.avatarHTML('sub-alice', 'Alice (Dev)', 'bad prefix!').includes('bts-crew.com'));
 });
 
 test('search and filters match the same way on both notes pages', () => {

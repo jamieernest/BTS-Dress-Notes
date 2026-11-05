@@ -61,6 +61,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentUser = {
         name: 'Guest',
         sub: null,
+        emailPrefix: null,
         isTyping: false,
         frozenTimecode: null,
         frozenLxCue: null,
@@ -493,7 +494,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const key = u.id || u.name;
             const existing = people.get(key);
             if (existing) existing.isTyping = existing.isTyping || u.isTyping;
-            else people.set(key, { key, name: u.name, isTyping: !!u.isTyping, me: !!currentUser.sub && u.id === currentUser.sub });
+            else people.set(key, { key, name: u.name, emailPrefix: u.emailPrefix, isTyping: !!u.isTyping, me: !!currentUser.sub && u.id === currentUser.sub });
         }
         const list = [...people.values()].sort((a, b) => (b.me - a.me) || a.name.localeCompare(b.name));
         userCount.textContent = `${list.length} online`;
@@ -501,12 +502,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const MAX = 4;
         setHtml(avatarStack, list.slice(0, MAX).map(p =>
-            avatarHTML(p.key, p.name, p.isTyping ? 'typing' : '')
+            avatarHTML(p.key, p.name, p.emailPrefix, p.isTyping ? 'typing' : '')
         ).join('') + (list.length > MAX ? `<span class="avatar more">+${list.length - MAX}</span>` : ''));
 
         setHtml(usersList, list.map(p => `
             <li>
-                ${avatarHTML(p.key, p.name)}
+                ${avatarHTML(p.key, p.name, p.emailPrefix)}
                 <span>${esc(p.name)}</span>${p.me ? '<span class="you">you</span>' : ''}
                 ${p.isTyping ? '<span class="writing">writing…</span>' : ''}
             </li>`).join(''));
@@ -615,7 +616,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     ${mine ? '' : `<span class="chat-msg-user">${esc(msg.user)}</span>`}
                     <span class="chat-msg-time">${esc(clockTime(msg.timestamp))}</span>
                 </div>`;
-        const face = mine ? '' : (cont ? '<span class="avatar-gap"></span>' : avatarHTML(msg.userId || msg.user, msg.user, 'sm'));
+        const face = mine ? '' : (cont ? '<span class="avatar-gap"></span>' : avatarHTML(msg.userId || msg.user, msg.user, msg.emailPrefix, 'sm'));
         return `
             <div class="chat-msg${mine ? ' mine' : ''}${cont ? ' cont' : ''}">
                 ${face}
@@ -792,7 +793,7 @@ document.addEventListener('DOMContentLoaded', function() {
             ${comments.map(c => commentHTML(note, c)).join('')}
             ${replying ? `
             <div class="comment-input">
-                ${avatarHTML(currentUser.sub || currentUser.name, currentUser.name, 'sm')}
+                ${avatarHTML(currentUser.sub || currentUser.name, currentUser.name, currentUser.emailPrefix, 'sm')}
                 <div class="comment-box">
                     <textarea rows="1" data-field="comment" placeholder="Write a reply…" aria-label="Write a reply">${esc(draft)}</textarea>
                     <div class="comment-box-actions">
@@ -965,7 +966,7 @@ document.addEventListener('DOMContentLoaded', function() {
         setHtml(wrapper, NoteView.noteHTML(note, {
             className: 'pending',
             attrs: `data-client-id="${esc(note.clientId)}"`,
-            author: { key: currentUser.sub || currentUser.name, name: currentUser.name },
+            author: { key: currentUser.sub || currentUser.name, name: currentUser.name, emailPrefix: currentUser.emailPrefix },
             side: `<span class="pending-badge">${esc(pendingBadgeText())}</span>`,
             foot: tagChipsHTML(note)
         }).trim());
@@ -1252,6 +1253,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const changed = currentUser.sub !== data.sub;
         currentUser.name = data.name;
         currentUser.sub = data.sub;
+        currentUser.emailPrefix = data.emailPrefix || null;
         identityConfirmed = true;
         if (changed) applyRememberedTags();
         // Notes written before we knew who we are are ours; another person's
