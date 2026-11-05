@@ -152,6 +152,7 @@
 }
 
 .tag-add { margin-top: 10px; }
+.tag-add-heading { min-height: 0; padding-bottom: 0; border-bottom: 0; color: var(--text-2); font-weight: 500; }
 .tag-row input[type="color"] { width: 36px; height: 34px; padding: 2px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); cursor: pointer; }
 .tag-row .input { min-width: 0; }
 @media (max-width: 640px) {
