@@ -93,6 +93,7 @@ const storedCommentSchema = z.object({
     emailPrefix: optionalUsernameSchema,
     userId: optionalString(MAX_NAME_LENGTH),
     mentions: z.unknown().optional(),
+    agreements: z.unknown().transform(cleanAgreements).optional(),
     text: z.string().transform((s) => s.slice(0, MAX_COMMENT_LENGTH)),
     timestamp: timestampSchema.optional().catch(undefined),
     lastEdited: timestampSchema.optional().catch(undefined),

@@ -743,18 +743,19 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         let html = '';
         let group = null;
+        const sceneTimes = NoteView.sceneStartTimes(data.notes, data.showLog);
         list.forEach((p, i) => {
-            const scene = p.note.act || '';
+            const scene = p.note.act || 'Preshow';
             if (i === 0 || scene !== group) {
                 group = scene;
                 let count = 0;
-                for (let j = i; j < list.length && (list[j].note.act || '') === scene; j++) count++;
-                html += `<div class="group-head">${esc(scene || 'No scene')}<span class="group-count muted">${count}</span></div>`;
+                for (let j = i; j < list.length && (list[j].note.act || 'Preshow') === scene; j++) count++;
+                html += NoteView.groupHeadHTML(scene, sceneTimes.get(scene), NoteView.plural(count, 'note'));
             }
             const n = p.note;
             html += `<button type="button" class="side-note" data-id="${esc(n.id)}">
                 <span class="body">
-                    <span class="meta"><span class="author">${esc(NoteNumbers.label(n))} ${esc(n.user)}</span><span class="dots">${tagDots(n)}</span><span class="when mono">${esc(timed() ? videoTimeText(toVideo(p.at)) : clockText(p.at))}</span></span>
+                    <span class="meta">${NoteView.avatarHTML(n.userId || n.user, n.user, 'sm', n.emailPrefix)}<span class="author">${esc(n.user)}</span><span class="note-cue">Cue ${esc(n.lxCue || '–')}</span>${NoteNumbers.label(n) ? `<span class="note-reference mono">${esc(NoteNumbers.label(n))}</span>` : ''}<span class="dots">${tagDots(n)}</span></span>
                     <span class="text">${Mentions.html(n.text, n.mentions)}</span>
                 </span>
             </button>`;

@@ -58,3 +58,12 @@ test('reply and mention metadata coexist and both participate in restore agreeme
     assert.notEqual(messageKey(message), messageKey({ ...message, replyTo: 'different' }));
     assert.notEqual(messageKey(message), messageKey({ ...message, mentions: [mention('other')] }));
 });
+
+
+test('composing highlights only selected account ranges and escapes all text', () => {
+    const text = '@Bob <img src=x onerror="alert(1)">';
+    assert.equal(M.html(text, [mention()], true), '<span class="mention-compose">@Bob</span> &lt;img src=x onerror=&quot;alert(1)&quot;&gt;');
+    assert.equal(M.html('@Bob', [], true), '@Bob', 'typing a name does not silently select an account');
+    assert.equal(M.html('@Bob', [{ ...mention(), userId: '' }], true), '@Bob');
+    assert.equal(M.html('@Rob', [mention()], true), '@Rob', 'editing through a mention removes its identity highlight');
+});

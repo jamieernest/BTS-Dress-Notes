@@ -199,32 +199,72 @@ a.btn { text-decoration: none; }
     .empty { padding: 32px 20px; }
 }
 
-.note-reference { color: var(--text-2); font-size: 12px; font-weight: 400; margin-right: 5px; }
-/* Shared live/Past notes agreement controls and people disclosure. */
-.note-agreements { display: inline-flex; align-items: center; gap: 3px; margin-left: auto; position: relative; font-size: 12px; }
-.agreement-toggle, .agreement-mark, .agreement-people summary, .agreement-count { padding: 3px 7px; border-radius: 6px; }
-.agreement-toggle { color: inherit; background: transparent; border: 1px solid currentColor; cursor: pointer; font: inherit; }
-.agreement-toggle[aria-pressed="true"] { color: var(--accent, #5c83e6); background: color-mix(in srgb, currentColor 14%, transparent); font-weight: 700; }
-.agreement-people summary { cursor: pointer; list-style: none; }
-.agreement-people summary::-webkit-details-marker { display: none; }
-.agreement-people summary:hover { text-decoration: underline; }
+.note-reference { color: var(--text-2); font-size: 11px; font-weight: 400; white-space: nowrap; }
+/* Agreement controls use the same icon action treatment as note actions. */
+.note-agreements { display: inline-flex; align-items: center; gap: 0; margin-left: auto; grid-column: 2; position: relative; font-size: 12px; }
+.agreement-toggle, .agreement-mark { flex: none; border: 0; background: transparent; padding: 0; font: inherit; }
+.note-agreements .agreement-toggle[aria-pressed="true"] { color: var(--accent); }
+.agreement-people { flex: none; }
+.agreement-count { display: inline-flex; align-items: center; justify-content: flex-end; text-align: right; width: 26px; height: 26px; padding: 0; border-radius: 5px; color: var(--text-2); font-size: 12px; font-variant-numeric: tabular-nums; cursor: pointer; list-style: none; }
+.agreement-count::-webkit-details-marker { display: none; }
+.agreement-count:hover { background: var(--hover); color: var(--text); }
 .agreement-popover { position: fixed; inset: auto; margin: 0; z-index: 20; width: max-content; max-width: min(260px, 65vw); max-height: 240px; overflow: auto; padding: 10px; border: 1px solid var(--border, #888); border-radius: 8px; background: var(--surface, #24262b); color: var(--text, #eee); box-shadow: 0 6px 24px #0004; }
 .agreement-person { display: flex; align-items: center; gap: 8px; padding: 4px; overflow-wrap: anywhere; }
+.agreement-empty { padding: 4px; color: var(--text-2); font-size: 12px; }
 
 @media (max-width: 640px), (pointer: coarse) {
-    .agreement-toggle, .agreement-people summary { min-height: 44px; min-width: 44px; display: inline-flex; align-items: center; justify-content: center; }
+    .note-agreements .icon-btn, .agreement-count { width: 44px; height: 44px; }
 }
-.mention { color: var(--accent, #6657cd); background: #8070d51a; border-radius: 3px; padding: 0 2px; font-weight: 700; }
+.mention { color: #c3c9ff; background: #6c78e626; border-radius: 3px; padding: 0 2px; font-weight: 700; }
 .mention-picker { position: fixed; z-index: 1000; max-height: 260px; overflow-y: auto; min-width: 240px; max-width: calc(100vw - 16px); }
 .mention-picker button { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: transparent; color: inherit; text-align: left; padding: 8px 12px; cursor: pointer; }
 .mention-picker button[aria-selected="true"] { background: #8070d526; }
 .mention-picker .avatar { flex: none; margin: 0; border: 0; }
 .mention-picker small { display: block; color: var(--muted); max-width: 240px; overflow: hidden; text-overflow: ellipsis; font-size: 10px; }
-.mention-badge { border-radius: 10px; background: #8070d526; color: var(--accent, #6657cd); padding: 1px 5px; font-size: 11px; font-weight: 700; }
-.mention-badge[hidden], .mention-picker[hidden] { display: none; }
+.mention-picker[hidden] { display: none; }
 
 /* Photos cover initials without clipping the online typing indicator. Shared
    with Past notes and playback, whose avatars have the same positioning. */
 .avatar { position: relative; }
 .avatar-photo { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: inherit; object-fit: cover; z-index: 1; }
 .avatar-initials { position: relative; z-index: 0; }
+
+.reference-option > span:last-child { min-width: 0; }
+.reference-option strong { display: block; font-size: 13px; font-weight: 500; }
+.reference-option small { display: block; color: var(--text-2); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+.reference-symbol { display: inline-flex; justify-content: center; width: 22px; flex: none; color: var(--text-2); font-size: 18px; }
+.reference-option[aria-selected="true"] { background: var(--hover); }
+
+/* Highlight under the native textarea text, with no caret/selection offset. */
+.mention-editor { position: relative; min-width: 0; border-radius: var(--radius); }
+.mention-editor > textarea { position: relative; z-index: 1; display: block; }
+.mention-editor.has-mentions > textarea { background: transparent !important; }
+.mention-mirror { position: absolute; z-index: 0; overflow: hidden; pointer-events: none; color: transparent; }
+.mention-mirror > div { box-sizing: border-box; white-space: pre-wrap; overflow-wrap: break-word; color: transparent; border: 0; }
+.mention-compose { background: #6c78e638; box-shadow: inset 0 -1px #aeb8ff; border-radius: 3px; color: transparent; font: inherit; }
+@media (forced-colors: active) { .mention-compose { background: Highlight; opacity: 0.25; box-shadow: none; } }
+
+
+
+/* People reuse the same compact filter controls and checked-option menus. */
+.person-filter { display: inline-flex; align-items: center; gap: 0; min-width: 0; max-width: 100%; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg); }
+.person-filter:hover { border-color: var(--border-strong); }
+.person-filter:focus-within { border-color: var(--accent); }
+.person-filter .person-filter-value { max-width: min(260px, calc(100vw - 70px)); border: 0; border-radius: var(--radius) 0 0 var(--radius); }
+.person-filter-value .avatar { flex: none; margin: 0; border: 0; }
+.person-filter-value > span:last-child { min-width: 0; }
+.person-filter-clear { flex: none; color: var(--text-2); border-radius: 0 var(--radius) var(--radius) 0; }
+.person-choice-label { display: flex; gap: 8px; align-items: center; padding: 6px 8px 8px; color: var(--text-2); font-size: 12px; }
+.person-choice-label .avatar { flex: none; margin: 0; border: 0; }
+.author-suggestions .author-option { gap: 8px; min-height: 36px; }
+.search input::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.search .search-clear { width: 22px; height: 24px; flex: none; color: var(--text-2); }
+.search .search-clear .icon { width: 13px; height: 13px; }
+@media (max-width: 640px), (pointer: coarse) {
+    .search .search-clear, .person-filter-clear { width: 44px; height: 44px; min-width: 44px; }
+}
+
+
+.quick-filter-option { gap: 8px; }
+.quick-filter-check { margin-left: auto; color: var(--text); }
+.quick-filter-check.is-hidden { visibility: hidden; }

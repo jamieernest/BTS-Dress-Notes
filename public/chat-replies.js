@@ -12,5 +12,10 @@
         return target ? `${target.user}: ${target.text}`.replace(/\s+/g, ' ').slice(0, 180)
             : 'Original message unavailable';
     }
-    return { validId, context };
+    function quote(id, messages) {
+        const target = validId(id) ? messages.get(id) : null;
+        return target ? { author: target.user, text: String(target.text).replace(/\s+/g, ' ').slice(0, 240), available: true }
+            : { author: 'Original message', text: 'Message unavailable', available: false };
+    }
+    return { validId, context, quote };
 }));

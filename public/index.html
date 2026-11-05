@@ -6,6 +6,7 @@
     <title>BTS Dress Notes</title>
     <link rel="stylesheet" href="base.css">
     <link rel="stylesheet" href="index-style.css">
+    <script src="chat-resize.js"></script>
     <script src="index-boot.js"></script>
 </head>
 <body class="notes-page">
@@ -74,14 +75,15 @@
 
         <section class="notes loading-region is-loading" aria-label="Notes" aria-busy="true">
             <div class="toolbar">
-                <label class="search">
+                <div class="search">
                     <svg class="icon"><use href="icons.svg#i-search"/></svg>
-                    <input type="search" id="searchInput" placeholder="Search notes, people, cues" aria-label="Search notes">
-                </label>
+                    <input type="search" id="searchInput" placeholder="Search notes" aria-label="Search notes">
+                    <button type="button" class="search-clear icon-btn" data-clear-search aria-label="Clear search" hidden><svg class="icon" aria-hidden="true"><use href="icons.svg#i-close"/></svg></button>
+                </div>
                 <button type="button" id="actFilter" class="select" hidden aria-haspopup="listbox" aria-expanded="false" title="Filter by scene"></button>
                 <button type="button" id="tagFilter" class="select" hidden aria-haspopup="listbox" aria-expanded="false" title="Filter by tag"></button>
-                <button type="button" id="authorFilter" class="btn outline author-filter" hidden></button>
-                <button type="button" id="mentionedFilter" class="btn outline author-filter" hidden></button>
+                <span id="authorFilter" class="person-filter" hidden></span>
+                <span id="mentionedFilter" class="person-filter" hidden></span>
                 <button type="button" id="clearFilters" class="btn outline clear-filters" title="Show all notes again" hidden><svg class="icon" aria-hidden="true"><use href="icons.svg#i-close"/></svg>Clear filters</button>
                 <div class="toolbar-end">
                     <span class="chip" id="liveSampleBadge" hidden>Sample live session</span>
@@ -151,6 +153,7 @@
     </div>
 
     <aside id="chatDrawer" class="drawer loading-region is-loading" aria-busy="true" aria-label="Shitposts" hidden>
+        <div id="chatResize" class="chat-resize" role="separator" aria-orientation="vertical" aria-controls="chatDrawer" aria-label="Resize Shitposts" tabindex="0" title="Drag to resize Shitposts, or use the arrow keys"></div>
         <div class="drawer-head">
             <h2 id="chatTitle">Shitposts</h2>
             <span id="chatCount" class="muted"></span>
@@ -166,7 +169,7 @@
         <div class="chat-compose">
             <div id="chatReplyPreview" class="chat-reply-preview" hidden>
                 <span id="chatReplyContext" role="status"></span>
-                <button type="button" id="chatReplyCancel" class="btn ghost" aria-label="Cancel reply">Cancel reply</button>
+                <button type="button" id="chatReplyCancel" class="btn ghost icon-only" aria-label="Cancel reply" title="Cancel reply"><svg class="icon" aria-hidden="true"><use href="icons.svg#i-close"/></svg></button>
             </div>
             <textarea id="chatInput" rows="2" placeholder="Shitpost here…" aria-label="Shitpost to everyone"></textarea>
             <div class="chat-compose-foot">

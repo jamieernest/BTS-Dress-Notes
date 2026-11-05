@@ -25,9 +25,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const { setHtml, plural } = NoteView;
 
     let allNotes = [];
+    let showLog = [];
     let tagsById = new Map();
     const tagById = (id) => tagsById.get(id) || NoteView.unknownTag(id);
     const filters = { act: 'all', tag: 'all', search: '', author: '', mentionedUserId: '' };
+    let currentAccountId = null;
+    let currentAccountName = null;
     NoteView.watchNavigation();
     const filterDropdown = (button, popover, key) => NoteView.createDropdown({
         button, popover,
@@ -41,10 +44,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const actDropdown = filterDropdown(actFilter, $('actFilterPopover'), 'act');
     const tagDropdown = filterDropdown(tagFilter, $('tagFilterPopover'), 'tag');
     const authorSearch = NoteView.createAuthorSearch({ input: searchInput, chip: $('authorFilter'), mentionChip: $('mentionedFilter'),
+        getCurrentUserId: () => currentAccountId, getCurrentUserName: () => currentAccountName,
         popover: $('authorSuggestions'), filters, getNotes: () => allNotes,
         beforeOpen: () => { actDropdown.close(); tagDropdown.close(); },
         onChange: () => { render(); keepInUrl(); } });
     window.addEventListener('scroll', () => { actDropdown.reposition(); tagDropdown.reposition(); }, { passive: true });
+    fetch('/session', { cache: 'no-store' }).then(response => response.ok ? response.json() : null).then(user => {
+        currentAccountId = typeof user?.sub === 'string' && user.sub ? user.sub : null;
+        currentAccountName = typeof user?.name === 'string' ? user.name : null;
+        authorSearch.refresh();
+    }).catch(() => { /* The identity shortcut remains absent until a fresh page load. */ });
     let scenes = [];
     let usedTags = [];
     let openShowId = null; // the saved show on screen; null for a file or the chooser
@@ -184,6 +193,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- Loaded notes ---
     // `start` is the filters to open with (from the URL); one that matches nothing in this file is dropped.
     function load(data, start = {}) {
+        showLog = Array.isArray(data.showLog) ? data.showLog : [];
         allNotes = data.notes.filter(note => note && typeof note === 'object').map(note => ({
             ...note,
             userId: NoteView.storedAuthorId(note, data.authors),
@@ -246,7 +256,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!groups.length || groups[groups.length - 1].act !== note.act) groups.push({ act: note.act, notes: [] });
             groups[groups.length - 1].notes.push(note);
         }
-        setHtml(notesList, groups.map(group => NoteView.groupHeadHTML(group.act) + group.notes.map(noteHTML).join('')).join(''));
+        const sceneTimes = NoteView.sceneStartTimes(allNotes, showLog);
+        setHtml(notesList, groups.map(group => NoteView.groupHeadHTML(group.act, sceneTimes.get(group.act)) + group.notes.map(noteHTML).join('')).join(''));
         notesList.querySelectorAll('.group-count').forEach((count, i) => { count.textContent = plural(groups[i].notes.length, 'note'); });
 
         const filtered = NoteView.filtersActive(filters);

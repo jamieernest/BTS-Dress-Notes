@@ -1385,6 +1385,22 @@ io.on('connection', (socket) => {
         respond({ agreements: note.agreements });
     });
 
+    on('comment-agreement-toggle', (data, ack) => {
+        const respond = typeof ack === 'function' ? ack : () => {};
+        if (user.isOverlay) return respond({ error: 'Cannot agree from this page.' });
+        const noteId = input.cleanId(data?.noteId);
+        const commentId = input.cleanId(data?.commentId);
+        const note = globalState.notes.find(n => n.id === noteId);
+        const comment = note?.comments?.find(c => c.id === commentId);
+        if (!comment) return respond({ error: 'Reply not found.' });
+        if (!toggleAgreement(comment, { userId: user.id, name: user.name })) {
+            return respond({ error: 'This reply has reached its agreement limit.' });
+        }
+        io.emit('notes-update', globalState.notes);
+        scheduleBackup();
+        respond({ agreements: comment.agreements });
+    });
+
     // Handle note tag updates
     on('note-update-tags', (data) => {
         if (user.isOverlay || !data) return;

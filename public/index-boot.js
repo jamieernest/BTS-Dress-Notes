@@ -2,6 +2,8 @@
 // sideways after it appears: open unless this browser last closed it there
 // (saved by index.js). Values and content are restored by index.js.
 {
+    const chatWidth = ChatResize.clampWidth(ChatResize.readPreference(), window.innerWidth);
+    document.documentElement.style.setProperty('--chat-width', `${chatWidth}px`);
     let saved = null;
     try { saved = localStorage.getItem('shitposts-open'); } catch (e) { /* storage unavailable */ }
     document.documentElement.classList.toggle('chat-open', matchMedia('(min-width: 1100px)').matches && saved !== '0');

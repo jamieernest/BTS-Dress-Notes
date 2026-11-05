@@ -18,12 +18,12 @@
         return result.sort((a, b) => a.start - b.start);
     }
     function has(item, userId) { return !!userId && clean(item.text, item.mentions).some(m => m.userId === userId); }
-    function html(text, raw) {
+    function html(text, raw, composing = false) {
         text = String(text || '');
         let at = 0;
         let result = '';
         for (const m of clean(text, raw)) {
-            result += SafeHtml.escapeHtml(text.slice(at, m.start)) + `<strong class="mention">${SafeHtml.escapeHtml(text.slice(m.start, m.end))}</strong>`;
+            result += SafeHtml.escapeHtml(text.slice(at, m.start)) + (composing ? `<span class="mention-compose">${SafeHtml.escapeHtml(text.slice(m.start, m.end))}</span>` : `<strong class="mention">${SafeHtml.escapeHtml(text.slice(m.start, m.end))}</strong>`);
             at = m.end;
         }
         return result + SafeHtml.escapeHtml(text.slice(at));
@@ -66,34 +66,104 @@
             reset() { seen.clear(); pending.clear(); save(); }
         };
     }
+    // A background mirror highlights explicit mention ranges while the native
+    // textarea keeps text, selection, undo, IME and screen-reader behavior.
+    function composerHighlighter() {
+        const mirrors = new WeakMap();
+        function attach(el) {
+            if (mirrors.has(el)) return mirrors.get(el);
+            const focused = document.activeElement === el;
+            const selection = [el.selectionStart, el.selectionEnd, el.selectionDirection];
+            const wrapper = document.createElement('div'); wrapper.className = 'mention-editor';
+            const viewport = document.createElement('div'); viewport.className = 'mention-mirror';
+            viewport.setAttribute('aria-hidden', 'true');
+            const text = document.createElement('div'); viewport.append(text);
+            el.before(wrapper); wrapper.append(viewport, el);
+            const entry = { wrapper, viewport, text, mentions: [] };
+            mirrors.set(el, entry);
+            const sync = () => {
+                const style = getComputedStyle(el);
+                for (const property of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'lineHeight', 'letterSpacing', 'wordSpacing', 'textIndent', 'textAlign', 'textTransform', 'tabSize', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft']) text.style[property] = style[property];
+                viewport.style.left = `${el.offsetLeft + el.clientLeft}px`;
+                viewport.style.top = `${el.offsetTop + el.clientTop}px`;
+                viewport.style.width = `${el.clientWidth}px`;
+                viewport.style.height = `${el.clientHeight}px`;
+                text.style.width = `${el.clientWidth}px`;
+                text.style.transform = `translate(${-el.scrollLeft}px, ${-el.scrollTop}px)`;
+            };
+            entry.sync = sync;
+            // Only the background is mirrored. Text remains native and opaque.
+            entry.background = getComputedStyle(el).backgroundColor;
+            el.addEventListener('scroll', sync, { passive: true });
+            new ResizeObserver(sync).observe(el);
+            sync();
+            if (focused) { el.focus({ preventScroll: true }); el.setSelectionRange(...selection); }
+            return entry;
+        }
+        return {
+            render(el, mentions) {
+                const entry = attach(el);
+                const selected = clean(el.value, mentions);
+                entry.wrapper.classList.toggle('has-mentions', selected.length > 0);
+                entry.wrapper.style.backgroundColor = selected.length ? entry.background : 'transparent';
+                SafeHtml.setHtml(entry.text, selected.length ? html(el.value, selected, true) + '\n' : '');
+                entry.sync();
+            }
+        };
+    }
     function install({ getAccounts, seed, avatarHTML, place }) {
         const states = new Map();
+        const histories = new Map();
+        let choosing = false;
+        const highlighter = composerHighlighter();
         const menu = document.createElement('div');
         menu.className = 'popover mention-picker'; menu.hidden = true; menu.id = 'mention-picker'; menu.setAttribute('role', 'listbox'); menu.setAttribute('aria-label', 'Mention a person');
         document.body.append(menu);
         let active, match, choices = [], selected = 0;
         const eligible = el => el?.matches?.('#noteInput, #chatInput, textarea[data-field]');
+        document.querySelectorAll('#noteInput, #chatInput').forEach(el => highlighter.render(el, []));
         const key = el => el.id || [el.closest('[data-note-id]')?.dataset.noteId, el.dataset.field, el.dataset.commentId || ''].join('/');
-        function state(el) {
+        function remember(id, value) {
+            let history = histories.get(id);
+            if (!history) histories.set(id, history = new Map());
+            history.delete(value.text);
+            history.set(value.text, clean(value.text, value.mentions));
+            if (history.size > 20) history.delete(history.keys().next().value);
+        }
+        function state(el, inputType) {
             const id = key(el);
             let s = states.get(id);
             if (!s) { const initial = seed(el) || {}; s = { text: initial.text || el.value, mentions: initial.mentions || [] }; }
-            s = { text: el.value, mentions: rebase(s.text, el.value, s.mentions) };
-            states.set(id, s); return s;
+            const restored = /^history(?:Undo|Redo)$/.test(inputType || '') && histories.get(id)?.get(el.value);
+            s = { text: el.value, mentions: restored || rebase(s.text, el.value, s.mentions) };
+            states.set(id, s); remember(id, s); highlighter.render(el, s.mentions); return s;
         }
-        function close() { menu.hidden = true; active?.removeAttribute('aria-controls'); }
+        function close() { menu.hidden = true; active?.removeAttribute('aria-controls'); active?.removeAttribute('aria-activedescendant'); }
         function choose(i) {
             const person = choices[i]; if (!active || !person) return;
             const el = active, s = state(el), name = '@' + person.name;
             const text = el.value.slice(0, match.index) + name + ' ' + el.value.slice(el.selectionStart);
             const mentions = rebase(el.value, text, s.mentions);
             mentions.push({ ...person, start: match.index, end: match.index + name.length });
-            el.value = text; states.set(key(el), { text, mentions });
-            el.focus(); el.setSelectionRange(match.index + name.length + 1, match.index + name.length + 1);
+            // Native insertion retains textarea undo/redo. execCommand is the
+            // browser API that records a programmatic textarea edit; browsers
+            // without it still get the same selection and input semantics.
+            remember(key(el), s);
+            el.focus(); el.setSelectionRange(match.index, el.selectionStart);
+            choosing = true;
+            try {
+                try {
+                    if (typeof document.execCommand === 'function') document.execCommand('insertText', false, name + ' ');
+                } catch (_) { /* use the same safe fallback as an unsupported command */ }
+                if (el.value !== text) el.value = text;
+            } finally { choosing = false; }
+            const next = { text, mentions: clean(text, mentions) };
+            states.set(key(el), next); remember(key(el), next);
+            el.setSelectionRange(match.index + name.length + 1, match.index + name.length + 1);
             close(); el.dispatchEvent(new Event('input', { bubbles: true }));
         }
-        function draw(el) {
-            state(el); active = el;
+        function draw(el, inputType) {
+            state(el, inputType); active = el;
             const prefix = el.value.slice(0, el.selectionStart);
             match = /(?:^|\s)@([^@\n]{0,60})$/.exec(prefix);
             if (!match || el.selectionStart !== el.selectionEnd) return close();
@@ -102,16 +172,27 @@
             if (!choices.length) return close();
             selected = 0;
             el.setAttribute('aria-controls', menu.id);
+            el.setAttribute('aria-autocomplete', 'list');
             paint(); place(menu, el);
         }
         function paint() {
-            SafeHtml.setHtml(menu, choices.map((p, i) => `<button type="button" role="option" aria-selected="${i === selected}" data-choice="${i}">${avatarHTML(p.userId, p.name, 'sm', p.emailPrefix)}<span>${SafeHtml.escapeHtml(p.name)}${choices.filter(c => c.name === p.name).length > 1 ? `<small>Account ${SafeHtml.escapeHtml(p.userId)}</small>` : ''}</span></button>`).join(''));
+            active?.setAttribute('aria-activedescendant', `mention-choice-${selected}`);
+            SafeHtml.setHtml(menu, choices.map((p, i) => `<button type="button" role="option" id="mention-choice-${i}" aria-selected="${i === selected}" data-choice="${i}">${avatarHTML(p.userId, p.name, 'sm', p.emailPrefix)}<span>${SafeHtml.escapeHtml(p.name)}${choices.filter(c => c.name === p.name).length > 1 ? `<small>Account ${choices.filter(c => c.name === p.name).findIndex(c => c.userId === p.userId) + 1}</small>` : ''}</span></button>`).join(''));
         }
         menu.addEventListener('pointerdown', e => { const b = e.target.closest('[data-choice]'); if (b) { e.preventDefault(); choose(Number(b.dataset.choice)); } });
-        document.addEventListener('input', e => { if (eligible(e.target)) draw(e.target); }, true);
+        document.addEventListener('input', e => {
+            if (!eligible(e.target)) return;
+            // The completion dispatches one final input event once its identity
+            // ranges are in place; suppress the native intermediate event.
+            if (choosing) { e.stopImmediatePropagation(); return; }
+            if (e.isComposing) { state(e.target); close(); return; }
+            draw(e.target, e.inputType);
+        }, true);
+        document.addEventListener('compositionstart', e => { if (eligible(e.target)) close(); });
+        document.addEventListener('compositionend', e => { if (eligible(e.target)) draw(e.target); });
         document.addEventListener('focusin', e => { if (eligible(e.target)) state(e.target); else if (!menu.contains(e.target)) close(); });
         document.addEventListener('keydown', e => {
-            if (menu.hidden || e.target !== active || e.isComposing || e.ctrlKey || e.altKey || e.metaKey) return;
+            if (menu.hidden || e.target !== active || e.isComposing || e.keyCode === 229 || e.ctrlKey || e.altKey || e.metaKey) return;
             if (e.key === 'Tab' && e.shiftKey) { close(); return; }
             if (['ArrowDown', 'ArrowUp', 'Enter', 'Escape', 'Tab'].includes(e.key)) {
                 e.preventDefault(); e.stopImmediatePropagation();
@@ -124,8 +205,8 @@
         window.addEventListener('resize', close); document.addEventListener('scroll', close, true);
         return {
             get(el, trimmed = true) { if (!el) return []; const s = state(el); const trim = trimmed ? el.value.length - el.value.trimStart().length : 0; return clean(trimmed ? el.value.trim() : el.value, s.mentions.map(m => ({ ...m, start: m.start - trim, end: m.end - trim }))); },
-            set(el, mentions) { states.set(key(el), { text: el.value, mentions: clean(el.value, mentions) }); },
-            clear(el) { states.delete(key(el)); close(); }
+            set(el, mentions) { const selected = clean(el.value, mentions); const next = { text: el.value, mentions: selected }; states.set(key(el), next); histories.delete(key(el)); remember(key(el), next); highlighter.render(el, selected); },
+            clear(el) { states.delete(key(el)); histories.delete(key(el)); highlighter.render(el, []); close(); }
         };
     }
     return { clean, has, html, rebase, accounts, createUnread, install };

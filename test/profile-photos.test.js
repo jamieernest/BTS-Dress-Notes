@@ -20,7 +20,7 @@ test('only a Bath SSO account with a valid website username gets a photo', () =>
 test('photo URLs are fixed HTTPS JPEG paths; hostile fields cannot become markup or URLs', () => {
     assert.equal(Photos.imageUrl('abc12'), 'https://www.bts-crew.com/images/profiles/abc12.jpg');
     assert.ok(View.avatarHTML('sub', 'Alice', 'sm').startsWith('<span class="avatar sm"'));
-    for (const bad of ['../private', '..', '.', 'https://evil.test/a', 'javascript:alert(1)', 'a/b', 'a%2Fb', 'a?x', 'a#x', 'a" onerror="alert(1)', 'x'.repeat(101), {}, null]) {
+    for (const bad of ['../private', '..', '.', 'https://evil.test/a', 'javascript:alert(1)', 'a/b', 'a%2Fb', 'a?x', 'a#x', 'abc12\n', 'abc12\r', 'abc12\r\n', 'a" onerror="alert(1)', 'x'.repeat(101), {}, null]) {
         assert.equal(Photos.imageUrl(bad), '', String(bad));
         assert.doesNotMatch(View.avatarHTML('sub', '<img onerror=x>', 'sm', bad), /<img|onerror=/);
     }

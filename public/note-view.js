@@ -18,8 +18,32 @@
         for (const details of element.querySelectorAll('.agreement-people')) {
             const panel = details.querySelector('.agreement-popover');
             const summary = details.querySelector('summary');
-            // Top-layer popovers escape the notes list's clipped rounded corners.
+            const controls = details.closest('.note-agreements');
+            let hideTimer = null;
+            let pinned = false;
+            // The top layer escapes the notes list's clipped rounded corners.
             panel.setAttribute('popover', 'auto');
+            const show = () => { clearTimeout(hideTimer); details.open = true; };
+            const hideSoon = () => {
+                clearTimeout(hideTimer);
+                hideTimer = setTimeout(() => {
+                    const keyboardFocus = controls.contains(document.activeElement) && document.activeElement.matches(':focus-visible');
+                    if (!pinned && !controls.matches(':hover') && !keyboardFocus) details.open = false;
+                }, 140);
+            };
+            // Hover/focus shows who agrees; clicking the thumb only toggles
+            // agreement. The separate count also opens it on touch devices.
+            controls.addEventListener('pointerenter', event => {
+                if (event.pointerType === 'mouse' && window.matchMedia('(hover: hover)').matches) show();
+            });
+            controls.addEventListener('pointerleave', hideSoon);
+            controls.addEventListener('focusin', event => { if (event.target.matches(':focus-visible')) show(); });
+            controls.addEventListener('focusout', hideSoon);
+            summary.addEventListener('click', event => {
+                event.preventDefault();
+                pinned = !pinned;
+                if (pinned) show(); else details.open = false;
+            });
             details.addEventListener('toggle', () => {
                 if (!details.isConnected) return;
                 if (details.open) {
@@ -28,7 +52,7 @@
                 } else if (panel.matches(':popover-open')) panel.hidePopover();
             });
             panel.addEventListener('toggle', event => {
-                if (event.newState === 'closed') details.open = false;
+                if (event.newState === 'closed') { pinned = false; details.open = false; }
             });
         }
         for (const placeholder of element.querySelectorAll('i[data-icon]')) {
@@ -123,36 +147,63 @@
     }
 
     // --- Notes ---
-    // A native disclosure keeps the people list keyboard accessible on both pages.
-    function agreementsHTML(note, actor) {
+    // A native disclosure keeps the people list keyboard accessible, including
+    // a useful empty state. Fixed icon/count slots avoid 0 -> 1 layout changes.
+    function agreementsHTML(note, actor, { comment = false } = {}) {
         const seen = new Set();
         const people = (Array.isArray(note.agreements) ? note.agreements : []).slice(0, 500)
             .filter(p => p && typeof p.userId === 'string' && typeof p.name === 'string'
                 && p.userId && !seen.has(p.userId) && seen.add(p.userId));
         if (!actor && !people.length) return '';
         const active = people.some(p => p.userId === actor);
-        const toggle = actor ? `<button type="button" class="agreement-toggle" data-action="agree"
-            aria-pressed="${active}" aria-label="${active ? 'Remove your agreement' : 'Agree with this note'}">+1</button>` : '<span class="agreement-mark">+1</span>';
-        const list = people.length ? `<details class="agreement-people"><summary aria-label="See who agrees (${people.length})">${people.length}</summary>
-            <div class="agreement-popover" role="group" aria-label="People who agree">${people.map(p =>
-                `<div class="agreement-person">${avatarHTML(p.userId, p.name, 'sm', p.emailPrefix)}<span>${esc(p.name)}</span></div>`).join('')}</div>
-            </details>` : '<span class="agreement-count">0</span>';
+        const toggle = actor ? `<button type="button" class="icon-btn agreement-toggle" data-action="${comment ? 'agree-comment' : 'agree'}"
+            aria-pressed="${active}" aria-label="${active ? 'Remove your agreement' : `Agree with this ${comment ? 'reply' : 'note'}`}" title="${active ? 'Remove your agreement' : 'Agree'}"><i data-icon="thumbs-up"></i></button>` : '<span class="icon-btn agreement-mark" role="img" aria-label="Agreements"><i data-icon="thumbs-up"></i></span>';
+        const list = `<details class="agreement-people"><summary class="agreement-count" aria-label="See who agrees (${people.length})" title="${people.length ? 'See who agrees' : 'No agreements yet'}">${people.length}</summary>
+            <div class="agreement-popover" role="group" aria-label="People who agree">${people.length ? people.map(p =>
+                `<div class="agreement-person">${avatarHTML(p.userId, p.name, 'sm', p.emailPrefix)}<span>${esc(p.name)}</span></div>`).join('') : '<p class="agreement-empty">No agreements yet.</p>'}</div>
+            </details>`;
         return `<span class="note-agreements">${toggle}${list}</span>`;
+    }
+
+    // An agreement acknowledgement must not replace the note and restart the
+    // neighbouring action icons' hover transition. Keep the controls, focus and
+    // any open disclosure in place; replace only the sanitized people list.
+    function updateAgreements(element, note, actor, options) {
+        if (!element) return false;
+        const current = element.querySelector('.note-agreements');
+        if (!current) return false;
+        const holder = document.createElement('div');
+        setHtml(holder, agreementsHTML(note, actor, options));
+        const next = holder.querySelector('.note-agreements');
+        if (!next) return false;
+        const button = current.querySelector('.agreement-toggle');
+        const nextButton = next.querySelector('.agreement-toggle');
+        if (!!button !== !!nextButton) return false;
+        if (button) {
+            for (const attribute of ['aria-pressed', 'aria-label', 'title']) button.setAttribute(attribute, nextButton.getAttribute(attribute));
+        }
+        const count = current.querySelector('.agreement-count');
+        const nextCount = next.querySelector('.agreement-count');
+        count.textContent = nextCount.textContent;
+        for (const attribute of ['aria-label', 'title']) count.setAttribute(attribute, nextCount.getAttribute(attribute));
+        const panel = current.querySelector('.agreement-popover');
+        panel.replaceChildren(...next.querySelector('.agreement-popover').childNodes);
+        if (panel.matches(':popover-open')) placePopover(panel, count, 'right');
+        return true;
     }
 
     function playbackLinkHTML(href) {
         return `<a class="icon-btn note-playback" href="${esc(href)}" aria-label="View this note in video" title="View this note in video"><i data-icon="video"></i></a>`;
     }
-    // Who wrote it, then where in the show (cue and timecode), then `side`.
+    // The visible hierarchy is person, cue, then stable note reference. Exact
+    // timecode/timestamps remain on the note and in video playback metadata.
     function noteHeadHTML(note, name, side = '') {
-        const rate = note.frameRate === 'ms' ? 'real time' : `${note.frameRate || 30} fps`;
-        const title = note.timestamp ? `${rate} · sent ${fullTime(note.timestamp)}` : rate;
         return `
             <div class="note-head">
-                <span class="note-author">${NoteNumbers.label(note) ? `<span class="note-reference mono">${esc(NoteNumbers.label(note))}</span> ` : ''}${esc(name)}</span>
-                <span class="note-meta">
-                    <span class="note-cue">Cue ${esc(note.lxCue || '–')}</span>
-                    <span class="note-tc mono" title="${esc(title)}">${esc(TimecodeFormat.formatNoteTimecode(note))}</span>
+                <span class="note-heading">
+                    <span class="note-author">${esc(name)}</span>
+                    <span class="note-meta"><span class="note-cue">Cue ${esc(note.lxCue || '–')}</span></span>
+                    ${NoteNumbers.label(note) ? `<span class="note-reference mono" title="Note ${esc(NoteNumbers.label(note))}">${esc(NoteNumbers.label(note))}</span>` : ''}
                 </span>
                 ${side}
             </div>`;
@@ -167,7 +218,7 @@
         const body = parts.body !== undefined ? parts.body : `<div class="note-text">${Mentions.html(note.text, note.mentions)}</div>`;
         const edited = note.lastEdited
             ? `<div class="note-edited">Edited by ${esc(note.lastEditedBy || 'unknown')} at ${esc(clockTime(note.lastEdited))}</div>` : '';
-        const foot = (parts.foot || '') + agreementsHTML(note, parts.agreementActor);
+        const foot = (parts.foot ? `<div class="note-tags">${parts.foot}</div>` : '') + agreementsHTML(note, parts.agreementActor);
         return `
             <article class="note${parts.className ? ` ${parts.className}` : ''}"${parts.attrs ? ` ${parts.attrs}` : ''}>
                 ${avatarHTML(author.key, author.name, '', author.emailPrefix)}
@@ -181,8 +232,9 @@
     }
 
     // One reply. `tools` goes at the end of its header; `body` replaces the text (editing).
-    function commentHTML(comment, { tools = '', body } = {}) {
+    function commentHTML(comment, { tools = '', body, agreementActor } = {}) {
         const edited = comment.lastEdited ? ' · edited' : '';
+        const agreements = agreementsHTML(comment, agreementActor, { comment: true });
         return `
             <div class="comment" data-comment-id="${esc(comment.id)}">
                 ${avatarHTML(comment.userId || comment.user, comment.user, 'sm', comment.emailPrefix)}
@@ -193,13 +245,51 @@
                         ${tools}
                     </div>
                     ${body !== undefined ? body : `<div class="comment-text">${Mentions.html(comment.text, comment.mentions)}</div>`}
+                    ${agreements ? `<div class="comment-foot">${agreements}</div>` : ''}
                 </div>
             </div>`;
     }
 
+    // First recorded entry into each named scene, or the oldest retained note
+    // when an older file has no scene log. Always use all notes, not search hits.
+    function sceneStartTimes(notes = [], showLog = []) {
+        const noteStarts = new Map();
+        const sceneStarts = new Map();
+        const remember = (map, scene, value) => {
+            if (typeof value !== 'string' || !value.trim()) return;
+            const at = Date.parse(value);
+            if (!Number.isFinite(at)) return;
+            if (!map.has(scene) || at < map.get(scene)) map.set(scene, at);
+        };
+        for (const note of Array.isArray(notes) ? notes : []) {
+            if (note && typeof note === 'object') remember(noteStarts, String(note.act || 'Preshow'), note.timestamp);
+        }
+        for (const event of Array.isArray(showLog) ? showLog : []) {
+            if (event?.type === 'scene' && typeof event.value === 'string' && event.value.trim()) remember(sceneStarts, event.value, event.at);
+        }
+        return new Map([...noteStarts, ...sceneStarts].map(([scene, at]) => [scene, new Date(at).toISOString()]));
+    }
+
+    function groupTimeHTML(at) {
+        const clock = TimecodeFormat.formatClockMinute(at);
+        return clock ? `<time class="group-time mono" datetime="${esc(at)}" title="First recorded time for this scene">${esc(clock)}</time>` : '';
+    }
+
     // A scene heading in the list; fill .group-count with how many notes show.
-    function groupHeadHTML(act) {
-        return `<div class="group-head" data-act="${esc(act)}"><span>${esc(act)}</span><span class="muted group-count"></span></div>`;
+    function groupHeadHTML(act, at, count = '') {
+        return `<div class="group-head" data-act="${esc(act)}"><span>${esc(act)}</span><span class="muted group-count">${esc(count)}</span>${groupTimeHTML(at)}</div>`;
+    }
+
+    function updateGroupTime(head, at) {
+        const clock = TimecodeFormat.formatClockMinute(at);
+        let element = head.querySelector('.group-time');
+        if (!clock) { element?.remove(); return; }
+        if (!element) {
+            element = document.createElement('time'); element.className = 'group-time mono';
+            element.title = 'First recorded time for this scene'; head.append(element);
+        }
+        if (element.textContent !== clock) element.textContent = clock;
+        element.dateTime = at;
     }
 
     // --- Search and filters ---
@@ -211,9 +301,9 @@
         if (filters.act !== 'all' && (note.act || 'Preshow') !== filters.act) return false;
         if (filters.mentionedUserId && !Mentions.has(note, filters.mentionedUserId) && !(note.comments || []).some(c => Mentions.has(c, filters.mentionedUserId))) return false;
         if (filters.search) {
-            const reference = /^#?(\d+)$/.exec(filters.search.trim());
+            const reference = /^(?:#|note\s*#?\s*)?(\d+)$/i.exec(filters.search.trim());
             if (reference && NoteNumbers.label(note) === `#${Number(reference[1])}`) return true;
-            if (reference && filters.search.trim().startsWith('#')) return false;
+            if (reference && /^(#|note\s)/i.test(filters.search.trim())) return false;
             const haystack = [
                 NoteNumbers.label(note), note.text, note.user, note.lxCue, note.act,
                 ...note.tags.map(id => tagById(id).name),
@@ -241,7 +331,7 @@
         }
         const result = [...people.values()].sort((a, b) => a.name.localeCompare(b.name) || a.userId.localeCompare(b.userId));
         for (const person of result) person.label = result.some(other => other.userId !== person.userId && other.name === person.name)
-            ? `${person.name} · ${person.userId}` : person.name;
+            ? `${person.name} · Account ${result.filter(other => other.name === person.name).findIndex(other => other.userId === person.userId) + 1}` : person.name;
         return result;
     }
 
@@ -276,93 +366,152 @@
         measure();
     }
 
-    function createAuthorSearch({ input, chip, mentionChip, popover, filters, getNotes, onChange, beforeOpen }) {
+    function createAuthorSearch({ input, chip, mentionChip, getCurrentUserId, getCurrentUserName, popover, filters, getNotes, onChange, beforeOpen }) {
         input.setAttribute('role', 'combobox');
         input.setAttribute('aria-autocomplete', 'list');
         input.setAttribute('aria-controls', popover.id);
         input.setAttribute('aria-expanded', 'false');
-        let people = [];
-        let active = -1;
-        let chipKey = null;
+        input.removeAttribute('aria-description');
+        popover.setAttribute('role', 'listbox');
+        popover.setAttribute('aria-label', 'Search suggestions');
+        const clearSearch = input.closest('.search').querySelector('[data-clear-search]');
+        let people = [], active = -1, pendingPerson = null, suppressFocusSuggestions = false;
+        const controls = [];
         function close() {
-            popover.hidden = true;
-            active = -1;
-            input.setAttribute('aria-expanded', 'false');
-            input.removeAttribute('aria-activedescendant');
+            popover.hidden = true; active = -1; pendingPerson = null;
+            input.setAttribute('aria-expanded', 'false'); input.removeAttribute('aria-activedescendant');
         }
-        function reposition() { if (!popover.hidden) placePopover(popover, input.closest('.search'), 'left'); }
+        function focusSearch() {
+            suppressFocusSuggestions = true;
+            input.focus({ preventScroll: true });
+            suppressFocusSuggestions = false;
+        }
+        function closeModes() { controls.forEach(control => control.dropdown.close()); }
+        function reposition() {
+            if (!popover.hidden) placePopover(popover, input.closest('.search'), 'left');
+            controls.forEach(control => control.dropdown.reposition());
+        }
+        const matchOptions = [{ value: 'author', label: 'Written by' }, { value: 'mentionedUserId', label: 'Mentions' }];
+        for (const [container, field, prefix] of [[chip, 'author', 'By'], [mentionChip, 'mentionedUserId', 'Mentions']]) {
+            if (!container) continue;
+            const button = document.createElement('button'); button.type = 'button'; button.className = 'select active person-filter-value';
+            const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'icon-btn person-filter-clear';
+            setHtml(remove, '<i data-icon="close"></i>');
+            container.replaceChildren(button, remove);
+            const modePopover = document.createElement('div'); modePopover.className = 'popover filter-popover'; modePopover.hidden = true;
+            modePopover.id = container.id + '-mode'; modePopover.setAttribute('role', 'listbox'); modePopover.setAttribute('aria-label', 'Match this person'); document.body.append(modePopover);
+            const dropdown = createDropdown({ button, popover: modePopover,
+                beforeOpen: () => { close(); beforeOpen?.(); closeModes(); },
+                onChange: nextField => {
+                    const userId = filters[field];
+                    if (!userId) return;
+                    if (!matchOptions.some(option => option.value === nextField)) return;
+                    if (nextField !== field) { filters[field] = ''; filters[nextField] = userId; }
+                    refresh(); onChange(); controls.find(control => control.field === nextField)?.button.focus({ preventScroll: true });
+                }
+            });
+            remove.addEventListener('click', () => { filters[field] = ''; closeModes(); close(); refresh(); onChange(); focusSearch(); });
+            controls.push({ container, button, remove, dropdown, field, prefix });
+        }
         function refresh() {
-            const notes = getNotes();
-            people = authorOptions(notes.flatMap(note => [note,
+            if (clearSearch) clearSearch.hidden = !input.value;
+            const ownId = getCurrentUserId?.();
+            people = authorOptions(getNotes().flatMap(note => [note,
                 ...[...(note.mentions || []), ...(note.comments || []).flatMap(comment => comment.mentions || [])]
                     .map(person => ({ userId: person.userId, user: person.name }))]));
-            const key = JSON.stringify([filters.author, filters.mentionedUserId, people]);
-            if (key === chipKey) return;
-            chipKey = key;
-            for (const [button, field, prefix] of [[chip, 'author', 'By'], [mentionChip, 'mentionedUserId', 'Mentions']]) {
-                if (!button) continue;
+            for (const control of controls) {
+                const { container, button, remove, dropdown, field, prefix } = control;
+                container.hidden = !filters[field];
+                if (container.hidden) { control.key = null; continue; }
                 const person = people.find(p => p.userId === filters[field]);
-                const label = person?.label || filters[field];
-                button.hidden = !filters[field];
-                button.setAttribute('aria-label', `Remove ${prefix.toLowerCase()} filter: ${label || ''}`);
-                setHtml(button, filters[field] ? `${avatarHTML(filters[field], person?.name || label, 'sm', person?.emailPrefix)}<span>${esc(prefix)} ${esc(label)}</span><i data-icon="close"></i>` : '');
+                const self = field === 'mentionedUserId' && !!ownId && filters[field] === ownId;
+                const label = self ? 'you' : person?.label || 'Unknown person';
+                const avatarName = self ? getCurrentUserName?.() || person?.name || '' : person?.name || label;
+                const key = JSON.stringify([filters[field], label, avatarName, person?.emailPrefix]);
+                if (control.key === key) continue;
+                control.key = key;
+                dropdown.render(matchOptions, field);
+                setHtml(button, `${avatarHTML(filters[field], avatarName, 'sm', person?.emailPrefix)}<span>${esc(prefix)} ${esc(label)}</span>`);
+                button.setAttribute('aria-label', `Change person filter: ${prefix} ${label}`);
+                remove.setAttribute('aria-label', `Remove ${prefix.toLowerCase()} filter: ${label}`);
             }
+        }
+        function applyPerson(person, field) {
+            filters[field] = person.userId; filters.search = ''; input.value = '';
+            close(); refresh(); onChange(); focusSearch();
+        }
+        function choosePerson(person) {
+            if (!person) return;
+            if (!mentionChip || (!filters.author && !filters.mentionedUserId)) return applyPerson(person, 'author');
+            // Existing filters stay untouched until the person explicitly chooses
+            // which kind to replace/add. One row per person in ordinary search.
+            pendingPerson = person;
+            setHtml(popover, `<div class="person-choice-label">${avatarHTML(person.userId, person.name, 'sm', person.emailPrefix)}<span>${esc(person.label)}</span></div>` +
+                matchOptions.map((option, i) => `<button type="button" class="tag-option" role="option" id="${esc(popover.id)}-${i}" data-person-mode="${option.value}" aria-selected="${i === 0}">${esc(option.label)}</button>`).join(''));
+            active = 0; input.setAttribute('aria-activedescendant', popover.id + '-0');
+            placePopover(popover, input.closest('.search'), 'left');
         }
         function suggest() {
-            refresh();
+            pendingPerson = null; refresh(); closeModes();
             const query = input.value.trim().toLowerCase();
-            const matches = query ? people.filter(p => p.names.some(name => name.toLowerCase().includes(query))) : [];
-            if (!matches.length) return close();
+            const personQuery = query.replace(/^@/, '').trim().replace(/\s+/g, ' ');
+            const matches = query ? people.filter(p => p.names.some(name => name.toLowerCase().trim().replace(/\s+/g, ' ').includes(personQuery))).slice(0, 8) : [];
+            const numberQuery = /^(?:#|note\s*#?\s*)?(\d+)$/i.exec(query);
+            const references = numberQuery ? getNotes().filter(note => NoteNumbers.label(note) && String(note.noteNumber).startsWith(numberQuery[1]))
+                .sort((a, b) => a.noteNumber - b.noteNumber).slice(0, 6) : [];
+            const ownId = getCurrentUserId?.();
+            const showSelfFilter = query === '@' && !!ownId && !!mentionChip;
+            if (!matches.length && !references.length && !showSelfFilter) return close();
             beforeOpen?.();
-            const options = matches.flatMap(person => [{ person, field: 'author', prefix: 'By' },
-                ...(mentionChip ? [{ person, field: 'mentionedUserId', prefix: 'Mentions' }] : [])]);
-            setHtml(popover, options.map(({ person: p, field, prefix }, i) => `<button type="button" class="tag-option author-option" role="option" id="${esc(popover.id)}-${i}" data-person="${esc(p.userId)}" data-filter="${field}" aria-selected="false">${avatarHTML(p.userId, p.name, 'sm', p.emailPrefix)}<span>${esc(prefix)} ${esc(p.label)}</span></button>`).join(''));
-            active = -1;
-            placePopover(popover, input.closest('.search'), 'left');
-            input.setAttribute('aria-expanded', 'true');
+            const numbers = references.map((note, i) => `<button type="button" class="tag-option reference-option" role="option" id="${esc(popover.id)}-${i}" data-number="${note.noteNumber}" aria-selected="false"><span class="reference-symbol mono" aria-hidden="true">#</span><span><strong>Note ${esc(NoteNumbers.label(note))}</strong><small>${esc(note.user || 'Unknown')} · ${esc(String(note.text).replace(/\s+/g, ' ').slice(0, 90))}</small></span></button>`).join('');
+            const persons = matches.map((person, i) => `<button type="button" class="tag-option author-option" role="option" id="${esc(popover.id)}-${references.length + i}" data-person="${esc(person.userId)}" aria-selected="false">${avatarHTML(person.userId, person.name, 'sm', person.emailPrefix)}<span>${esc(person.label)}</span></button>`).join('');
+            const applied = showSelfFilter && filters.mentionedUserId === ownId;
+            const selfFilter = showSelfFilter ? `<button type="button" class="tag-option quick-filter-option" role="option" id="${esc(popover.id)}-self" data-self-mentions="true" aria-selected="${applied}"><span class="reference-symbol mono" aria-hidden="true">@</span><span>Notes mentioning you</span><i data-icon="check" data-class="quick-filter-check${applied ? '' : ' is-hidden'}"></i></button>` : '';
+            setHtml(popover, selfFilter + numbers + persons); active = -1;
+            placePopover(popover, input.closest('.search'), 'left'); input.setAttribute('aria-expanded', 'true');
         }
-        function select(userId, field = 'author') {
-            filters[field] = userId;
-            filters.search = '';
-            input.value = '';
-            close();
-            refresh();
-            onChange();
-            input.focus({ preventScroll: true });
+        function selectOption(option) {
+            if (!option) return;
+            if (option.dataset.selfMentions) {
+                const ownId = getCurrentUserId?.();
+                if (!ownId) return close();
+                filters.mentionedUserId = filters.mentionedUserId === ownId ? '' : ownId;
+                filters.search = ''; input.value = ''; close(); refresh(); onChange(); focusSearch(); return;
+            }
+            if (option.dataset.personMode && pendingPerson) return applyPerson(pendingPerson, option.dataset.personMode);
+            if (!option.dataset.number) return choosePerson(people.find(person => person.userId === option.dataset.person));
+            filters.search = `#${option.dataset.number}`; input.value = filters.search;
+            close(); refresh(); onChange(); focusSearch(); close();
         }
+        function clearInput() {
+            input.value = ''; filters.search = ''; close(); refresh(); onChange(); focusSearch();
+        }
+        clearSearch?.addEventListener('click', clearInput);
         input.addEventListener('input', suggest);
-        input.addEventListener('focus', suggest);
+        input.addEventListener('focus', () => { if (!suppressFocusSuggestions) suggest(); });
+        input.addEventListener('click', () => { if (!input.value.trim() && popover.hidden) suggest(); });
         input.addEventListener('keydown', event => {
-            if (popover.hidden || event.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;
+            if (event.isComposing || event.ctrlKey || event.altKey || event.metaKey) return;
+            if (event.key === 'Escape' && (input.value || !popover.hidden)) { event.preventDefault(); event.stopPropagation(); clearInput(); return; }
+            if (popover.hidden && event.key === 'ArrowDown' && !input.value.trim()) suggest();
+            if (popover.hidden) return;
             if (event.key === 'Tab' && event.shiftKey) { close(); return; }
-            if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(); return; }
             const options = [...popover.querySelectorAll('[role="option"]')];
             if ((event.key === 'Enter' && active >= 0) || (event.key === 'Tab' && options.length)) {
-                event.preventDefault();
-                const option = options[Math.max(0, active)];
-                select(option.dataset.person, option.dataset.filter);
+                event.preventDefault(); selectOption(options[Math.max(0, active)]);
             } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                event.preventDefault();
-                active = Math.max(0, Math.min(options.length - 1, active + (event.key === 'ArrowDown' ? 1 : -1)));
+                event.preventDefault(); active = Math.max(0, Math.min(options.length - 1, active + (event.key === 'ArrowDown' ? 1 : -1)));
                 options.forEach((option, i) => option.setAttribute('aria-selected', String(i === active)));
-                input.setAttribute('aria-activedescendant', options[active].id);
-                options[active].scrollIntoView({ block: 'nearest' });
+                input.setAttribute('aria-activedescendant', options[active].id); options[active].scrollIntoView({ block: 'nearest' });
             }
         });
-        input.addEventListener('blur', () => setTimeout(() => { if (!popover.contains(document.activeElement)) close(); }, 0));
-        popover.addEventListener('click', event => {
-            const option = event.target.closest('[data-person]');
-            if (option) select(option.dataset.person, option.dataset.filter);
-        });
-        popover.addEventListener('keydown', event => { if (event.key === 'Escape') { close(); input.focus(); } });
-        for (const [button, field] of [[chip, 'author'], [mentionChip, 'mentionedUserId']]) {
-            button?.addEventListener('click', () => { filters[field] = ''; refresh(); onChange(); input.focus(); });
-        }
+        input.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== input && !popover.contains(document.activeElement)) close(); }, 0));
+        popover.addEventListener('click', event => { event.stopPropagation(); selectOption(event.target.closest('[role="option"]')); });
+        popover.addEventListener('keydown', event => { if (event.key === 'Escape') { clearInput(); } });
         document.addEventListener('click', event => { if (!popover.contains(event.target) && event.target !== input) close(); });
         document.addEventListener('focusin', event => { if (event.target !== input && !popover.contains(event.target)) close(); });
-        window.addEventListener('scroll', reposition, { passive: true });
-        watchPopoverResize(close, reposition);
-        return { refresh, close, reposition };
+        window.addEventListener('scroll', reposition, { passive: true }); watchPopoverResize(close, reposition);
+        return { refresh, close() { close(); closeModes(); }, reposition };
     }
 
     // The scene and tag dropdowns' choices.
@@ -502,11 +651,11 @@
     }
 
     return {
-        esc, safeColor, setHtml, playbackLinkHTML, agreementsHTML,
+        esc, safeColor, setHtml, playbackLinkHTML, agreementsHTML, updateAgreements,
         clockTime, fullTime, relativeTime, plural,
         initials, personColor, avatarHTML,
         unknownTag, tagChipHTML, tagChipsHTML, dotHTML,
-        noteHeadHTML, noteHTML, commentHTML, groupHeadHTML,
+        noteHeadHTML, noteHTML, commentHTML, groupHeadHTML, sceneStartTimes, updateGroupTime,
         noteMatches, filtersActive, sceneOptions, tagOptions,
         authorOptions, storedAuthorId, readFilters, writeFilters, watchNavigation, createAuthorSearch,
         placePopover, fitPopoverInViewport, watchPopoverResize, createDropdown

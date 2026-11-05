@@ -101,7 +101,7 @@ test('a note, its replies and tags are drawn with every value escaped', () => {
     const html = NoteView.noteHTML(note, { foot: NoteView.tagChipsHTML(note.tags, tagById) });
     assert.ok(!html.includes('<img') && !html.includes('<script') && !html.includes('<b>'));
     assert.ok(html.includes('&lt;img src=x&gt;'));
-    assert.ok(html.includes('00:01:02:03'));
+    assert.ok(!html.includes('note-tc') && !html.includes('00:01:02:03'), 'precise timing remains in the data, not the note header');
     assert.ok(html.includes('--tag: #E63946'));
     assert.ok(!html.includes('evil'));
     assert.ok(html.includes('>gone</span>'), 'a deleted tag still shows, by id');
@@ -173,9 +173,9 @@ test('offline authors deduplicate by identity, keep name aliases and distinguish
         { userId: 'two', user: 'Alex' }, { user: 'Alex' }, { userId: '', user: 'Alex' }
     ]);
     assert.equal(authors.length, 2);
-    assert.equal(authors[0].label, 'Alex · one');
+    assert.equal(authors[0].label, 'Alex · Account 1');
     assert.deepEqual(authors[0].names, ['Old Alex', 'Alex']);
-    assert.equal(authors[1].label, 'Alex · two');
+    assert.equal(authors[1].label, 'Alex · Account 2');
     assert.equal(NoteView.storedAuthorId({ userId: 'old-socket' }), undefined);
     assert.equal(NoteView.storedAuthorId({ userId: 'old-socket' }, [{ userId: 'one' }]), undefined);
     assert.equal(NoteView.storedAuthorId({ userId: 'one' }, [{ userId: 'one' }]), 'one');
@@ -202,4 +202,38 @@ test('author and mentioned-account filters distinguish senders from recipients a
     note.comments.push({ text: '@Alice reply', mentions: [{ userId: 'sub-alice', name: 'Alice', start: 0, end: 6 }] });
     assert.equal(NoteView.noteMatches(note, { ...any, mentionedUserId: 'sub-alice' }, () => ({})), true);
     assert.equal(NoteView.filtersActive({ ...any, mentionedUserId: 'sub-bob' }), true);
+});
+
+
+test('note headers show name, cue and reference in order without a per-note clock', () => {
+    const header = NoteView.noteHeadHTML({ noteNumber: 49, lxCue: '12', timestamp: '2026-11-05T12:34:56Z',
+        timecode: { hours: 1, minutes: 2, seconds: 3, frames: 4 } }, 'Alice', '<span class="row-actions">Actions</span>');
+    assert.ok(header.indexOf('>Alice</span>') < header.indexOf('Cue 12'));
+    assert.ok(header.indexOf('Cue 12') < header.indexOf('>#49</span>'));
+    assert.ok(!header.includes('note-tc') && !header.includes('01:02:03:04'));
+});
+
+test('scene clocks use the first logged entry, then the oldest valid retained note, independent of order', () => {
+    const notes = [
+        { act: 'Preshow', timestamp: '2026-11-05T20:49:00Z' },
+        { act: 'Preshow', timestamp: '2026-11-05T19:49:00Z' },
+        { act: 'Act One', timestamp: '2026-11-05T21:00:00Z' },
+        { act: 'Broken', timestamp: 'invalid' }
+    ];
+    const log = [
+        { type: 'scene', value: 'Preshow', at: '2026-11-05T20:30:00Z' },
+        { type: 'cue', value: 'Preshow', at: '2026-11-05T17:00:00Z' },
+        { type: 'scene', value: 'Preshow', at: '2026-11-05T19:30:00Z' },
+        { type: 'scene', value: 'Act One', at: 'invalid' }
+    ];
+    const times = NoteView.sceneStartTimes(notes, log);
+    assert.equal(times.get('Preshow'), '2026-11-05T19:30:00.000Z');
+    assert.equal(times.get('Act One'), '2026-11-05T21:00:00.000Z');
+    assert.ok(!times.has('Broken'));
+    assert.deepEqual([...NoteView.sceneStartTimes([...notes].reverse(), [...log].reverse())].sort(), [...times].sort());
+    const time = TimecodeFormat.formatClockMinute(times.get('Preshow'));
+    assert.match(time, /^\d{2}:\d{2}$/);
+    assert.ok(NoteView.groupHeadHTML('Preshow', times.get('Preshow')).includes(`>${time}</time>`));
+    assert.ok(!NoteView.groupHeadHTML('Broken', 'invalid').includes('<time'));
+    assert.equal(TimecodeFormat.formatClockMinute(null), '');
 });

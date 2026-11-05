@@ -375,7 +375,7 @@ video {
 .tag-filters:empty { display: none; }
 .side-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
 .side-list .group-head { position: sticky; top: 0; z-index: 1; padding: 6px 12px; }
-.side-list .group-count { margin-left: auto; }
+.side-list .group-count { margin-left: 0; }
 
 .side-note {
     display: block;
@@ -389,9 +389,10 @@ video {
 .side-note.past { opacity: 0.55; }
 .side-note.current { opacity: 1; background: var(--surface); }
 .side-note.selected { opacity: 1; background: var(--accent-soft); }
-.side-note .meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-3); }
+.side-note .meta { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; font-size: 12px; color: var(--text-3); }
 .side-note .author { color: var(--text-2); font-weight: 500; }
-.side-note .when { margin-left: auto; }
+.side-note .dots { margin-left: auto; }
+.side-note .avatar { margin: 0; border: 0; }
 .side-note .text {
     display: block;
     margin-top: 2px;

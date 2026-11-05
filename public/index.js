@@ -79,6 +79,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentGlobalLxCue = '1';
     let oscAvailable = true; // cue comes from the desk; without it the cue is typed in
     let allNotes = [];
+    let currentShowLog = [];
     let timeMode = 'realtime';
     let realTimeInterval = null;
     let availableTags = [];
@@ -105,6 +106,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const actDropdown = filterDropdown(actFilter, actFilterPopover, 'act', updateActFilter);
     const tagDropdown = filterDropdown(tagFilter, tagFilterPopover, 'tag', updateFilterTags);
     const authorSearch = NoteView.createAuthorSearch({ input: searchInput, chip: $('authorFilter'), mentionChip: $('mentionedFilter'),
+        getCurrentUserId: () => currentUser.sub, getCurrentUserName: () => currentUser.name,
         popover: $('authorSuggestions'), filters, getNotes: () => allNotes.filter(n => !deletedNotes.has(n.id)),
         beforeOpen: () => closePopovers(), onChange: filterNotes });
     const noteElements = new Map();
@@ -193,6 +195,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // The counts come from the notes, not the rows: a long list is still being
     // drawn for a moment after a rebuild (see rebuildFullNotesList). Headings
     // are the runs of one act in newest-first order, the same as drawn.
+    function refreshGroupTimes() {
+        const times = NoteView.sceneStartTimes(allNotes, currentShowLog);
+        for (const head of notesList.querySelectorAll('.group-head')) NoteView.updateGroupTime(head, times.get(head.dataset.act));
+    }
+
     function filterNotes() {
         authorSearch.refresh();
         const params = NoteView.writeFilters(new URLSearchParams(location.search), filters, searchInput.value);
@@ -224,6 +231,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        refreshGroupTimes();
         const total = allNotes.length - deletedNotes.size;
         notesSection.classList.toggle('has-notes', total > 0 || pendingNotes.size > 0);
         notesCount.textContent = filtersActive() ? `${shown} of ${plural(total, 'note')}` : '';
@@ -617,16 +625,17 @@ document.addEventListener('DOMContentLoaded', function() {
             return null;
         }
     });
-    const mentionBadge = document.createElement('span');
-    mentionBadge.className = 'mention-badge'; mentionBadge.hidden = true;
-    chatToggle.append(mentionBadge);
+    let unseenMentions = 0;
     function updateMentionBadge(log = []) {
-        const count = mentionUnread.receive(log, currentUser.sub, !chatDrawer.hidden && !document.hidden);
-        mentionBadge.hidden = count === 0;
-        mentionBadge.textContent = `@${count > 99 ? '99+' : count}`;
-        mentionBadge.setAttribute('aria-label', `${count} unseen mentions`);
+        unseenMentions = mentionUnread.receive(log, currentUser.sub, !chatDrawer.hidden && !document.hidden);
+        updateUnread();
     }
-    document.addEventListener('visibilitychange', () => { if (!document.hidden && !chatDrawer.hidden) { mentionUnread.clear(); updateMentionBadge(); } });
+    function clearChatNotifications() {
+        unreadChat = 0;
+        mentionUnread.clear();
+        updateMentionBadge();
+    }
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && !chatDrawer.hidden) clearChatNotifications(); });
 
     // --- Chat ---
     function isMyChat(msg) {
@@ -640,6 +649,11 @@ document.addEventListener('DOMContentLoaded', function() {
             && new Date(msg.timestamp) - new Date(prev.timestamp) < 5 * 60 * 1000;
     }
 
+    function chatQuoteHTML(id) {
+        const quote = ChatReplies.quote(id, chatMessageById);
+        return `<button type="button" class="chat-reply-context" data-chat-jump="${esc(id)}" aria-label="${quote.available ? 'Jump to original message' : 'Original message unavailable'}"><span class="chat-quote-author">${esc(quote.author)}</span><span class="chat-quote-text">${esc(quote.text)}</span></button>`;
+    }
+
     function renderChatMessage(msg, prev) {
         const mine = isMyChat(msg);
         const cont = continuesRun(prev, msg);
@@ -650,18 +664,24 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>`;
         const face = mine ? '' : (cont ? '<span class="avatar-gap"></span>' : avatarHTML(msg.userId || msg.user, msg.user, 'sm', msg.emailPrefix));
         return `
-            <div data-chat-id="${esc(msg.id)}" tabindex="-1" class="chat-msg${mine ? ' mine' : ''}${cont ? ' cont' : ''}">
+            <div data-chat-id="${esc(msg.id)}" class="chat-msg${mine ? ' mine' : ''}${cont ? ' cont' : ''}">
                 ${face}
                 <div class="chat-msg-main">${head}
-                    ${msg.replyTo ? `<button type="button" class="chat-reply-context" data-chat-jump="${esc(msg.replyTo)}" aria-label="Jump to original message">${esc(ChatReplies.context(msg.replyTo, chatMessageById))}</button>` : ''}
-                    <div class="bubble" title="${esc(fullTime(msg.timestamp))}">${Mentions.html(msg.text, msg.mentions)}</div>
-                    <button type="button" class="chat-reply-action" data-chat-reply="${esc(msg.id)}" aria-label="Reply to ${esc(msg.user)}">Reply</button>
+                    <div class="chat-bubble-row"><div class="bubble" title="${esc(fullTime(msg.timestamp))}">${msg.replyTo ? chatQuoteHTML(msg.replyTo) : ''}<div class="chat-msg-text">${Mentions.html(msg.text, msg.mentions)}</div></div><button type="button" class="chat-reply-action" data-chat-reply="${esc(msg.id)}" aria-label="Reply to ${esc(msg.user)}" title="Reply"><i data-icon="reply"></i></button></div>
                 </div>
             </div>`;
     }
 
     const chatMessageContent = $('chatMessageContent');
     const chatScroll = createChatScroll(chatMessages, chatMessageContent);
+    const chatResize = ChatResize.createChatResize({ separator: $('chatResize'), drawer: chatDrawer,
+        onChange: () => chatScroll.layoutChanged(),
+        onStart: () => {
+            closePopovers();
+            // Existing viewport handlers also dismiss mention/picker anchors.
+            // This event does not alter the viewport or resize preference.
+            window.dispatchEvent(new Event('resize'));
+        } });
 
     function updateChatMessages() {
         chatMessageById = new Map(chatMessagesList.map(m => [m.id, m]));
@@ -677,20 +697,30 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateUnread() {
-        chatUnread.hidden = unreadChat === 0;
-        chatUnread.textContent = unreadChat > 99 ? '99+' : String(unreadChat);
+        const mention = unseenMentions > 0;
+        const description = [
+            mention ? `${unseenMentions} unseen ${unseenMentions === 1 ? 'mention' : 'mentions'}` : '',
+            unreadChat ? `${unreadChat} unread ${unreadChat === 1 ? 'message' : 'messages'}` : ''
+        ].filter(Boolean).join(', ');
+        // A mention takes priority, including after a reload with no new-message
+        // count. One badge avoids presenting the same incoming message twice.
+        chatUnread.hidden = !mention && unreadChat === 0;
+        chatUnread.textContent = mention ? '@' : unreadChat > 99 ? '99+' : String(unreadChat);
+        chatUnread.classList.toggle('has-mention', mention);
+        chatUnread.setAttribute('aria-label', description);
+        chatUnread.title = description;
+        chatToggle.setAttribute('aria-label', description ? `Shitposts, ${description}` : 'Shitposts');
     }
 
     function setChatOpen(open) {
         chatDrawer.hidden = !open;
+        chatResize.refresh();
         document.documentElement.classList.toggle('chat-open', open);
         chatToggle.setAttribute('aria-expanded', String(open));
         updateChatLayout();
         if (open) {
             closePopovers();
-            mentionUnread.clear(); updateMentionBadge();
-            unreadChat = 0;
-            updateUnread();
+            if (!document.hidden) clearChatNotifications();
             chatScroll.follow();
         }
     }
@@ -791,7 +821,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <button type="button" class="btn primary" data-action="save-comment" data-comment-id="${esc(comment.id)}">Save</button>
                 </div>
             </div>` : undefined;
-        return NoteView.commentHTML(comment, { tools, body });
+        return NoteView.commentHTML(comment, { tools, body, agreementActor: currentUser.sub });
     }
 
     function noteHTML(note) {
@@ -1290,6 +1320,7 @@ document.addEventListener('DOMContentLoaded', function() {
         currentUser.sub = data.sub;
         currentUser.emailPrefix = data.emailPrefix || null;
         identityConfirmed = true;
+        authorSearch.refresh();
         applyRememberedTags();
         // Notes written before we knew who we are are ours; another person's
         // stay in their own saved copy (pending-notes.js) for their next login.
@@ -1385,6 +1416,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // snapshot or back from the back/forward cache: notes edited, tagged or
     // replied to meanwhile are redrawn one by one (keeping any open edit box
     // and its focus), and only a changed set of notes rebuilds the list.
+    window.socket.on('show-log-update', (log) => {
+        currentShowLog = Array.isArray(log) ? log : [];
+        refreshGroupTimes();
+    });
+
     window.socket.on('notes-update', (notes) => {
         notesLoading.finish();
         const incoming = notes.map(withLists);
@@ -1394,7 +1430,25 @@ document.addEventListener('DOMContentLoaded', function() {
         if (allNotes.length === incoming.length && allNotes.every((n, i) => n.id === incoming[i].id)) {
             incoming.forEach((note, i) => {
                 if (JSON.stringify(note) === JSON.stringify(allNotes[i])) return;
+                const withoutAgreements = ({ agreements, comments, ...content }) => ({
+                    ...content, comments: (comments || []).map(({ agreements, ...comment }) => comment)
+                });
+                const previousContent = withoutAgreements(allNotes[i]);
+                const nextContent = withoutAgreements(note);
                 allNotes[i] = note;
+                // Agreement changes do not alter note text, author or actions.
+                // Updating those controls in place preserves hover/focus and
+                // avoids flashing the neighbouring video/reply icons.
+                if (JSON.stringify(previousContent) === JSON.stringify(nextContent)) {
+                    const element = noteElements.get(note.id);
+                    if (NoteView.updateAgreements(element, note, currentUser.sub)) {
+                        for (const comment of note.comments || []) {
+                            const row = element.querySelector(`.comment[data-comment-id="${CSS.escape(comment.id)}"]`);
+                            if (row) NoteView.updateAgreements(row, comment, currentUser.sub, { comment: true });
+                        }
+                        return;
+                    }
+                }
                 updateNoteElement(note, { refilter: false });
             });
             filterNotes();
@@ -1492,7 +1546,7 @@ document.addEventListener('DOMContentLoaded', function() {
         updateMentionBadge([msg]);
         chatCopy.onMessageAdded(chatMessagesList);
         const mine = isMyChat(msg);
-        if (chatDrawer.hidden && !mine) {
+        if ((chatDrawer.hidden || document.hidden) && !mine) {
             unreadChat++;
             updateUnread();
         }
@@ -1532,6 +1586,7 @@ document.addEventListener('DOMContentLoaded', function() {
         chatCopy.onReset();
         chatReplyTo = null;
         updateChatReplyPreview();
+        unreadChat = 0;
         mentionUnread.reset(); updateMentionBadge();
         for (const { element, feedbackTimer } of pendingNotes.values()) {
             clearTimeout(feedbackTimer);
@@ -1779,8 +1834,9 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function updateChatReplyPreview() {
         $('chatReplyPreview').hidden = !chatReplyTo;
-        $('chatReplyContext').textContent = chatReplyTo
-            ? `Replying to ${ChatReplies.context(chatReplyTo, chatMessageById)}` : '';
+        if (!chatReplyTo) { $('chatReplyContext').textContent = ''; return; }
+        const quote = ChatReplies.quote(chatReplyTo, chatMessageById);
+        setHtml($('chatReplyContext'), `<span class="chat-quote-author">Replying to ${esc(quote.author)}</span><span class="chat-quote-text">${esc(quote.text)}</span>`);
     }
     function cancelChatReply() {
         chatReplyTo = null;
@@ -1801,7 +1857,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 .find(el => el.dataset.chatId === jump.dataset.chatJump);
             if (row) {
                 row.scrollIntoView({ block: 'center' });
-                row.focus({ preventScroll: true });
+                row.querySelector('[data-chat-reply]')?.focus({ preventScroll: true });
             } else {
                 jump.textContent = 'Original message unavailable';
             }
@@ -1925,11 +1981,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const note = noteOf(button);
         if (!note) return;
         const action = button.dataset.action;
-        const commentId = button.dataset.commentId;
+        const commentId = button.dataset.commentId || button.closest('.comment')?.dataset.commentId;
 
-        if (action === 'agree') {
-            if (!window.socket.connected) return showToast('Reconnect to agree with this note.');
-            window.socket.timeout(5000).emit('note-agreement-toggle', { noteId: note.id }, (error, result) => {
+        if (action === 'agree' || action === 'agree-comment') {
+            if (!window.socket.connected) return showToast(`Reconnect to agree with this ${action === 'agree-comment' ? 'reply' : 'note'}.`);
+            const event = action === 'agree-comment' ? 'comment-agreement-toggle' : 'note-agreement-toggle';
+            const target = action === 'agree-comment' ? { noteId: note.id, commentId } : { noteId: note.id };
+            window.socket.timeout(5000).emit(event, target, (error, result) => {
                 if (error) showToast('Agreement not confirmed. Check the count before trying again.');
                 else if (result?.error) showToast(result.error);
             });

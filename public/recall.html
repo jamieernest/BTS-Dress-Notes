@@ -77,14 +77,15 @@
 
         <section id="notesSection" class="notes" aria-label="Notes" hidden>
             <div class="toolbar">
-                <label class="search">
+                <div class="search">
                     <svg class="icon"><use href="icons.svg#i-search"/></svg>
-                    <input type="search" id="searchInput" placeholder="Search notes, people, cues" aria-label="Search notes">
-                </label>
+                    <input type="search" id="searchInput" placeholder="Search notes" aria-label="Search notes">
+                    <button type="button" class="search-clear icon-btn" data-clear-search aria-label="Clear search" hidden><svg class="icon" aria-hidden="true"><use href="icons.svg#i-close"/></svg></button>
+                </div>
                 <button type="button" id="actFilter" class="select" aria-haspopup="listbox" aria-expanded="false" title="Filter by scene"></button>
                 <button type="button" id="tagFilter" class="select" aria-haspopup="listbox" aria-expanded="false" title="Filter by tag"></button>
-                <button type="button" id="authorFilter" class="btn outline author-filter" hidden></button>
-                <button type="button" id="mentionedFilter" class="btn outline author-filter" hidden></button>
+                <span id="authorFilter" class="person-filter" hidden></span>
+                <span id="mentionedFilter" class="person-filter" hidden></span>
                 <button type="button" id="clearFilters" class="btn outline clear-filters" title="Show all notes again" hidden><svg class="icon" aria-hidden="true"><use href="icons.svg#i-close"/></svg>Clear filters</button>
                 <div class="toolbar-end">
                     <span id="notesCount" class="muted"></span>
