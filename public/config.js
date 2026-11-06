@@ -42,6 +42,145 @@ document.addEventListener('DOMContentLoaded', function() {
     // `page` tells the server which page this is (see pageOf() in server.js).
     const socket = io({ auth: { page: 'config' } });
 
+    const tagRows = byId('tagRows');
+    const tagResult = byId('tagResult');
+    const tagEditors = new Map();
+    let tagNotes = new Map();
+    let tagCount = 0;
+    let tagHelpNumber = 0;
+    const hexColour = value => {
+        const hex = String(value).slice(1);
+        return (hex.length === 3 ? '#' + [...hex].map(c => c + c).join('') : value).toLowerCase();
+    };
+    function tagAction(event, data, button, done, settled) {
+        button.disabled = true;
+        socket.timeout(10000).emit(event, data, (err, reply) => {
+            button.disabled = false;
+            tagResult.textContent = err || !reply ? 'Could not change tags. Try again.' : reply.error || 'Tags updated.';
+            tagResult.hidden = false;
+            if (!err && reply && !reply.error && done) done(reply);
+            settled?.();
+        });
+    }
+    function refreshTagEditor(editor) {
+        const { tag, name, colour, save, remove, help, deleteReason } = editor;
+        const used = [...tagNotes.values()].some(ids => ids.includes(tag.id));
+        const dirty = name.value !== tag.name || colour.value !== hexColour(tag.color);
+        save.disabled = editor.saving || editor.deleted || !dirty || !name.value.trim();
+        editor.deleteBlocked = !editor.deleted && (used || tagCount < 2);
+        remove.disabled = editor.deleting;
+        remove.setAttribute('aria-disabled', String(editor.deleting || editor.deleteBlocked));
+        remove.textContent = editor.deleted ? 'Dismiss' : 'Delete';
+        remove.title = editor.deleted ? 'Dismiss these unsaved changes' : '';
+        deleteReason.textContent = editor.deleteBlocked ? used ? 'Used by notes. Change their tags before deleting.' : 'Keep at least one tag.' : '';
+        deleteReason.hidden = !editor.deleteBlocked;
+        remove.setAttribute('aria-describedby', editor.deleted ? help.id : deleteReason.id);
+        help.textContent = editor.deleted ? 'Removed in another window. Copy any unsaved changes before dismissing.' : '';
+        help.hidden = !help.textContent;
+    }
+    function refreshTagUsage() { tagEditors.forEach(refreshTagEditor); }
+    socket.on('notes-update', notes => { tagNotes = new Map(notes.map(note => [note.id, note.tags || []])); refreshTagUsage(); });
+    socket.on('note-added', note => { tagNotes.set(note.id, note.tags || []); refreshTagUsage(); });
+    socket.on('note-delete', ({ noteId }) => { tagNotes.delete(noteId); refreshTagUsage(); });
+    socket.on('all-reset', () => { tagNotes.clear(); refreshTagUsage(); });
+    function createTagEditor(tag) {
+        const form = document.createElement('form');
+        form.className = 'row tag-row';
+        const name = document.createElement('input');
+        name.className = 'input'; name.maxLength = 60; name.required = true;
+        const colour = document.createElement('input'); colour.type = 'color';
+        const save = document.createElement('button'); save.type = 'submit'; save.className = 'btn outline'; save.textContent = 'Save';
+        const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn danger-outline';
+        const help = document.createElement('span'); help.className = 'tag-usage'; help.id = 'tag-usage-' + (++tagHelpNumber);
+        const deleteControl = document.createElement('span'); deleteControl.className = 'tag-delete-control';
+        const deleteReason = document.createElement('span'); deleteReason.className = 'tag-delete-reason';
+        deleteReason.id = 'tag-delete-reason-' + tagHelpNumber; deleteReason.setAttribute('role', 'tooltip');
+        deleteControl.append(remove, deleteReason);
+        const editor = { form, tag, name, colour, save, remove, help, deleteControl, deleteReason, saving: false, deleting: false, deleted: false, deleteBlocked: false };
+        const showDeleteReason = () => {
+            deleteControl.classList.remove('tooltip-dismissed', 'tooltip-above');
+            deleteReason.style.transform = '';
+            if (editor.deleteBlocked && deleteReason.getBoundingClientRect().bottom > window.innerHeight - 8) deleteControl.classList.add('tooltip-above');
+            const bounds = deleteReason.getBoundingClientRect();
+            const shift = bounds.left < 8 ? 8 - bounds.left : Math.min(0, document.documentElement.clientWidth - 8 - bounds.right);
+            if (shift) deleteReason.style.transform = `translateX(${shift}px)`;
+        };
+        deleteControl.addEventListener('pointerenter', showDeleteReason);
+        deleteControl.addEventListener('focusin', showDeleteReason);
+        deleteControl.addEventListener('keydown', event => {
+            if (event.key === 'Escape') deleteControl.classList.add('tooltip-dismissed');
+        });
+        name.value = tag.name; colour.value = hexColour(tag.color);
+        form.addEventListener('input', () => refreshTagEditor(editor));
+        form.addEventListener('submit', event => {
+            event.preventDefault();
+            if (save.disabled) return;
+            const submittedName = name.value.trim().slice(0, 60);
+            const submittedColour = colour.value;
+            name.value = submittedName;
+            editor.saving = true; refreshTagEditor(editor);
+            tagAction('create-tag', { id: editor.tag.id, name: submittedName, color: submittedColour }, save,
+                reply => {
+                    if (!reply.tag) return;
+                    // Mark the acknowledged version clean without overwriting
+                    // anything typed while the save was in flight.
+                    if (name.value === submittedName) name.value = reply.tag.name;
+                    if (colour.value === submittedColour) colour.value = hexColour(reply.tag.color);
+                    editor.tag = reply.tag;
+                }, () => { editor.saving = false; refreshTagEditor(editor); });
+        });
+        remove.addEventListener('click', () => {
+            if (remove.disabled) return;
+            if (editor.deleteBlocked) { showDeleteReason(); remove.focus(); return; }
+            if (editor.deleted) { form.remove(); tagEditors.delete(editor.tag.id); return; }
+            editor.deleting = true; refreshTagEditor(editor);
+            tagAction('delete-tag', editor.tag.id, remove, undefined,
+                () => { editor.deleting = false; refreshTagEditor(editor); });
+        });
+        form.append(name, colour, save, deleteControl, help);
+        return editor;
+    }
+    document.addEventListener('pointerdown', event => {
+        for (const editor of tagEditors.values()) {
+            if (!editor.deleteControl.contains(event.target)) editor.deleteControl.classList.add('tooltip-dismissed');
+        }
+    });
+    window.addEventListener('resize', () => {
+        for (const editor of tagEditors.values()) editor.deleteControl.classList.add('tooltip-dismissed');
+    });
+    socket.on('tags-update', tags => {
+        tagCount = tags.length;
+        const present = new Set();
+        tags.forEach((tag, index) => {
+            present.add(tag.id);
+            let editor = tagEditors.get(tag.id);
+            if (!editor) { editor = createTagEditor(tag); tagEditors.set(tag.id, editor); }
+            else {
+                // Update untouched fields while preserving local edits and focus.
+                if (editor.name.value === editor.tag.name) editor.name.value = tag.name;
+                if (editor.colour.value === hexColour(editor.tag.color)) editor.colour.value = hexColour(tag.color);
+                editor.tag = tag; editor.deleted = false;
+            }
+            editor.name.setAttribute('aria-label', 'Tag name: ' + tag.name);
+            editor.colour.setAttribute('aria-label', 'Tag colour: ' + tag.name);
+            editor.remove.setAttribute('aria-label', 'Delete tag: ' + tag.name);
+            const sibling = tagRows.children[index];
+            if (sibling !== editor.form) tagRows.insertBefore(editor.form, sibling || null);
+            refreshTagEditor(editor);
+        });
+        for (const [id, editor] of tagEditors) {
+            if (present.has(id)) continue;
+            const dirty = editor.name.value !== editor.tag.name || editor.colour.value !== hexColour(editor.tag.color);
+            if (dirty && !editor.deleting) { editor.deleted = true; refreshTagEditor(editor); }
+            else { editor.form.remove(); tagEditors.delete(id); }
+        }
+    });
+    byId('addTagForm').addEventListener('submit', e => {
+        e.preventDefault();
+        tagAction('create-tag', { name: byId('newTagName').value, color: byId('newTagColour').value },
+            e.submitter, () => { byId('newTagName').value = ''; byId('newTagName').focus(); });
+    });
+
     socket.on('connect', () => {
         setStatus(connectionStatus, 'Connected', 'ok');
     });

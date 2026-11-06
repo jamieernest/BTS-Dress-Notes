@@ -32,6 +32,14 @@
         };
     }
 
+    // A quiet 24-hour wall-clock label for a scene's first recorded time.
+    function formatClockMinute(value) {
+        if (value === null || value === undefined || value === '' ||
+            !['string', 'number'].includes(typeof value)) return '';
+        const date = new Date(value);
+        return Number.isFinite(date.getTime()) ? `${pad(date.getHours())}:${pad(date.getMinutes())}` : '';
+    }
+
     // A length of video, M:SS or H:MM:SS.
     function formatDuration(seconds) {
         const s = Math.max(0, Math.floor(seconds));
@@ -40,5 +48,5 @@
         return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
     }
 
-    return { pad, formatTimecode, formatNoteTimecode, timeOfDay, formatDuration };
+    return { pad, formatTimecode, formatNoteTimecode, timeOfDay, formatDuration, formatClockMinute };
 }));

@@ -26,11 +26,14 @@ const RECORDINGS_DIR = process.env.RECORDINGS_DIR || path.join(__dirname, 'recor
 // One uploaded part at most; a full dress from Vor is a few GB.
 const RECORDING_MAX_BYTES = Number(process.env.RECORDING_MAX_BYTES) || 32 * 1024 ** 3;
 const { sanitizeAge, insertionIndex } = require('./public/note-order');
+const { toggleAgreement } = require('./note-agreements');
 const { canEditNote } = require('./public/note-author');
 const input = require('./note-input');
+const noteNumbers = require('./public/note-numbers');
 const showLog = require('./show-log');
 const crypto = require('crypto');
 const helmet = require('helmet');
+const { usernameFromClaims } = require('./profile-photos');
 const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
 
 const app = express();
@@ -160,7 +163,7 @@ app.use(helmet({
         directives: {
             'script-src': ["'self'"],
             'style-src': ["'self'", "'unsafe-inline'"],
-            'img-src': ["'self'", 'data:'],
+            'img-src': ["'self'", 'data:', 'https://www.bts-crew.com'],
             'connect-src': ["'self'"],
             // playback.html plays uploaded videos, or one opened locally through a blob: URL.
             'media-src': ["'self'", 'blob:'],
@@ -310,9 +313,12 @@ app.get('/callback', async (req, res) => {
         // A fresh session id on login (no session fixation), saved before the
         // redirect so the next page load already sees the user.
         await new Promise((resolve, reject) => req.session.regenerate((err) => (err ? reject(err) : resolve())));
+        // emailPrefix is the historical wire name for the website's username.
+        const emailPrefix = usernameFromClaims(claims);
         req.session.user = {
             sub: claims.sub,
             name: claims.name || claims.preferred_username || claims.email || claims.sub,
+            emailPrefix,
             email: claims.email || null,
             idToken: tokens.id_token || null
         };
@@ -541,31 +547,25 @@ app.get('/favicon.ico', (req, res) => {
 
 // Load tags from JSON file (TAGS_FILE is for the tests, which must not change the tracked one)
 const TAGS_FILE = process.env.TAGS_FILE || path.join(__dirname, 'tags.json');
-let tags = [];
+const defaultTags = require('./default-tags.json').tags;
+let tags;
 try {
-    const tagsData = fs.readFileSync(TAGS_FILE, 'utf8');
-    const tagsConfig = JSON.parse(tagsData);
-    tags = tagsConfig.tags;
-    console.log(`Loaded ${tags.length} tags from tags.json`);
+    tags = input.cleanStoredTags(JSON.parse(fs.readFileSync(TAGS_FILE, 'utf8')).tags);
 } catch (error) {
-    console.log('Error loading tags.json, using default tags:', error.message);
-    tags = [
-        { id: 'safety', name: 'Safety/Show Critical', color: '#E63946' },
-        { id: 'lighting', name: 'Lighting', color: '#00B4D8' },
-        { id: 'sound', name: 'Sound', color: '#06D6A0' },
-        { id: 'stage', name: 'Stage', color: '#118AB2' },
-        { id: 'dsm', name: 'DSM', color: '#8AC926' },
-        { id: 'set', name: 'Set', color: '#FF6f91' }
-    ];
+    tags = defaultTags.map(tag => ({ ...tag }));
 }
 
-// Saves the current tags. globalState.tags, not the list loaded at start:
-// deleting a tag or importing a backup replaces the array.
-function saveTagsToFile() {
+// Write before changing live state; a failed write must leave the show intact.
+function saveTagsToFile(nextTags = globalState.tags) {
+    const temp = TAGS_FILE + '.tmp';
     try {
-        fs.writeFileSync(TAGS_FILE, JSON.stringify({ tags: globalState.tags }, null, 2));
+        fs.writeFileSync(temp, JSON.stringify({ tags: nextTags }, null, 2));
+        fs.renameSync(temp, TAGS_FILE);
+        return true;
     } catch (error) {
         console.log('Error saving tags to file:', error.message);
+        try { fs.unlinkSync(temp); } catch (_) { /* no temporary file */ }
+        return false;
     }
 }
 
@@ -588,6 +588,7 @@ const globalState = {
         source: 'network'
     },
     notes: [],
+    nextNoteNumber: 1,
     chatMessages: [],
     users: new Map(),
     timeMode: 'midi',
@@ -1056,6 +1057,7 @@ let lastBackupFile = null;
 function notesExport() {
     return {
         notes: globalState.notes,
+        nextNoteNumber: globalState.nextNoteNumber,
         exportedAt: new Date().toISOString(),
         totalNotes: globalState.notes.length,
         authors: authorsOf(globalState.notes),
@@ -1143,6 +1145,7 @@ function restoreNotes() {
         }
         if (found.file) {
             globalState.notes = applyAuthors(input.cleanStoredNotes(found.data.notes), found.data.authors);
+            globalState.nextNoteNumber = noteNumbers.migrate(globalState.notes, found.data.nextNoteNumber);
             if (found.data.tags) globalState.tags = storedTags(found.data.tags);
             globalState.showLog = showLog.cleanShowLog(found.data.showLog);
             console.log(`Notes restore: loaded ${found.data.notes.length} notes from backups/${found.file}`);
@@ -1162,6 +1165,7 @@ if (PLAYBACK_DEMO) {
     const sample = JSON.parse(fs.readFileSync(path.join(__dirname, 'public/playback-demo/show.json'), 'utf8'));
     if (!globalState.notes.length) {
         globalState.notes = input.cleanStoredNotes(sample.notes);
+        globalState.nextNoteNumber = noteNumbers.migrate(globalState.notes);
         globalState.tags = storedTags(sample.tags);
         globalState.showLog = showLog.cleanShowLog(sample.showLog);
         backup(true);
@@ -1301,6 +1305,8 @@ io.on('connection', (socket) => {
     const user = {
         id: sessionUser.sub,
         name: sessionUser.name,
+        emailPrefix: usernameFromClaims({ email: sessionUser.email,
+            preferred_username: sessionUser.username ?? sessionUser.emailPrefix }),
         isTyping: false,
         currentTimecode: null,
         currentLxCue: null,
@@ -1345,7 +1351,7 @@ io.on('connection', (socket) => {
 
     // Only send user-related updates if this is NOT an overlay
     if (!isOverlay) {
-        socket.emit('current-user', { name: user.name, sub: user.id });
+        socket.emit('current-user', { name: user.name, sub: user.id, emailPrefix: user.emailPrefix });
 
         const filteredUsers = listedUsers();
         if (listed) {
@@ -1364,6 +1370,37 @@ io.on('connection', (socket) => {
         socket.emit('users-update', []);
     }
 
+    on('note-agreement-toggle', (data, ack) => {
+        const respond = typeof ack === 'function' ? ack : () => {};
+        if (user.isOverlay) return respond({ error: 'Cannot agree from this page.' });
+        const noteId = input.cleanId(data?.noteId);
+        const note = globalState.notes.find(n => n.id === noteId);
+        if (!note) return respond({ error: 'Note not found.' });
+        if (!toggleAgreement(note, { userId: user.id, name: user.name })) {
+            return respond({ error: 'This note has reached its agreement limit.' });
+        }
+        // Existing consumers (including live playback) refresh on notes-update.
+        io.emit('notes-update', globalState.notes);
+        scheduleBackup();
+        respond({ agreements: note.agreements });
+    });
+
+    on('comment-agreement-toggle', (data, ack) => {
+        const respond = typeof ack === 'function' ? ack : () => {};
+        if (user.isOverlay) return respond({ error: 'Cannot agree from this page.' });
+        const noteId = input.cleanId(data?.noteId);
+        const commentId = input.cleanId(data?.commentId);
+        const note = globalState.notes.find(n => n.id === noteId);
+        const comment = note?.comments?.find(c => c.id === commentId);
+        if (!comment) return respond({ error: 'Reply not found.' });
+        if (!toggleAgreement(comment, { userId: user.id, name: user.name })) {
+            return respond({ error: 'This reply has reached its agreement limit.' });
+        }
+        io.emit('notes-update', globalState.notes);
+        scheduleBackup();
+        respond({ agreements: comment.agreements });
+    });
+
     // Handle note tag updates
     on('note-update-tags', (data) => {
         if (user.isOverlay || !data) return;
@@ -1379,36 +1416,43 @@ io.on('connection', (socket) => {
     });
 
     // Handle tag creation/updates
-    on('create-tag', (tagData) => {
-        if (user.isOverlay) return;
+    on('create-tag', (tagData, ack) => {
+        const respond = typeof ack === 'function' ? ack : () => {};
+        if (user.isOverlay) return respond({ error: 'Tags cannot be changed here.' });
         const tag = input.cleanTag(tagData);
-        if (!tag) return;
-        const existingIndex = tag.id ? globalState.tags.findIndex(t => t.id === tag.id) : -1;
-        const newTag = {
-            id: tag.id || generateId(),
-            name: tag.name,
-            color: tag.color || (existingIndex >= 0 && globalState.tags[existingIndex].color) || getRandomColor()
-        };
-        if (existingIndex >= 0) {
-            globalState.tags[existingIndex] = newTag;
-        } else {
-            globalState.tags.push(newTag);
+        if (!tag || (tagData.color != null && !/^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i.test(tagData.color))) {
+            return respond({ error: 'Enter a tag name and a valid colour.' });
         }
-
-        saveTagsToFile();
-        io.emit('tags-update', globalState.tags);
+        const existing = globalState.tags.find(t => t.id === tag.id);
+        if (tag.id && !existing) return respond({ error: 'That tag no longer exists.' });
+        if (globalState.tags.some(t => t.id !== tag.id && t.name.toLowerCase() === tag.name.toLowerCase())) {
+            return respond({ error: 'A tag with that name already exists.' });
+        }
+        const newTag = { id: existing ? existing.id : generateId(), name: tag.name,
+            color: tag.color || (existing && existing.color) || getRandomColor() };
+        const next = existing ? globalState.tags.map(t => t.id === existing.id ? newTag : t) : [...globalState.tags, newTag];
+        if (!saveTagsToFile(next)) return respond({ error: 'The tags could not be changed. Try again.' });
+        globalState.tags = next;
+        io.emit('tags-update', next);
         scheduleBackup();
+        respond({ tag: newTag });
     });
 
-    // Handle tag deletion
-    on('delete-tag', (tagId) => {
-        if (user.isOverlay) return;
+    on('delete-tag', (tagId, ack) => {
+        const respond = typeof ack === 'function' ? ack : () => {};
+        if (user.isOverlay) return respond({ error: 'Tags cannot be changed here.' });
         const id = input.cleanId(tagId);
-        if (!id) return;
-        globalState.tags = globalState.tags.filter(tag => tag.id !== id);
-        saveTagsToFile();
-        io.emit('tags-update', globalState.tags);
+        if (!id || !globalState.tags.some(t => t.id === id)) return respond({ error: 'That tag no longer exists.' });
+        if (globalState.notes.some(note => note.tags.includes(id))) {
+            return respond({ error: 'This tag is used by notes. Change their tags before deleting it.' });
+        }
+        const next = globalState.tags.filter(tag => tag.id !== id);
+        if (!next.length) return respond({ error: 'Keep at least one tag.' });
+        if (!saveTagsToFile(next)) return respond({ error: 'The tags could not be changed. Try again.' });
+        globalState.tags = next;
+        io.emit('tags-update', next);
         scheduleBackup();
+        respond({});
     });
 
     // Handle user starting to type (only for non-overlay users)
@@ -1518,11 +1562,15 @@ io.on('connection', (socket) => {
         const now = Date.now();
         const ageMs = sanitizeAge(data.ageMs);
 
+        if (!noteNumbers.valid(globalState.nextNoteNumber)) return respond({ error: 'No more note numbers are available. Start a new show.' });
         const note = {
             id: newId(),
+            noteNumber: globalState.nextNoteNumber++,
             user: user.name,
+            emailPrefix: user.emailPrefix || undefined,
             userId: user.id,
             text,
+            mentions: input.cleanMentions(text, data.mentions),
             timecode: noteTimecode,
             lxCue: input.cleanCue(data.lxCue) || globalState.currentLxCue,
             timestamp: new Date(now - ageMs).toISOString(),
@@ -1553,8 +1601,10 @@ io.on('connection', (socket) => {
             const comment = {
                 id: newId(),
                 user: user.name,
+                emailPrefix: user.emailPrefix || undefined,
                 userId: user.id,
                 text,
+                mentions: input.cleanMentions(text, data.mentions),
                 timestamp: new Date().toISOString()
             };
             if (!note.comments) note.comments = [];
@@ -1565,11 +1615,14 @@ io.on('connection', (socket) => {
     });
 
     // Handle chat message submission (only for non-overlay users)
-    on('chat-message', (data) => {
+    on('chat-message', (data, ack) => {
         if (user.isOverlay) return; // Overlay users can't chat
 
-        const bounded = boundChatMessage({ user: user.name, userId: user.id, text: data && data.text });
-        if (!bounded) return;
+        const bounded = boundChatMessage({ user: user.name, userId: user.id, emailPrefix: user.emailPrefix, text: data && data.text, replyTo: data && data.replyTo, mentions: data && data.mentions });
+        if (!bounded) {
+            if (typeof ack === 'function') ack({ error: 'Invalid message' });
+            return;
+        }
 
         const chatMessage = {
             id: newId(),
@@ -1579,6 +1632,7 @@ io.on('connection', (socket) => {
 
         globalState.chatMessages.push(chatMessage);
         io.emit('chat-message-added', chatMessage);
+        if (typeof ack === 'function') ack({ id: chatMessage.id });
     });
 
     // A client that still holds the chat log from before a restart offers it back
@@ -1604,11 +1658,13 @@ io.on('connection', (socket) => {
         // Only the author (by session identity) may edit; see public/note-author.js
         if (note && newText && canEditNote(note, user.id)) {
             note.text = newText;
+            note.mentions = input.cleanMentions(newText, data.mentions);
             note.lastEdited = new Date().toISOString();
             note.lastEditedBy = user.name;
             io.emit('note-edit-text', {
                 noteId: note.id,
                 newText,
+                mentions: input.cleanMentions(newText, data.mentions),
                 lastEditedBy: user.name,
                 lastEdited: note.lastEdited
             });
@@ -1623,12 +1679,14 @@ io.on('connection', (socket) => {
         const comment = note && Array.isArray(note.comments) && note.comments.find(c => c.id === data.commentId);
         if (comment && newText && canEditNote(comment, user.id)) {
             comment.text = newText;
+            comment.mentions = input.cleanMentions(newText, data.mentions);
             comment.lastEdited = new Date().toISOString();
             comment.lastEditedBy = user.name;
             io.emit('comment-edit', {
                 noteId: note.id,
                 commentId: comment.id,
                 newText,
+                mentions: input.cleanMentions(newText, data.mentions),
                 lastEditedBy: user.name,
                 lastEdited: comment.lastEdited
             });
@@ -1672,7 +1730,7 @@ io.on('connection', (socket) => {
         const respond = typeof ack === 'function' ? ack : () => {};
         if (user.isOverlay) return;
         console.log(`Reset of all notes and chat requested by ${user.name}`);
-        respond(resetNotesAndChat(user.name) ? {} : { error: "The notes couldn't be kept, so nothing was reset." });
+        respond(resetNotesAndChat(user.name) ? {} : { error: "The notes or default tags could not be saved. Nothing was reset." });
     });
 
     // Notes kept from recent resets, for the config page to restore.
@@ -1691,6 +1749,25 @@ io.on('connection', (socket) => {
         if (!kept) return respond({ error: "Those notes are no longer kept." });
         const live = new Set(globalState.notes.map(n => n.id));
         const added = applyAuthors(input.cleanStoredNotes(kept.notes), kept.authors).filter(n => !live.has(n.id));
+        // Restore only definitions needed by added notes. If an id was renamed
+        // in this show, give the old definition a new id rather than changing
+        // the meaning of either show's notes.
+        const nextTags = globalState.tags.map(tag => ({ ...tag }));
+        for (const tag of storedTags(kept.tags || [])) {
+            if (!added.some(note => note.tags.includes(tag.id))) continue;
+            const existing = nextTags.find(t => t.id === tag.id);
+            if (!existing) nextTags.push(tag);
+            else if (existing.name !== tag.name || existing.color.toLowerCase() !== tag.color.toLowerCase()) {
+                const matching = nextTags.find(t => t.name === tag.name && t.color.toLowerCase() === tag.color.toLowerCase());
+                const restoredId = matching ? matching.id : generateId();
+                if (!matching) nextTags.push({ ...tag, id: restoredId });
+                for (const note of added) note.tags = note.tags.map(id => id === tag.id ? restoredId : id);
+            }
+        }
+        if (!saveTagsToFile(nextTags)) return respond({ error: 'The tags could not be restored. Nothing was restored.' });
+        globalState.tags = nextTags;
+        io.emit('tags-update', globalState.tags);
+        globalState.nextNoteNumber = noteNumbers.merge(added, globalState.nextNoteNumber, kept.nextNoteNumber);
         for (const note of added) globalState.notes.splice(insertionIndex(globalState.notes, note), 0, note);
         const events = new Set(globalState.showLog.map(e => JSON.stringify(e)));
         globalState.showLog = showLog.cleanShowLog([...globalState.showLog,
@@ -1738,7 +1815,7 @@ io.on('connection', (socket) => {
             }
             console.log(`Show "${name}" (${show.totalNotes} notes, ${parts} video parts) saved by ${user.name}${reset ? ', then reset' : ''}`);
             if (reset && !resetNotesAndChat(user.name)) {
-                return respond({ error: "The notes were saved, but couldn't be kept for undoing a reset. Nothing was reset." });
+                return respond({ error: "The notes were saved, but the reset could not be completed. Nothing was reset." });
             }
             respond({ show: { ...show, recordingParts: parts } });
         }, (error) => {
@@ -1759,6 +1836,7 @@ io.on('connection', (socket) => {
         }
         console.log(`Backup with ${data.notes.length} notes imported by ${user.name}`);
         globalState.notes = applyAuthors(input.cleanStoredNotes(data.notes), data.authors);
+        globalState.nextNoteNumber = noteNumbers.migrate(globalState.notes, Math.max(globalState.nextNoteNumber, noteNumbers.counter(data.nextNoteNumber) ? data.nextNoteNumber : 1));
         // Notes that fail the per-note checks are dropped; say so rather than report a clean import.
         const skipped = data.notes.length - globalState.notes.length;
         if (skipped) console.warn(`Import skipped ${skipped} of ${data.notes.length} notes that could not be read`);
@@ -1840,13 +1918,18 @@ function resetNotesAndChat(resetBy) {
         }
         resetsChanged();
     }
+    const nextTags = defaultTags.map(tag => ({ ...tag }));
+    if (!saveTagsToFile(nextTags)) return false;
+    globalState.tags = nextTags;
     resetCount++;
     globalState.notes = [];
+    globalState.nextNoteNumber = 1;
     globalState.chatMessages = [];
     globalState.showLog = [];
     recordings.removeCollection(RECORDINGS_DIR, 'live');
     recordingsChanged('live');
     chatRestore.close();
+    io.emit('tags-update', globalState.tags);
     io.emit('all-reset'); // each page also drops its saved chat copy and unsent notes
     io.emit('notes-update', globalState.notes);
     io.emit('show-log-update', globalState.showLog);

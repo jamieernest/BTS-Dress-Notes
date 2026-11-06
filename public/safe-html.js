@@ -32,6 +32,12 @@
             return;
         }
         element.innerHTML = root.DOMPurify.sanitize(html, { USE_PROFILES: { html: true } });
+        // Shared by notes, chat and the mention picker; failed/removed photos
+        // reveal the existing initials. No inline handler (CSP forbids those).
+        for (const image of element.querySelectorAll('img.avatar-photo')) {
+            image.addEventListener('error', () => image.remove(), { once: true });
+            if (image.complete && image.naturalWidth === 0) image.remove();
+        }
     }
 
     return { escapeHtml, safeColour, setHtml };

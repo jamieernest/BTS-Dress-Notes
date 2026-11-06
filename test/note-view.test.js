@@ -101,7 +101,7 @@ test('a note, its replies and tags are drawn with every value escaped', () => {
     const html = NoteView.noteHTML(note, { foot: NoteView.tagChipsHTML(note.tags, tagById) });
     assert.ok(!html.includes('<img') && !html.includes('<script') && !html.includes('<b>'));
     assert.ok(html.includes('&lt;img src=x&gt;'));
-    assert.ok(html.includes('00:01:02:03'));
+    assert.ok(!html.includes('note-tc') && !html.includes('00:01:02:03'), 'precise timing remains in the data, not the note header');
     assert.ok(html.includes('--tag: #E63946'));
     assert.ok(!html.includes('evil'));
     assert.ok(html.includes('>gone</span>'), 'a deleted tag still shows, by id');
@@ -116,6 +116,9 @@ test('the same person gets the same face on every page', () => {
     assert.strictEqual(NoteView.initials(''), '?');
     assert.strictEqual(NoteView.personColor('sub-1'), NoteView.personColor('sub-1'));
     assert.ok(NoteView.avatarHTML('sub-1', 'Ada', 'sm').startsWith('<span class="avatar sm"'));
+    const profileAvatar = NoteView.avatarHTML('sub-1', 'Ewan', '', 'ejws20');
+    assert.ok(profileAvatar.includes('https://www.bts-crew.com/images/profiles/ejws20.jpg'));
+    assert.ok(profileAvatar.includes('class="avatar-initials">E</span>'));
 });
 
 test('avatar initials use letters, skipping punctuation, numbers and emoji', () => {
@@ -135,7 +138,8 @@ test('avatar initials use letters, skipping punctuation, numbers and emoji', () 
         [null, '?']
     ]) assert.strictEqual(NoteView.initials(name), expected, String(name));
 
-    assert.ok(NoteView.avatarHTML('sub-alice', 'Alice (Dev)').includes('>AD</span>'));
+    assert.ok(NoteView.avatarHTML('sub-alice', 'Alice (Dev)', null).includes('>AD</span></span>'));
+    assert.ok(!NoteView.avatarHTML('sub-alice', 'Alice (Dev)', '', 'bad prefix!').includes('bts-crew.com'));
 });
 
 test('search and filters match the same way on both notes pages', () => {
@@ -151,4 +155,85 @@ test('search and filters match the same way on both notes pages', () => {
     assert.strictEqual(NoteView.filtersActive(all), false);
     assert.strictEqual(NoteView.filtersActive({ ...all, search: 'x' }), true);
     assert.deepStrictEqual(NoteView.tagOptions([{ id: 'lx', name: 'Lighting', color: '#fff' }])[0], { value: 'all', label: 'All tags', color: '' });
+});
+
+test('author filtering uses exact stable accounts, composed with every other filter', () => {
+    const note = { userId: 'sub-alex', user: 'Alex', text: 'Sound entrance', act: 'Act 2', tags: ['snd'], comments: [] };
+    const filters = { author: 'sub-alex', act: 'Act 2', tag: 'snd', search: 'entrance' };
+    assert.ok(NoteView.noteMatches(note, filters, NoteView.unknownTag));
+    for (const change of [{ userId: 'sub-other' }, { userId: undefined }, { act: 'Act 1' }, { tags: ['lx'] }, { text: 'Exit' }]) {
+        assert.equal(NoteView.noteMatches({ ...note, ...change }, filters, NoteView.unknownTag), false);
+    }
+    assert.equal(NoteView.filtersActive({ act: 'all', tag: 'all', search: '', author: 'sub-alex' }), true);
+});
+
+test('offline authors deduplicate by identity, keep name aliases and distinguish namesakes', () => {
+    const authors = NoteView.authorOptions([
+        { userId: 'one', user: 'Old Alex' }, { userId: 'one', user: 'Alex' },
+        { userId: 'two', user: 'Alex' }, { user: 'Alex' }, { userId: '', user: 'Alex' }
+    ]);
+    assert.equal(authors.length, 2);
+    assert.equal(authors[0].label, 'Alex · Account 1');
+    assert.deepEqual(authors[0].names, ['Old Alex', 'Alex']);
+    assert.equal(authors[1].label, 'Alex · Account 2');
+    assert.equal(NoteView.storedAuthorId({ userId: 'old-socket' }), undefined);
+    assert.equal(NoteView.storedAuthorId({ userId: 'old-socket' }, [{ userId: 'one' }]), undefined);
+    assert.equal(NoteView.storedAuthorId({ userId: 'one' }, [{ userId: 'one' }]), 'one');
+});
+
+test('filter URL round trips preserve other parameters and opaque author IDs', () => {
+    const params = new URLSearchParams('show=rehearsal&note=n1');
+    const filters = { act: 'Act 2', tag: 'snd', search: 'sound', author: 'sub/a & b', mentionedUserId: 'sub-mention' };
+    NoteView.writeFilters(params, filters, 'Sound');
+    assert.deepEqual(NoteView.readFilters(new URLSearchParams(params.toString())), filters);
+    assert.equal(params.get('show'), 'rehearsal');
+    assert.equal(params.get('note'), 'n1');
+    NoteView.writeFilters(params, { act: 'all', tag: 'all', author: '' }, '');
+    assert.equal(params.toString(), 'show=rehearsal&note=n1');
+});
+
+test('author and mentioned-account filters distinguish senders from recipients and compose', () => {
+    const note = { userId: 'sub-alice', user: 'Alice', text: '@Bob check this',
+        tags: [], act: 'Act 1', mentions: [{ userId: 'sub-bob', name: 'Bob', start: 0, end: 4 }], comments: [] };
+    const any = { act: 'all', tag: 'all', search: '', author: '', mentionedUserId: '' };
+    assert.equal(NoteView.noteMatches(note, { ...any, author: 'sub-alice', mentionedUserId: 'sub-bob' }, () => ({})), true);
+    assert.equal(NoteView.noteMatches(note, { ...any, author: 'sub-bob' }, () => ({})), false);
+    assert.equal(NoteView.noteMatches(note, { ...any, mentionedUserId: 'sub-alice' }, () => ({})), false);
+    note.comments.push({ text: '@Alice reply', mentions: [{ userId: 'sub-alice', name: 'Alice', start: 0, end: 6 }] });
+    assert.equal(NoteView.noteMatches(note, { ...any, mentionedUserId: 'sub-alice' }, () => ({})), true);
+    assert.equal(NoteView.filtersActive({ ...any, mentionedUserId: 'sub-bob' }), true);
+});
+
+
+test('note headers show name, cue and reference in order without a per-note clock', () => {
+    const header = NoteView.noteHeadHTML({ noteNumber: 49, lxCue: '12', timestamp: '2026-11-05T12:34:56Z',
+        timecode: { hours: 1, minutes: 2, seconds: 3, frames: 4 } }, 'Alice', '<span class="row-actions">Actions</span>');
+    assert.ok(header.indexOf('>Alice</span>') < header.indexOf('Cue 12'));
+    assert.ok(header.indexOf('Cue 12') < header.indexOf('>#49</span>'));
+    assert.ok(!header.includes('note-tc') && !header.includes('01:02:03:04'));
+});
+
+test('scene clocks use the first logged entry, then the oldest valid retained note, independent of order', () => {
+    const notes = [
+        { act: 'Preshow', timestamp: '2026-11-05T20:49:00Z' },
+        { act: 'Preshow', timestamp: '2026-11-05T19:49:00Z' },
+        { act: 'Act One', timestamp: '2026-11-05T21:00:00Z' },
+        { act: 'Broken', timestamp: 'invalid' }
+    ];
+    const log = [
+        { type: 'scene', value: 'Preshow', at: '2026-11-05T20:30:00Z' },
+        { type: 'cue', value: 'Preshow', at: '2026-11-05T17:00:00Z' },
+        { type: 'scene', value: 'Preshow', at: '2026-11-05T19:30:00Z' },
+        { type: 'scene', value: 'Act One', at: 'invalid' }
+    ];
+    const times = NoteView.sceneStartTimes(notes, log);
+    assert.equal(times.get('Preshow'), '2026-11-05T19:30:00.000Z');
+    assert.equal(times.get('Act One'), '2026-11-05T21:00:00.000Z');
+    assert.ok(!times.has('Broken'));
+    assert.deepEqual([...NoteView.sceneStartTimes([...notes].reverse(), [...log].reverse())].sort(), [...times].sort());
+    const time = TimecodeFormat.formatClockMinute(times.get('Preshow'));
+    assert.match(time, /^\d{2}:\d{2}$/);
+    assert.ok(NoteView.groupHeadHTML('Preshow', times.get('Preshow')).includes(`>${time}</time>`));
+    assert.ok(!NoteView.groupHeadHTML('Broken', 'invalid').includes('<time'));
+    assert.equal(TimecodeFormat.formatClockMinute(null), '');
 });

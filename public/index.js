@@ -41,7 +41,6 @@ document.addEventListener('DOMContentLoaded', function() {
     const tagFilterPopover = $('tagFilterPopover');
     const tagPicker = $('tagPicker');
     const tagPickerList = $('tagPickerList');
-    const tagPickerHint = $('tagPickerHint');
     const chatToggle = $('chatToggle');
     const chatDrawer = $('chatDrawer');
     const chatClose = $('chatClose');
@@ -61,6 +60,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentUser = {
         name: 'Guest',
         sub: null,
+        emailPrefix: null,
         isTyping: false,
         frozenTimecode: null,
         frozenLxCue: null,
@@ -78,16 +78,21 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentGlobalLxCue = '1';
     let oscAvailable = true; // cue comes from the desk; without it the cue is typed in
     let allNotes = [];
+    let currentShowLog = [];
     let timeMode = 'realtime';
     let realTimeInterval = null;
     let availableTags = [];
     let selectedTags = [];
     let autoResumeTimer = null;
     let chatMessagesList = [];
+    let chatMessageById = new Map();
+    let chatReplyTo = null;
     let unreadChat = 0;
     let currentAct = 'Preshow';
     let lastUsers = [];
-    const filters = { tag: 'all', act: 'all', search: '' };
+    const filters = NoteView.readFilters(new URLSearchParams(location.search));
+    searchInput.value = new URLSearchParams(location.search).get('q') || '';
+    NoteView.watchNavigation();
     const filterDropdown = (button, popover, key, update) => NoteView.createDropdown({
         button, popover,
         beforeOpen: () => closePopovers(),
@@ -99,6 +104,10 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     const actDropdown = filterDropdown(actFilter, actFilterPopover, 'act', updateActFilter);
     const tagDropdown = filterDropdown(tagFilter, tagFilterPopover, 'tag', updateFilterTags);
+    const authorSearch = NoteView.createAuthorSearch({ input: searchInput, chip: $('authorFilter'), mentionChip: $('mentionedFilter'),
+        getCurrentUserId: () => currentUser.sub, getCurrentUserName: () => currentUser.name,
+        popover: $('authorSuggestions'), filters, getNotes: () => allNotes.filter(n => !deletedNotes.has(n.id)),
+        beforeOpen: () => closePopovers(), onChange: filterNotes });
     const noteElements = new Map();
     // Notes submitted but not yet acknowledged by the server, keyed by the
     // clientId sent with them: clientId -> { note, element, writtenAt, sub }.
@@ -173,7 +182,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateFilterTags() {
-        if (filters.tag !== 'all' && !availableTags.some(t => t.id === filters.tag)) filters.tag = 'all';
         tagDropdown.render(NoteView.tagOptions(availableTags), filters.tag);
         tagFilter.hidden = availableTags.length === 0;
     }
@@ -186,7 +194,15 @@ document.addEventListener('DOMContentLoaded', function() {
     // The counts come from the notes, not the rows: a long list is still being
     // drawn for a moment after a rebuild (see rebuildFullNotesList). Headings
     // are the runs of one act in newest-first order, the same as drawn.
+    function refreshGroupTimes() {
+        const times = NoteView.sceneStartTimes(allNotes, currentShowLog);
+        for (const head of notesList.querySelectorAll('.group-head')) NoteView.updateGroupTime(head, times.get(head.dataset.act));
+    }
+
     function filterNotes() {
+        authorSearch.refresh();
+        const params = NoteView.writeFilters(new URLSearchParams(location.search), filters, searchInput.value);
+        history.replaceState(null, '', `${location.pathname}${params.size ? '?' + params : ''}${location.hash}`);
         const notesById = new Map(allNotes.map(n => [n.id, n]));
         const isShown = (note) => !!note && !deletedNotes.has(note.id) && noteMatches(note);
         const runCounts = [];
@@ -214,6 +230,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
 
+        refreshGroupTimes();
         const total = allNotes.length - deletedNotes.size;
         notesSection.classList.toggle('has-notes', total > 0 || pendingNotes.size > 0);
         notesCount.textContent = filtersActive() ? `${shown} of ${plural(total, 'note')}` : '';
@@ -264,7 +281,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function updateActFilter() {
         const acts = [...new Set(allNotes.filter(n => !deletedNotes.has(n.id)).map(note => note.act || 'Preshow'))];
-        if (filters.act !== 'all' && !acts.includes(filters.act)) filters.act = 'all';
         actDropdown.render(NoteView.sceneOptions(acts), filters.act);
         actFilter.hidden = acts.length < 2 && filters.act === 'all';
     }
@@ -273,6 +289,9 @@ document.addEventListener('DOMContentLoaded', function() {
         filters.tag = 'all';
         filters.act = 'all';
         filters.search = '';
+        filters.author = '';
+        filters.mentionedUserId = '';
+        authorSearch.close();
         searchInput.value = '';
         updateActFilter();
         updateFilterTags();
@@ -409,6 +428,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     function resetComposer() {
+        mentionEditor.clear(noteInput);
         noteInput.value = '';
         sendNoteBtn.disabled = true;
         selectedTags = rememberedTags();
@@ -440,11 +460,12 @@ document.addEventListener('DOMContentLoaded', function() {
             if (phoneLayout.matches) { noteInput.blur(); cancelNoteBtn.blur(); updateComposer(); }
             return;
         }
-        const saved = { text, timecode: currentUser.frozenTimecode, lxCue: currentUser.frozenLxCue, act: currentUser.frozenAct };
+        const saved = { text, mentions: mentionEditor.get(noteInput, false), timecode: currentUser.frozenTimecode, lxCue: currentUser.frozenLxCue, act: currentUser.frozenAct };
         cancelNote();
         noteInput.blur();
         showToast('Note discarded', 'Undo', () => {
             noteInput.value = saved.text;
+            mentionEditor.set(noteInput, saved.mentions);
             applyRememberedTags();
             noteInput.focus();
             currentUser.frozenTimecode = saved.timecode;
@@ -489,7 +510,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const key = u.id || u.name;
             const existing = people.get(key);
             if (existing) existing.isTyping = existing.isTyping || u.isTyping;
-            else people.set(key, { key, name: u.name, isTyping: !!u.isTyping, me: !!currentUser.sub && u.id === currentUser.sub });
+            else people.set(key, { key, name: u.name, emailPrefix: u.emailPrefix, isTyping: !!u.isTyping, me: !!currentUser.sub && u.id === currentUser.sub });
         }
         const list = [...people.values()].sort((a, b) => (b.me - a.me) || a.name.localeCompare(b.name));
         userCount.textContent = `${list.length} online`;
@@ -497,12 +518,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const MAX = 4;
         setHtml(avatarStack, list.slice(0, MAX).map(p =>
-            avatarHTML(p.key, p.name, p.isTyping ? 'typing' : '')
+            avatarHTML(p.key, p.name, p.isTyping ? 'typing' : '', p.emailPrefix)
         ).join('') + (list.length > MAX ? `<span class="avatar more">+${list.length - MAX}</span>` : ''));
 
         setHtml(usersList, list.map(p => `
             <li>
-                ${avatarHTML(p.key, p.name)}
+                ${avatarHTML(p.key, p.name, '', p.emailPrefix)}
                 <span>${esc(p.name)}</span>${p.me ? '<span class="you">you</span>' : ''}
                 ${p.isTyping ? '<span class="writing">writing…</span>' : ''}
             </li>`).join(''));
@@ -513,6 +534,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function closePopovers() {
         let closed = false;
+        authorSearch.close();
         for (const dropdown of [actDropdown, tagDropdown]) closed = dropdown.close() || closed;
         for (const [popover, button] of [[usersPopover, usersButton], [menuPopover, menuButton]]) {
             if (popover.hidden) continue;
@@ -543,7 +565,6 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!note) return closeTagPicker();
         // The last tag on a note can't be taken off, only swapped by ticking another first.
         const onlyTag = note.tags.length === 1 ? note.tags[0] : null;
-        tagPickerHint.hidden = !onlyTag;
         const focused = tagPicker.contains(document.activeElement) ? document.activeElement.dataset.tag : null;
         setHtml(tagPickerList, availableTags.map(tag => `
             <button type="button" class="tag-option" role="menuitemcheckbox" data-tag="${esc(tag.id)}" aria-checked="${note.tags.includes(tag.id)}"${tag.id === onlyTag ? ' aria-disabled="true"' : ''} style="--tag: ${safeColor(tag.color)}">
@@ -591,6 +612,29 @@ document.addEventListener('DOMContentLoaded', function() {
         if (next) next.focus();
     });
 
+    const mentionUnread = Mentions.createUnread({ getItem: key => localStorage.getItem(key), setItem: (key, value) => localStorage.setItem(key, value) });
+    const mentionEditor = Mentions.install({
+        getAccounts: () => Mentions.accounts(allNotes, chatMessagesList, lastUsers),
+        avatarHTML, place: NoteView.placePopover,
+        seed: el => {
+            const note = noteOf(el);
+            if (el.dataset.field === 'note-edit') return note;
+            if (el.dataset.field === 'comment-edit') return note?.comments?.find(c => c.id === el.dataset.commentId);
+            return null;
+        }
+    });
+    let unseenMentions = 0;
+    function updateMentionBadge(log = []) {
+        unseenMentions = mentionUnread.receive(log, currentUser.sub, !chatDrawer.hidden && !document.hidden);
+        updateUnread();
+    }
+    function clearChatNotifications() {
+        unreadChat = 0;
+        mentionUnread.clear();
+        updateMentionBadge();
+    }
+    document.addEventListener('visibilitychange', () => { if (!document.hidden && !chatDrawer.hidden) clearChatNotifications(); });
+
     // --- Chat ---
     function isMyChat(msg) {
         return msg.userId ? msg.userId === currentUser.sub : msg.user === currentUser.name;
@@ -603,6 +647,11 @@ document.addEventListener('DOMContentLoaded', function() {
             && new Date(msg.timestamp) - new Date(prev.timestamp) < 5 * 60 * 1000;
     }
 
+    function chatQuoteHTML(id) {
+        const quote = ChatReplies.quote(id, chatMessageById);
+        return `<button type="button" class="chat-reply-context" data-chat-jump="${esc(id)}" aria-label="${quote.available ? 'Jump to original message' : 'Original message unavailable'}"><span class="chat-quote-author">${esc(quote.author)}</span><span class="chat-quote-text">${esc(quote.text)}</span></button>`;
+    }
+
     function renderChatMessage(msg, prev) {
         const mine = isMyChat(msg);
         const cont = continuesRun(prev, msg);
@@ -611,46 +660,66 @@ document.addEventListener('DOMContentLoaded', function() {
                     ${mine ? '' : `<span class="chat-msg-user">${esc(msg.user)}</span>`}
                     <span class="chat-msg-time">${esc(clockTime(msg.timestamp))}</span>
                 </div>`;
-        const face = mine ? '' : (cont ? '<span class="avatar-gap"></span>' : avatarHTML(msg.userId || msg.user, msg.user, 'sm'));
+        const face = mine ? '' : (cont ? '<span class="avatar-gap"></span>' : avatarHTML(msg.userId || msg.user, msg.user, 'sm', msg.emailPrefix));
         return `
-            <div class="chat-msg${mine ? ' mine' : ''}${cont ? ' cont' : ''}">
+            <div data-chat-id="${esc(msg.id)}" class="chat-msg${mine ? ' mine' : ''}${cont ? ' cont' : ''}">
                 ${face}
                 <div class="chat-msg-main">${head}
-                    <div class="bubble" title="${esc(fullTime(msg.timestamp))}">${esc(msg.text)}</div>
+                    <div class="chat-bubble-row"><div class="bubble" title="${esc(fullTime(msg.timestamp))}">${msg.replyTo ? chatQuoteHTML(msg.replyTo) : ''}<div class="chat-msg-text">${Mentions.html(msg.text, msg.mentions)}</div></div><button type="button" class="chat-reply-action" data-chat-reply="${esc(msg.id)}" aria-label="Reply to ${esc(msg.user)}" title="Reply"><i data-icon="reply"></i></button></div>
                 </div>
             </div>`;
     }
 
-    function chatNearBottom() {
-        return chatMessages.scrollHeight - chatMessages.scrollTop - chatMessages.clientHeight < 80;
-    }
+    const chatMessageContent = $('chatMessageContent');
+    const chatScroll = createChatScroll(chatMessages, chatMessageContent);
+    const chatResize = ChatResize.createChatResize({ separator: $('chatResize'), drawer: chatDrawer,
+        onChange: () => chatScroll.layoutChanged(),
+        onStart: () => {
+            closePopovers();
+            // Existing viewport handlers also dismiss mention/picker anchors.
+            // This event does not alter the viewport or resize preference.
+            window.dispatchEvent(new Event('resize'));
+        } });
 
     function updateChatMessages() {
+        chatMessageById = new Map(chatMessagesList.map(m => [m.id, m]));
+        updateChatReplyPreview();
         chatCount.textContent = plural(chatMessagesList.length, 'shitpost');
         if (chatMessagesList.length === 0) {
-            setHtml(chatMessages, '<div class="chat-empty">No shitposts yet.</div>');
+            setHtml(chatMessageContent, '<div class="chat-empty">No shitposts yet.</div>');
             return;
         }
         const sorted = [...chatMessagesList].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-        setHtml(chatMessages, sorted.map((m, i) => renderChatMessage(m, sorted[i - 1])).join(''));
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+        setHtml(chatMessageContent, sorted.map((m, i) => renderChatMessage(m, sorted[i - 1])).join(''));
+        chatScroll.layoutChanged();
     }
 
     function updateUnread() {
-        chatUnread.hidden = unreadChat === 0;
-        chatUnread.textContent = unreadChat > 99 ? '99+' : String(unreadChat);
+        const mention = unseenMentions > 0;
+        const description = [
+            mention ? `${unseenMentions} unseen ${unseenMentions === 1 ? 'mention' : 'mentions'}` : '',
+            unreadChat ? `${unreadChat} unread ${unreadChat === 1 ? 'message' : 'messages'}` : ''
+        ].filter(Boolean).join(', ');
+        // A mention takes priority, including after a reload with no new-message
+        // count. One badge avoids presenting the same incoming message twice.
+        chatUnread.hidden = !mention && unreadChat === 0;
+        chatUnread.textContent = mention ? '@' : unreadChat > 99 ? '99+' : String(unreadChat);
+        chatUnread.classList.toggle('has-mention', mention);
+        chatUnread.setAttribute('aria-label', description);
+        chatUnread.title = description;
+        chatToggle.setAttribute('aria-label', description ? `Shitposts, ${description}` : 'Shitposts');
     }
 
     function setChatOpen(open) {
         chatDrawer.hidden = !open;
+        chatResize.refresh();
         document.documentElement.classList.toggle('chat-open', open);
         chatToggle.setAttribute('aria-expanded', String(open));
         updateChatLayout();
         if (open) {
             closePopovers();
-            unreadChat = 0;
-            updateUnread();
-            chatMessages.scrollTop = chatMessages.scrollHeight;
+            if (!document.hidden) clearChatNotifications();
+            chatScroll.follow();
         }
     }
 
@@ -680,14 +749,25 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    let visibleViewportFrame = null;
     function updateVisibleViewport() {
-        const viewport = window.visualViewport;
-        document.documentElement.style.setProperty('--visible-height', `${viewport?.height ?? window.innerHeight}px`);
-        document.documentElement.style.setProperty('--visible-top', `${viewport?.offsetTop ?? 0}px`);
+        if (visibleViewportFrame !== null) return;
+        // Keyboard/browser-toolbar events can fire before their geometry settles.
+        // Read at paint time, not while handling the earlier resize notification.
+        visibleViewportFrame = requestAnimationFrame(() => {
+            visibleViewportFrame = null;
+            const viewport = window.visualViewport;
+            document.documentElement.style.setProperty('--visible-height', `${viewport?.height ?? window.innerHeight}px`);
+            document.documentElement.style.setProperty('--visible-top', `${viewport?.offsetTop ?? 0}px`);
+            chatScroll.layoutChanged();
+        });
     }
     window.visualViewport?.addEventListener('resize', updateVisibleViewport);
     window.visualViewport?.addEventListener('scroll', updateVisibleViewport);
     window.addEventListener('resize', updateVisibleViewport);
+    window.addEventListener('pageshow', updateVisibleViewport);
+    document.addEventListener('focusin', updateVisibleViewport);
+    document.addEventListener('focusout', updateVisibleViewport);
     modalChatLayout.addEventListener('change', () => {
         updateChatLayout();
         if (!chatDrawer.hidden && modalChatLayout.matches && !chatDrawer.contains(document.activeElement)) chatClose.focus();
@@ -700,7 +780,10 @@ document.addEventListener('DOMContentLoaded', function() {
     function sendChatMessage() {
         const text = chatInput.value.trim();
         if (text) {
-            window.socket.emit('chat-message', { text });
+            window.socket.emit('chat-message', { text, mentions: mentionEditor.get(chatInput), ...(chatReplyTo ? { replyTo: chatReplyTo } : {}) });
+            chatReplyTo = null;
+            updateChatReplyPreview();
+            mentionEditor.clear(chatInput);
             chatInput.value = '';
             sendChatBtn.disabled = true;
         }
@@ -746,7 +829,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <button type="button" class="btn primary" data-action="save-comment" data-comment-id="${esc(comment.id)}">Save</button>
                 </div>
             </div>` : undefined;
-        return NoteView.commentHTML(comment, { tools, body });
+        return NoteView.commentHTML(comment, { tools, body, agreementActor: currentUser.sub });
     }
 
     function noteHTML(note) {
@@ -780,7 +863,7 @@ document.addEventListener('DOMContentLoaded', function() {
             ${comments.map(c => commentHTML(note, c)).join('')}
             ${replying ? `
             <div class="comment-input">
-                ${avatarHTML(currentUser.sub || currentUser.name, currentUser.name, 'sm')}
+                ${avatarHTML(currentUser.sub || currentUser.name, currentUser.name, 'sm', currentUser.emailPrefix)}
                 <div class="comment-box">
                     <textarea rows="1" data-field="comment" placeholder="Write a reply…" aria-label="Write a reply">${esc(draft)}</textarea>
                     <div class="comment-box-actions">
@@ -794,6 +877,7 @@ document.addEventListener('DOMContentLoaded', function() {
         return NoteView.noteHTML(note, {
             attrs: `data-note-id="${esc(note.id)}"`,
             side: actions, body, thread,
+            agreementActor: currentUser.sub,
             foot: tagTriggerHTML(note)
         });
     }
@@ -953,7 +1037,7 @@ document.addEventListener('DOMContentLoaded', function() {
         setHtml(wrapper, NoteView.noteHTML(note, {
             className: 'pending',
             attrs: `data-client-id="${esc(note.clientId)}"`,
-            author: { key: currentUser.sub || currentUser.name, name: currentUser.name },
+            author: { key: currentUser.sub || currentUser.name, name: currentUser.name, emailPrefix: currentUser.emailPrefix },
             side: `<span class="pending-badge">${esc(pendingBadgeText())}</span>`,
             foot: tagChipsHTML(note)
         }).trim());
@@ -1057,6 +1141,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (noteInput.value.trim() === '') return clearDraft();
             sessionStorage.setItem(DRAFT_KEY, JSON.stringify({
                 text: noteInput.value,
+                mentions: mentionEditor.get(noteInput, false),
                 tags: selectedTags,
                 timecode: currentUser.frozenTimecode,
                 lxCue: currentUser.frozenLxCue,
@@ -1123,6 +1208,7 @@ document.addEventListener('DOMContentLoaded', function() {
         try { draft = JSON.parse(sessionStorage.getItem(DRAFT_KEY)); } catch (e) { /* none */ }
         if (!draft || typeof draft.text !== 'string' || !draft.timecode) return;
         noteInput.value = draft.text;
+        mentionEditor.set(noteInput, draft.mentions);
         sendNoteBtn.disabled = draft.text.trim().length === 0;
         // Tags come from the latest per-user selection, never an older draft.
         applyRememberedTags();
@@ -1240,7 +1326,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const changed = currentUser.sub !== data.sub;
         currentUser.name = data.name;
         currentUser.sub = data.sub;
+        currentUser.emailPrefix = data.emailPrefix || null;
         identityConfirmed = true;
+        authorSearch.refresh();
         applyRememberedTags();
         // Notes written before we knew who we are are ours; another person's
         // stay in their own saved copy (pending-notes.js) for their next login.
@@ -1293,6 +1381,7 @@ document.addEventListener('DOMContentLoaded', function() {
         // Sent on every connect, usually the same tags the page already has.
         if (JSON.stringify(tags) === JSON.stringify(availableTags)) return;
         availableTags = tags;
+        composerTags.reconcile(currentUser.sub, availableTags);
         saveTagsToStorage();
         if (selectedTags.length) updateTagsDisplay();
         else applyRememberedTags();
@@ -1335,6 +1424,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // snapshot or back from the back/forward cache: notes edited, tagged or
     // replied to meanwhile are redrawn one by one (keeping any open edit box
     // and its focus), and only a changed set of notes rebuilds the list.
+    window.socket.on('show-log-update', (log) => {
+        currentShowLog = Array.isArray(log) ? log : [];
+        refreshGroupTimes();
+    });
+
     window.socket.on('notes-update', (notes) => {
         notesLoading.finish();
         const incoming = notes.map(withLists);
@@ -1344,7 +1438,25 @@ document.addEventListener('DOMContentLoaded', function() {
         if (allNotes.length === incoming.length && allNotes.every((n, i) => n.id === incoming[i].id)) {
             incoming.forEach((note, i) => {
                 if (JSON.stringify(note) === JSON.stringify(allNotes[i])) return;
+                const withoutAgreements = ({ agreements, comments, ...content }) => ({
+                    ...content, comments: (comments || []).map(({ agreements, ...comment }) => comment)
+                });
+                const previousContent = withoutAgreements(allNotes[i]);
+                const nextContent = withoutAgreements(note);
                 allNotes[i] = note;
+                // Agreement changes do not alter note text, author or actions.
+                // Updating those controls in place preserves hover/focus and
+                // avoids flashing the neighbouring video/reply icons.
+                if (JSON.stringify(previousContent) === JSON.stringify(nextContent)) {
+                    const element = noteElements.get(note.id);
+                    if (NoteView.updateAgreements(element, note, currentUser.sub)) {
+                        for (const comment of note.comments || []) {
+                            const row = element.querySelector(`.comment[data-comment-id="${CSS.escape(comment.id)}"]`);
+                            if (row) NoteView.updateAgreements(row, comment, currentUser.sub, { comment: true });
+                        }
+                        return;
+                    }
+                }
                 updateNoteElement(note, { refilter: false });
             });
             filterNotes();
@@ -1359,10 +1471,11 @@ document.addEventListener('DOMContentLoaded', function() {
         addNote(withLists(note));
     });
 
-    window.socket.on('note-edit-text', ({ noteId, newText, lastEditedBy, lastEdited }) => {
+    window.socket.on('note-edit-text', ({ noteId, newText, mentions, lastEditedBy, lastEdited }) => {
         const note = allNotes.find(n => n.id === noteId);
         if (note) {
             note.text = newText;
+            note.mentions = mentions;
             note.lastEdited = lastEdited;
             note.lastEditedBy = lastEditedBy;
             updateNoteElement(note);
@@ -1386,11 +1499,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    window.socket.on('comment-edit', ({ noteId, commentId, newText, lastEditedBy, lastEdited }) => {
+    window.socket.on('comment-edit', ({ noteId, commentId, newText, mentions, lastEditedBy, lastEdited }) => {
         const note = allNotes.find(n => n.id === noteId);
         const comment = note && note.comments && note.comments.find(c => c.id === commentId);
         if (comment) {
             comment.text = newText;
+            comment.mentions = mentions;
             comment.lastEdited = lastEdited;
             comment.lastEditedBy = lastEditedBy;
             updateNoteElement(note);
@@ -1436,21 +1550,24 @@ document.addEventListener('DOMContentLoaded', function() {
         chatLoading.finish({ immediate: true });
         if (chatMessagesList.some((m) => m.id === msg.id)) return;
         chatMessagesList.push(msg);
+        chatMessageById.set(msg.id, msg);
+        updateMentionBadge([msg]);
         chatCopy.onMessageAdded(chatMessagesList);
         const mine = isMyChat(msg);
-        if (chatDrawer.hidden && !mine) {
+        if ((chatDrawer.hidden || document.hidden) && !mine) {
             unreadChat++;
             updateUnread();
         }
         // Only the new message is drawn, open or not: redrawing the whole
         // (uncapped) log per message gets slower as the log grows.
-        const stick = !chatDrawer.hidden && (mine || chatNearBottom());
-        if (chatMessagesList.length === 1) setHtml(chatMessages, '');
+        const stick = !chatDrawer.hidden && (mine || chatScroll.followsBottom());
+        if (chatMessagesList.length === 1) setHtml(chatMessageContent, '');
         const holder = document.createElement('div');
         setHtml(holder, renderChatMessage(msg, chatMessagesList[chatMessagesList.length - 2]));
-        chatMessages.append(...holder.childNodes);
+        chatMessageContent.append(...holder.childNodes);
         chatCount.textContent = plural(chatMessagesList.length, 'shitpost');
-        if (stick) chatMessages.scrollTop = chatMessages.scrollHeight;
+        if (stick) chatScroll.follow();
+        else chatScroll.layoutChanged();
     });
 
     // The chat log kept in localStorage so it survives a reload. After a server
@@ -1466,6 +1583,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const offer = chatCopy.onServerLog(msgs);
         if (offer) window.socket.emit('chat-restore-offer', offer);
         chatMessagesList = msgs;
+        updateMentionBadge(msgs);
         updateChatMessages();
         chatLoading.finish();
     });
@@ -1474,6 +1592,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // and the notes still waiting to be acknowledged, so neither comes back.
     window.socket.on('all-reset', () => {
         chatCopy.onReset();
+        chatReplyTo = null;
+        updateChatReplyPreview();
+        unreadChat = 0;
+        mentionUnread.reset(); updateMentionBadge();
         for (const { element, feedbackTimer } of pendingNotes.values()) {
             clearTimeout(feedbackTimer);
             element.remove();
@@ -1524,7 +1646,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     document.addEventListener('click', (e) => {
-        if (!e.target.closest('.popover') && !e.target.closest('[data-action="edit-tags"]')) closePopovers();
+        if (!e.target.closest('.popover') && !e.target.closest('.search') && !e.target.closest('[data-action="edit-tags"]')) closePopovers();
     });
     NoteView.watchPopoverResize(closePopovers, () => {
         document.querySelectorAll('.popover:not([hidden])').forEach(NoteView.fitPopoverInViewport);
@@ -1642,6 +1764,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (text && currentUser.frozenTimecode) {
             submitNote({
                 text: text,
+                mentions: mentionEditor.get(noteInput),
                 timecode: currentUser.frozenTimecode,
                 lxCue: currentUser.frozenLxCue,
                 typingStartedAt: currentUser.typingStartedAt,
@@ -1684,7 +1807,18 @@ document.addEventListener('DOMContentLoaded', function() {
             noteInput.focus();
         }
 
-        // Escape leaves the note box; an empty note is also cancelled.
+        if (e.key === 'Enter' && typeToNote.shouldSubmitDraft(e, document.activeElement, {
+            ...ctx,
+            noteHasText: noteInput.value.trim().length > 0,
+            touchInput: touchInput.matches,
+            modalOpen: ctx.modalOpen || !!document.querySelector('.popover:not([hidden]), [popover]:popover-open, dialog[open], [aria-modal="true"]:not([hidden])')
+        })) {
+            e.preventDefault();
+            noteInput.focus();
+            if (!sendNoteBtn.disabled) sendNoteBtn.click();
+        }
+
+        // Only an empty note releases focus on Escape.
         const action = typeToNote.escapeAction(e, document.activeElement, {
             modalOpen: ctx.modalOpen,
             noteInput,
@@ -1706,9 +1840,47 @@ document.addEventListener('DOMContentLoaded', function() {
         if (e.target.closest('[data-action="clear-filters"]')) clearFilters();
     });
 
+    function updateChatReplyPreview() {
+        $('chatReplyPreview').hidden = !chatReplyTo;
+        if (!chatReplyTo) { $('chatReplyContext').textContent = ''; return; }
+        const quote = ChatReplies.quote(chatReplyTo, chatMessageById);
+        setHtml($('chatReplyContext'), `<span class="chat-quote-author">Replying to ${esc(quote.author)}</span><span class="chat-quote-text">${esc(quote.text)}</span>`);
+    }
+    function cancelChatReply() {
+        chatReplyTo = null;
+        updateChatReplyPreview();
+        chatInput.focus();
+    }
+    $('chatReplyCancel').addEventListener('click', cancelChatReply);
+    chatMessages.addEventListener('click', (e) => {
+        const reply = e.target.closest('[data-chat-reply]');
+        if (reply) {
+            chatReplyTo = reply.dataset.chatReply;
+            updateChatReplyPreview();
+            chatInput.focus();
+        }
+        const jump = e.target.closest('[data-chat-jump]');
+        if (jump) {
+            const row = [...chatMessages.querySelectorAll('[data-chat-id]')]
+                .find(el => el.dataset.chatId === jump.dataset.chatJump);
+            if (row) {
+                row.scrollIntoView({ block: 'center' });
+                row.querySelector('[data-chat-reply]')?.focus({ preventScroll: true });
+            } else {
+                jump.textContent = 'Original message unavailable';
+            }
+        }
+    });
+
     // --- Event listeners: chat ---
     chatInput.addEventListener('input', () => { sendChatBtn.disabled = chatInput.value.trim().length === 0; });
     chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && chatReplyTo) {
+            e.preventDefault();
+            e.stopPropagation();
+            cancelChatReply();
+            return;
+        }
         if (typeToNote.shouldSubmit(e, touchInput.matches)) {
             e.preventDefault();
             sendChatMessage();
@@ -1725,7 +1897,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function saveNoteEdit(note) {
         const newText = (noteEditDrafts.get(note.id) || '').trim();
         noteEditDrafts.delete(note.id);
-        if (newText && newText !== note.text) window.socket.emit('note-edit-text', { noteId: note.id, newText });
+        if (newText) window.socket.emit('note-edit-text', { noteId: note.id, newText, mentions: mentionEditor.get(noteElements.get(note.id)?.querySelector('[data-field="note-edit"]')) });
         updateNoteElement(note);
     }
 
@@ -1734,8 +1906,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const comment = (note.comments || []).find(c => c.id === commentId);
         const newText = (commentEditDrafts.get(key) || '').trim();
         commentEditDrafts.delete(key);
-        if (comment && newText && newText !== comment.text) {
-            window.socket.emit('comment-edit', { noteId: note.id, commentId, newText });
+        if (comment && newText) {
+            window.socket.emit('comment-edit', { noteId: note.id, commentId, newText, mentions: mentionEditor.get(noteElements.get(note.id)?.querySelector(`[data-field="comment-edit"][data-comment-id="${CSS.escape(commentId)}"]`)) });
         }
         updateNoteElement(note);
     }
@@ -1743,7 +1915,7 @@ document.addEventListener('DOMContentLoaded', function() {
     function submitComment(note) {
         const text = (commentDrafts.get(note.id) || '').trim();
         if (!text) return;
-        window.socket.emit('comment-submit', { noteId: note.id, text });
+        window.socket.emit('comment-submit', { noteId: note.id, text, mentions: mentionEditor.get(noteElements.get(note.id)?.querySelector('[data-field="comment"]')) });
         commentDrafts.delete(note.id);
         closeReplyBox(note);
     }
@@ -1817,9 +1989,17 @@ document.addEventListener('DOMContentLoaded', function() {
         const note = noteOf(button);
         if (!note) return;
         const action = button.dataset.action;
-        const commentId = button.dataset.commentId;
+        const commentId = button.dataset.commentId || button.closest('.comment')?.dataset.commentId;
 
-        if (action === 'edit-tags') {
+        if (action === 'agree' || action === 'agree-comment') {
+            if (!window.socket.connected) return showToast(`Reconnect to agree with this ${action === 'agree-comment' ? 'reply' : 'note'}.`);
+            const event = action === 'agree-comment' ? 'comment-agreement-toggle' : 'note-agreement-toggle';
+            const target = action === 'agree-comment' ? { noteId: note.id, commentId } : { noteId: note.id };
+            window.socket.timeout(5000).emit(event, target, (error, result) => {
+                if (error) showToast('Agreement not confirmed. Check the count before trying again.');
+                else if (result?.error) showToast(result.error);
+            });
+        } else if (action === 'edit-tags') {
             if (tagPickerNoteId === note.id) closeTagPicker();
             else openTagPicker(note.id, button);
         } else if (action === 'reply') {
@@ -1832,6 +2012,7 @@ document.addEventListener('DOMContentLoaded', function() {
             noteEditDrafts.set(note.id, note.text);
             updateNoteElement(note);
             const textarea = noteElements.get(note.id).querySelector('[data-field="note-edit"]');
+            mentionEditor.set(textarea, note.mentions);
             textarea.focus();
             textarea.setSelectionRange(textarea.value.length, textarea.value.length);
         } else if (action === 'save-note') {
@@ -1845,7 +2026,8 @@ document.addEventListener('DOMContentLoaded', function() {
             const comment = note.comments.find(c => c.id === commentId);
             commentEditDrafts.set(`${note.id}/${commentId}`, comment ? comment.text : '');
             updateNoteElement(note);
-            noteElements.get(note.id).querySelector(`[data-field="comment-edit"][data-comment-id="${CSS.escape(commentId)}"]`)?.focus();
+            const textarea = noteElements.get(note.id).querySelector(`[data-field="comment-edit"][data-comment-id="${CSS.escape(commentId)}"]`);
+            if (textarea) { mentionEditor.set(textarea, comment?.mentions); textarea.focus(); }
         } else if (action === 'save-comment') {
             saveCommentEdit(note, commentId);
         } else if (action === 'cancel-comment-edit') {
@@ -1905,13 +2087,8 @@ document.addEventListener('DOMContentLoaded', function() {
         clearTimeout(scrollTimeout);
         scrollTimeout = setTimeout(toggleScrollButton, 50);
         if (!tagPicker.hidden && !tagPicker.contains(document.activeElement)) closeTagPicker();
-        if (modalChatLayout.matches || touchInput.matches) {
-            actDropdown.reposition();
-            tagDropdown.reposition();
-        } else {
-            actDropdown.close();
-            tagDropdown.close();
-        }
+        actDropdown.reposition();
+        tagDropdown.reposition();
     }, { passive: true });
 
     // --- Initialization ---

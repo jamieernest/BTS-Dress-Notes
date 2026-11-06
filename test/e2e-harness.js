@@ -37,7 +37,7 @@ function freePort() {
 
 // Stub OIDC provider: whoever /authorize is asked for next is `nextUser`
 // (it has no login of its own, so it never asks; Keycloak may).
-async function startOidc() {
+async function startOidc({ claims = {} } = {}) {
     const { publicKey, privateKey } = await jose.generateKeyPair('RS256', { extractable: true });
     const jwk = { ...(await jose.exportJWK(publicKey)), kid: 'k1', alg: 'RS256', use: 'sig' };
     const port = await freePort();
@@ -79,7 +79,7 @@ async function startOidc() {
             let body = '';
             for await (const chunk of req) body += chunk;
             const who = codes.get(new URLSearchParams(body).get('code'));
-            const idToken = await new jose.SignJWT({ name: who })
+            const idToken = await new jose.SignJWT({ name: who, ...claims[who] })
                 .setProtectedHeader({ alg: 'RS256', kid: 'k1' })
                 .setIssuer(issuer).setAudience('bts').setSubject(`sub-${who}`)
                 .setIssuedAt().setExpirationTime('1h').sign(privateKey);

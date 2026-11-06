@@ -271,3 +271,28 @@ test('an offer is cut to its most recent messages when it would not fit one mess
     assert.strictEqual(offer[offer.length - 1].id, 'm1099');
     assert.ok(JSON.stringify(offer).length <= MAX_OFFER_CHARS);
 });
+
+test('reply metadata survives client copies, reloads and restart restore; invalid references are refused', async (t) => {
+    const { app, alice, bob } = await setup(t);
+    const replyTo = alice.page.log[0].id;
+    bob.page.socket.emit('chat-message', { text: 'reply from bob', replyTo });
+    await until(() => alice.page.log.length === 3 && bob.page.log.length === 3, 'reply to arrive');
+    assert.strictEqual(alice.page.log[2].replyTo, replyTo);
+    assert.strictEqual(alice.page.log[2].userId, 'sub-bob');
+    assert.strictEqual(JSON.parse(alice.items.get('chat-log-copy')).log[2].replyTo, replyTo);
+    for (const invalid of ['', {}, 'x'.repeat(65), 123]) {
+        const ack = await new Promise(resolve => bob.page.socket.emit('chat-message', { text: 'invalid', replyTo: invalid }, resolve));
+        assert.ok(ack.error);
+    }
+    await app.stop();
+    alice.close(); bob.close();
+    await app.start();
+    alice.load(); bob.load();
+    await until(() => alice.page.log?.length === 3 && bob.page.log?.length === 3, 'reply to restore');
+    assert.strictEqual(alice.page.log[2].replyTo, replyTo);
+    assert.strictEqual(bob.page.log[2].replyTo, replyTo);
+    // A well-formed missing reference remains usable following an outage.
+    alice.page.socket.emit('chat-message', { text: 'target unavailable', replyTo: 'missing' });
+    await until(() => bob.page.log.length === 4, 'missing target reply');
+    assert.strictEqual(bob.page.log[3].replyTo, 'missing');
+});

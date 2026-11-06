@@ -147,6 +147,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function loadNotes(parsed, preserveFilters = false) {
         data = parsed;
+        NoteNumbers.migrate(data.notes, data.nextNoteNumber);
         tagsById = new Map((data.tags || []).map(tag => [tag.id, tag]));
         scenes = T.changes(data, 'scene').list;
         const lx = T.changes(data, 'cue');
@@ -742,19 +743,20 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         let html = '';
         let group = null;
+        const sceneTimes = NoteView.sceneStartTimes(data.notes, data.showLog);
         list.forEach((p, i) => {
-            const scene = p.note.act || '';
+            const scene = p.note.act || 'Preshow';
             if (i === 0 || scene !== group) {
                 group = scene;
                 let count = 0;
-                for (let j = i; j < list.length && (list[j].note.act || '') === scene; j++) count++;
-                html += `<div class="group-head">${esc(scene || 'No scene')}<span class="group-count muted">${count}</span></div>`;
+                for (let j = i; j < list.length && (list[j].note.act || 'Preshow') === scene; j++) count++;
+                html += NoteView.groupHeadHTML(scene, sceneTimes.get(scene), NoteView.plural(count, 'note'));
             }
             const n = p.note;
             html += `<button type="button" class="side-note" data-id="${esc(n.id)}">
                 <span class="body">
-                    <span class="meta"><span class="author">${esc(n.user)}</span><span class="dots">${tagDots(n)}</span><span class="when mono">${esc(timed() ? videoTimeText(toVideo(p.at)) : clockText(p.at))}</span></span>
-                    <span class="text">${esc(n.text)}</span>
+                    <span class="meta">${NoteView.avatarHTML(n.userId || n.user, n.user, 'sm', n.emailPrefix)}<span class="author">${esc(n.user)}</span><span class="note-cue">Cue ${esc(n.lxCue || '–')}</span>${NoteNumbers.label(n) ? `<span class="note-reference mono">${esc(NoteNumbers.label(n))}</span>` : ''}<span class="dots">${tagDots(n)}</span></span>
+                    <span class="text">${Mentions.html(n.text, n.mentions)}</span>
                 </span>
             </button>`;
         });
@@ -856,8 +858,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (!p) return '';
             const n = p.note;
             const cue = T.cueLabel(n.lxCue);
-            return `<div class="who"><strong>${esc(n.user)}</strong><span class="dots">${tagDots(n)}</span><span class="muted mono">${esc(clockText(p.at))}</span></div>
-                <div class="text">${esc(n.text)}</div>
+            return `<div class="who"><strong>${esc(NoteNumbers.label(n))} ${esc(n.user)}</strong><span class="dots">${tagDots(n)}</span><span class="muted mono">${esc(clockText(p.at))}</span></div>
+                <div class="text">${Mentions.html(n.text, n.mentions)}</div>
                 ${cue ? `<div class="muted">LX ${esc(cue)}</div>` : ''}`;
         }
         if (el.classList.contains('scene')) {
