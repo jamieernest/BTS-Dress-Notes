@@ -941,23 +941,24 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Only for a note that is the newest; addNote rebuilds the list for one that isn't.
-    // Pending notes stay above every note the server has.
+    // Pending notes stay at the newest end, beyond every note the server has.
     function insertNewestNote(element, note) {
         const act = note.act || 'Preshow';
         const heads = [...notesList.querySelectorAll('.group-head')];
         const existing = heads.find(head => head.dataset.act === act);
+        if (existing && !oldestFirst) return existing.after(element);
         if (existing) {
-            existing.after(element);
-        } else {
-            // A newly represented scene may precede the current scene in time.
-            const groups = NoteView.groupNotes(NoteOrder.newestFirst(allNotes));
-            const index = groups.findIndex(group => group.act === act);
-            const following = new Set(groups.slice(index + 1).map(group => group.act));
-            const next = heads.find(head => following.has(head.dataset.act));
-            const head = groupHeadElement(act);
-            notesList.insertBefore(head, next || null);
-            head.after(element);
+            const next = heads[heads.indexOf(existing) + 1];
+            return notesList.insertBefore(element, next || firstPendingElement());
         }
+        // A newly represented scene may precede the current scene in time.
+        const groups = orderedGroups();
+        const index = groups.findIndex(group => group.act === act);
+        const following = new Set(groups.slice(index + 1).map(group => group.act));
+        const next = heads.find(head => following.has(head.dataset.act));
+        const head = groupHeadElement(act);
+        notesList.insertBefore(head, next || (oldestFirst ? firstPendingElement() : null));
+        head.after(element);
     }
 
     // Drawing a note costs about half a millisecond (mostly DOMPurify), so a
@@ -1016,7 +1017,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (allNotes.some(n => n.id === note.id)) return;
         const index = NoteOrder.insertionIndex(allNotes, note);
         allNotes.splice(index, 0, note);
-        if (oldestFirst || index < allNotes.length - 1 || rebuildTimer !== null) {
+        if (index < allNotes.length - 1 || rebuildTimer !== null) {
             // A late note (written while disconnected) belongs below later ones.
             rebuildFullNotesList();
         } else {
