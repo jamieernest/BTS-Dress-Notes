@@ -1644,6 +1644,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 text: text,
                 timecode: currentUser.frozenTimecode,
                 lxCue: currentUser.frozenLxCue,
+                act: currentUser.frozenAct,
                 typingStartedAt: currentUser.typingStartedAt,
                 frameRate: timeMode === 'realtime' ? 'ms' : currentUser.currentFrameRate,
                 tags: selectedTags,

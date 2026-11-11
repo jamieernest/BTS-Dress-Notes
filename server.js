@@ -1534,7 +1534,7 @@ io.on('connection', (socket) => {
             timestamp: new Date(now - ageMs).toISOString(),
             frameRate: input.cleanFrameRate(data.frameRate) || currentModeTimecode().frameRate,
             tags,
-            act: globalState.currentAct, // Use current act from OSC
+            act: input.cleanCue(data.act) || globalState.currentAct,
             comments: []
         };
         if (clientId) note.clientId = clientId;
