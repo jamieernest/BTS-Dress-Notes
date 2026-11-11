@@ -369,13 +369,14 @@ document.addEventListener('DOMContentLoaded', function() {
     let composerHold = null;
     let composerHoldTimer = null;
     let composerHoldWatch = null;
+    function drawAct(el, act) { setHtml(el, Mentions.labelHtml(act, Mentions.accounts(allNotes, chatMessagesList, lastUsers), currentUser)); }
     function updateComposer() {
         const open = currentUser.isTyping || noteInput.value.length > 0 || document.activeElement === noteInput || !!composerHold;
         composer.classList.toggle('open', open);
         composer.classList.toggle('focused', composer.contains(document.activeElement) || !!composerHold);
         personalTimecodeContainer.classList.toggle('frozen', currentUser.isTyping);
         stampLabel.textContent = currentUser.isTyping ? 'Note taken during' : 'Taken when you start typing';
-        personalActElement.textContent = currentUser.frozenAct || currentAct;
+        drawAct(personalActElement, currentUser.frozenAct || currentAct);
         personalTimecodeContainer.title = 'Locked when you start writing, so it matches the moment you saw';
         noteInput.style.height = 'auto';
         noteInput.style.height = `${noteInput.scrollHeight}px`;
@@ -902,7 +903,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function groupHeadElement(act) {
         const wrapper = document.createElement('div');
-        setHtml(wrapper, NoteView.groupHeadHTML(act));
+        setHtml(wrapper, NoteView.groupHeadHTML(act, undefined, '', Mentions.accounts(allNotes, chatMessagesList, lastUsers), currentUser));
         return wrapper.firstChild;
     }
 
@@ -1219,7 +1220,7 @@ document.addEventListener('DOMContentLoaded', function() {
         lastUsers = live.users;
         renderUsers(lastUsers);
         currentAct = live.act;
-        currentActDisplay.textContent = live.act;
+        drawAct(currentActDisplay, live.act);
         currentGlobalLxCue = live.cue;
         lxCueInput.value = live.cue;
         oscAvailable = live.oscAvailable;
@@ -1389,8 +1390,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     window.socket.on('act-update', (act) => {
         currentAct = act;
-        currentActDisplay.textContent = act;
-        if (!currentUser.frozenAct) personalActElement.textContent = act;
+        drawAct(currentActDisplay, act);
+        if (!currentUser.frozenAct) drawAct(personalActElement, act);
         receivedLive('act');
     });
 

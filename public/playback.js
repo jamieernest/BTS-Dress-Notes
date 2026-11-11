@@ -750,7 +750,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 group = scene;
                 let count = 0;
                 for (let j = i; j < list.length && (list[j].note.act || 'Preshow') === scene; j++) count++;
-                html += NoteView.groupHeadHTML(scene, sceneTimes.get(scene), NoteView.plural(count, 'note'));
+                html += NoteView.groupHeadHTML(scene, sceneTimes.get(scene), NoteView.plural(count, 'note'), Mentions.accounts(data.notes, [], []));
             }
             const n = p.note;
             html += `<button type="button" class="side-note" data-id="${esc(n.id)}">

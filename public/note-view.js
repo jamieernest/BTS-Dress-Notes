@@ -296,8 +296,9 @@
         }).map(({ act, notes }) => ({ act, notes }));
     }
 
-    function groupHeadHTML(act, at, count = '') {
-        return `<div class="group-head" data-act="${esc(act)}"><span>${esc(act)}</span><span class="muted group-count">${esc(count)}</span>${groupTimeHTML(at)}</div>`;
+    // people/me only affect how the label is drawn; data-act stays the raw label.
+    function groupHeadHTML(act, at, count = '', people = [], me = null) {
+        return `<div class="group-head" data-act="${esc(act)}"><span>${Mentions.labelHtml(act, people, me)}</span><span class="muted group-count">${esc(count)}</span>${groupTimeHTML(at)}</div>`;
     }
 
     function updateGroupTime(head, at) {

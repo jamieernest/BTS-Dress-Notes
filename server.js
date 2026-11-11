@@ -716,7 +716,7 @@ function handleOscMessage(address, value) {
             // io.emit('lx-cue-update', `Pending: ${cueName}`);
         }
     } else if (address.startsWith('/bts/')) {
-        const act = value;
+        const act = input.cleanCue(value);
         if (act && act !== globalState.currentAct) {
             globalState.currentAct = act;
             if (showLog.record(globalState.showLog, 'scene', act)) {
