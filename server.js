@@ -10,6 +10,7 @@ const { Server, Message, encode } = require('node-osc');
 const { createSlipDecoder, decodeOscPacket, extractCueLabel } = require('./eos-osc');
 const { extractMidi, wrapperSequence, createSequenceFilter, senderCid } = require('./acn-midi');
 const { createMtcDecoder } = require('./mtc');
+const loopbackOverlay = require('./loopback-overlay');
 const { listIpv4Interfaces, resolveInterface } = require('./net-iface');
 const { createGatewayLock } = require('./gateway-lock');
 const { loadSettings, saveSettings } = require('./settings');
@@ -382,7 +383,7 @@ app.post('/logout', (req, res) => {
 // page to come back to in the URL, and anything else (scripts, fetches) just
 // gets a 401, so a stray asset request cannot become the post-login page.
 function requireAuth(req, res, next) {
-    if (isLoggedIn(req)) {
+    if (isLoggedIn(req) || loopbackOverlay.isLoopbackOverlayRequest(req)) {
         return next();
     }
     if (req.method === 'GET' && req.accepts(['json', 'html']) === 'html') {
@@ -397,7 +398,8 @@ app.use(requireAuth);
 // session cookie, and a page on a WebSocket otherwise makes no HTTP requests.
 app.get('/session', (req, res) => {
     res.set('Cache-Control', 'no-store');
-    res.json({ name: req.session.user.name, sub: req.session.user.sub });
+    const user = req.session.user || {};
+    res.json({ name: user.name, sub: user.sub });
 });
 
 // Saved shows for Past notes (saved from the config page, see saved-shows.js).
@@ -1250,10 +1252,14 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
 // Session is available during the WS handshake as socket.request.session.
 io.engine.use(sessionMiddleware);
 
-// Refuse sockets with no valid Keycloak-backed session.
+// Refuse sockets with no valid Keycloak-backed session, except an overlay
+// connecting from this machine (loopback-overlay.js).
 io.use((socket, next) => {
     const sessionUser = socket.request.session && socket.request.session.user;
     if (sessionUser && sessionUser.sub) {
+        return next();
+    }
+    if (loopbackOverlay.isLoopbackOverlaySocket(socket, pageOf(socket))) {
         return next();
     }
     next(new Error('unauthorized'));
@@ -1291,7 +1297,7 @@ function rememberDeleted(note) {
 io.on('connection', (socket) => {
     console.log('Client connected:', socket.id);
 
-    const sessionUser = socket.request.session.user;
+    const sessionUser = (socket.request.session && socket.request.session.user) || { sub: 'local-overlay', name: 'Overlay' };
     const page = pageOf(socket);
     const isOverlay = page === 'overlay';
     // The config page is left out of the online users list but, unlike
