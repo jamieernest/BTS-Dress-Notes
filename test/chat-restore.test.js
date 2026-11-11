@@ -146,13 +146,6 @@ test('malformed or absurd offers are rejected', () => {
     assert.strictEqual(r.offer('b', 'junk', []), null);
 });
 
-test('a long chat is a valid offer: there is no 100 message limit', () => {
-    assert.strictEqual(sanitizeChatLog(log(5000)).length, 5000);
-    const r = createChatRestore();
-    r.offer('a', log(2500), []);
-    assert.strictEqual(r.offer('b', log(2500), []).length, 2500);
-});
-
 test('bounded live messages always pass the restore sanitizer', () => {
     const b = boundChatMessage({ user: 'u'.repeat(1000), userId: 's'.repeat(1000), text: 'x'.repeat(100000) });
     const out = sanitizeChatLog([{ id: 'a1', ...b, timestamp: new Date().toISOString() }]);

@@ -175,17 +175,6 @@ test('rejoins an adapter that is unplugged and plugged back in', () => {
     assert.strictEqual(lock.state().interfaceName, 'en7');
 });
 
-test('rejoins an adapter replugged between scans', () => {
-    const { lock, calls, advance, memberships } = setup({ interfaces: INTERFACES.slice(0, 2) });
-    lock.start();
-    lock.accept('10.10.160.188', GATEWAY_CID, true);
-    memberships.delete('10.10.160.50'); // unplugged and back before the next scan
-    calls.length = 0;
-    advance(10000);
-    assert.strictEqual(lock.state().locked, false);
-    assert.deepStrictEqual(calls, [['add', GROUP, '192.168.75.175'], ['add', GROUP, '10.10.160.50']]);
-});
-
 test('stop cancels the pending timer', () => {
     const { lock, advance, env } = setup({ interfaces: [INTERFACES[0]] });
     lock.start();

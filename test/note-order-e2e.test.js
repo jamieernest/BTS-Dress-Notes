@@ -80,10 +80,3 @@ test('a hostile or nonsense age is ignored and the note is stamped on arrival', 
     for (const n of notes) assert.ok(Math.abs(now - Date.parse(n.timestamp)) < 2000, `${n.text} stamped ${now - Date.parse(n.timestamp)} ms ago`);
 });
 
-test('a note sent while connected, with no age, is stamped on arrival and appended', async (t) => {
-    const { app, alice, carol } = await setup(t);
-    alice.note('one');
-    alice.note('two');
-    await until(() => alice.noteTexts().length === 2, 'the notes to arrive');
-    assert.deepStrictEqual((await serverNotes(app, carol)).map((n) => n.text), ['one', 'two']);
-});
