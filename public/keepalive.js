@@ -14,7 +14,7 @@
     // `onLoggedOut` runs when the server says the login is gone.
     function keepLoginAlive(onLoggedOut) {
         function check() {
-            fetch('/session', { headers: { accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin' })
+            fetch(/overlay/.test(location.pathname) ? '/session?overlay=1' : '/session', { headers: { accept: 'application/json' }, cache: 'no-store', credentials: 'same-origin' })
                 .then((res) => { if (res.status === 401) onLoggedOut(); })
                 .catch(() => { /* offline: the page's own connection status says so */ });
         }
