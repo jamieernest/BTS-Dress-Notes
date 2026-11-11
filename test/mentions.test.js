@@ -67,3 +67,9 @@ test('composing highlights only selected account ranges and escapes all text', (
     assert.equal(M.html('@Bob', [{ ...mention(), userId: '' }], true), '@Bob');
     assert.equal(M.html('@Rob', [mention()], true), '@Rob', 'editing through a mention removes its identity highlight');
 });
+test('picker survives its own scroll and only commits on click', () => {
+    const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '../public/mentions.js'), 'utf8');
+    assert.match(src, /addEventListener\('scroll', e => \{ if \(!menu\.contains\(e\.target\)\) close\(\)/);
+    assert.match(src, /menu\.addEventListener\('click'/);
+    assert.doesNotMatch(src, /menu\.addEventListener\('pointerdown'/);
+});

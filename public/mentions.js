@@ -179,7 +179,9 @@
             active?.setAttribute('aria-activedescendant', `mention-choice-${selected}`);
             SafeHtml.setHtml(menu, choices.map((p, i) => `<button type="button" role="option" id="mention-choice-${i}" aria-selected="${i === selected}" data-choice="${i}">${avatarHTML(p.userId, p.name, 'sm', p.emailPrefix)}<span>${SafeHtml.escapeHtml(p.name)}${choices.filter(c => c.name === p.name).length > 1 ? `<small>Account ${choices.filter(c => c.name === p.name).findIndex(c => c.userId === p.userId) + 1}</small>` : ''}</span></button>`).join(''));
         }
-        menu.addEventListener('pointerdown', e => { const b = e.target.closest('[data-choice]'); if (b) { e.preventDefault(); choose(Number(b.dataset.choice)); } });
+        // Choose on click, not pointerdown, so a touch drag-scroll over a row doesn't pick it; mousedown keeps textarea focus.
+        menu.addEventListener('mousedown', e => e.preventDefault());
+        menu.addEventListener('click', e => { const b = e.target.closest('[data-choice]'); if (b) choose(Number(b.dataset.choice)); });
         document.addEventListener('input', e => {
             if (!eligible(e.target)) return;
             // The completion dispatches one final input event once its identity
@@ -202,7 +204,7 @@
             }
         }, true);
         document.addEventListener('pointerdown', e => { if (!menu.contains(e.target) && e.target !== active) close(); });
-        window.addEventListener('resize', close); document.addEventListener('scroll', close, true);
+        window.addEventListener('resize', close); document.addEventListener('scroll', e => { if (!menu.contains(e.target)) close(); }, true);
         return {
             get(el, trimmed = true) { if (!el) return []; const s = state(el); const trim = trimmed ? el.value.length - el.value.trimStart().length : 0; return clean(trimmed ? el.value.trim() : el.value, s.mentions.map(m => ({ ...m, start: m.start - trim, end: m.end - trim }))); },
             set(el, mentions) { const selected = clean(el.value, mentions); const next = { text: el.value, mentions: selected }; states.set(key(el), next); histories.delete(key(el)); remember(key(el), next); highlighter.render(el, selected); },
