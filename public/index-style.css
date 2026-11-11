@@ -269,7 +269,12 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
 .notes-list {
     border: 1px solid var(--border);
     border-radius: 8px;
-    overflow: hidden;
+    overflow: clip; /* hidden would stop the scene headers sticking */
+}
+.notes-list > .group-head {
+    position: sticky;
+    top: calc(var(--navigation-top, var(--topbar-h)) + var(--toolbar-h, 0px));
+    z-index: 30;
 }
 .notes-list:empty { display: none; }
 .empty-link { color: var(--accent); text-underline-offset: 3px; }

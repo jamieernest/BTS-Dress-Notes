@@ -93,6 +93,25 @@ document.addEventListener('DOMContentLoaded', function() {
     const filters = NoteView.readFilters(new URLSearchParams(location.search));
     searchInput.value = new URLSearchParams(location.search).get('q') || '';
     NoteView.watchNavigation();
+    // Scene headers stick just below the toolbar, so they need its real height.
+    const notesToolbar = document.querySelector('.notes > .toolbar');
+    new ResizeObserver(() => document.documentElement.style.setProperty('--toolbar-h', `${notesToolbar.offsetHeight}px`)).observe(notesToolbar);
+    // Newest first is the default; the choice is kept per browser.
+    const ORDER_KEY = 'notes-order';
+    let oldestFirst = false;
+    try { oldestFirst = localStorage.getItem(ORDER_KEY) === 'oldest'; } catch (e) { /* storage unavailable */ }
+    const orderToggle = $('orderToggle');
+    const showOrderToggle = () => {
+        orderToggle.textContent = oldestFirst ? 'Oldest first' : 'Newest first';
+        orderToggle.setAttribute('aria-pressed', String(oldestFirst));
+    };
+    showOrderToggle();
+    orderToggle.addEventListener('click', () => {
+        oldestFirst = !oldestFirst;
+        try { localStorage.setItem(ORDER_KEY, oldestFirst ? 'oldest' : 'newest'); } catch (e) { /* storage unavailable */ }
+        showOrderToggle();
+        rebuildFullNotesList();
+    });
     const filterDropdown = (button, popover, key, update) => NoteView.createDropdown({
         button, popover,
         beforeOpen: () => closePopovers(),
@@ -949,14 +968,24 @@ document.addEventListener('DOMContentLoaded', function() {
     const LATER_BATCH = 60;
     let rebuildTimer = null;
 
+    // Scenes and the notes in them, in the direction the person chose.
+    function orderedGroups() {
+        const groups = NoteView.groupNotes(NoteOrder.newestFirst(allNotes));
+        return oldestFirst ? groups.reverse().map(({ act, notes }) => ({ act, notes: notes.slice().reverse() })) : groups;
+    }
+
+    // Pending rows (never confirmed) sit with the newest end: above everything, or below it when oldest first.
+    function firstPendingElement() {
+        return oldestFirst ? [...pendingNotes.values()].find(p => p.visible)?.element || null : null;
+    }
+
     function rebuildFullNotesList() {
         clearTimeout(rebuildTimer);
         notesList.replaceChildren();
         noteElements.clear();
-        for (const { element, visible } of [...pendingNotes.values()].reverse()) {
-            if (visible) notesList.appendChild(element);
-        }
-        const order = NoteView.groupNotes(NoteOrder.newestFirst(allNotes)).flatMap(group => group.notes.map(note => note.id));
+        const pendingRows = [...pendingNotes.values()].filter(p => p.visible);
+        for (const { element } of oldestFirst ? pendingRows : pendingRows.reverse()) notesList.appendChild(element);
+        const order = orderedGroups().flatMap(group => group.notes.map(note => note.id));
         let next = 0;
         let lastAct = null;
         const drawBatch = (size) => {
@@ -973,7 +1002,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 batch.appendChild(createNoteElement(note));
                 drawn++;
             }
-            notesList.appendChild(batch);
+            notesList.insertBefore(batch, firstPendingElement());
             filterNotes();
             rebuildTimer = next < order.length ? setTimeout(() => drawBatch(LATER_BATCH), 0) : null;
         };
@@ -987,7 +1016,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (allNotes.some(n => n.id === note.id)) return;
         const index = NoteOrder.insertionIndex(allNotes, note);
         allNotes.splice(index, 0, note);
-        if (index < allNotes.length - 1 || rebuildTimer !== null) {
+        if (oldestFirst || index < allNotes.length - 1 || rebuildTimer !== null) {
             // A late note (written while disconnected) belongs below later ones.
             rebuildFullNotesList();
         } else {
@@ -1053,10 +1082,14 @@ document.addEventListener('DOMContentLoaded', function() {
         if (pendingNotes.get(pending.note.clientId) !== pending || pending.visible) return;
         clearTimeout(pending.feedbackTimer);
         pending.visible = true;
-        // Pending rows have no confirmed scene yet, so keep them above its groups.
-        const next = [...pendingNotes.values()].reverse().find(other =>
-            other !== pending && other.visible && other.writtenAt <= pending.writtenAt);
-        notesList.insertBefore(pending.element, next ? next.element : notesList.querySelector('.group-head'));
+        // Pending rows have no confirmed scene yet, so keep them beside the newest end of the list.
+        if (oldestFirst) {
+            notesList.appendChild(pending.element);
+        } else {
+            const next = [...pendingNotes.values()].reverse().find(other =>
+                other !== pending && other.visible && other.writtenAt <= pending.writtenAt);
+            notesList.insertBefore(pending.element, next ? next.element : notesList.querySelector('.group-head'));
+        }
         filterNotes();
     }
 
