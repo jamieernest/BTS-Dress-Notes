@@ -159,3 +159,31 @@ test('bounded live messages always pass the restore sanitizer', () => {
     assert.ok(out);
     assert.strictEqual(boundChatMessage({ user: 'u', userId: 's', text: { a: 1 } }), null);
 });
+
+test('reply references are bounded, flat, and part of restore agreement', () => {
+    const original = log(1)[0];
+    const reply = { ...log(2)[1], replyTo: original.id };
+    assert.deepStrictEqual(sanitizeChatLog([original, reply]), [original, reply]);
+    for (const replyTo of ['', 'x'.repeat(65), {}, 42, null, 'bad\nref']) {
+        assert.strictEqual(sanitizeChatLog([{ ...reply, replyTo }]), null);
+        assert.strictEqual(boundChatMessage({ text: 'hi', replyTo }), null);
+    }
+    assert.strictEqual(sanitizeChatLog([{ ...reply, replyTo: reply.id }]), null);
+    assert.notStrictEqual(messageKey(reply), messageKey({ ...reply, replyTo: 'other' }));
+    assert.notStrictEqual(messageKey(reply), messageKey(log(2)[1]));
+    // Missing targets can result from quota trimming; retain the stable reference.
+    assert.deepStrictEqual(sanitizeChatLog([reply]), [reply]);
+    const restore = createChatRestore();
+    try {
+        assert.strictEqual(restore.offer('a', [original, reply], []), null);
+        assert.strictEqual(restore.offer('b', [original, { ...reply, replyTo: 'other' }], []), null);
+        assert.deepStrictEqual(restore.offer('b', [original, reply], []), [original, reply]);
+    } finally { restore.close(); }
+});
+
+test('reply context resolves only one level and handles absent originals', () => {
+    const { context } = require('../public/chat-replies');
+    const messages = new Map([['a', { user: 'Alice', text: '<hello>\nthere', replyTo: 'b' }]]);
+    assert.strictEqual(context('a', messages), 'Alice: <hello> there');
+    assert.strictEqual(context('missing', messages), 'Original message unavailable');
+});

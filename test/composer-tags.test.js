@@ -39,3 +39,14 @@ test('malformed storage is tolerated; blocked storage retains selections for thi
     blocked.save('alice', []);
     assert.deepEqual(blocked.load('alice'), []);
 });
+
+
+test('reconcile drops removed sticky ids and keeps an explicit empty selection', () => {
+    const values = new Map();
+    const tags = createComposerTags({ getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) });
+    tags.save('sub-person', ['crew', 'sound']);
+    assert.deepEqual(tags.reconcile('sub-person', [{ id: 'sound' }]), ['sound']);
+    assert.deepEqual(tags.load('sub-person'), ['sound']);
+    assert.deepEqual(tags.reconcile('sub-person', []), []);
+    assert.deepEqual(tags.load('sub-person'), []);
+});

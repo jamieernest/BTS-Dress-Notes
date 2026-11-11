@@ -28,6 +28,23 @@
             <p id="saveResult" class="section-note result" role="status" hidden></p>
         </section>
 
+        <section class="section" id="tags" aria-labelledby="tagsTitle">
+            <h2 id="tagsTitle">Show tags</h2>
+            <p class="section-note">Add tags such as Crew for this show. Reset and Save and reset restore the six default tags. Saved notes keep their tags.</p>
+            <div class="rows" id="tagRows"></div>
+            <form id="addTagForm" class="rows tag-add" aria-labelledby="newTagTitle">
+                <div class="row tag-add-heading"><span id="newTagTitle">New tag</span></div>
+                <div class="row tag-row">
+                    <label class="sr-only" for="newTagName">New tag name</label>
+                    <input id="newTagName" class="input" placeholder="New tag name" maxlength="60" required>
+                    <label class="sr-only" for="newTagColour">New tag colour</label>
+                    <input id="newTagColour" type="color" value="#9966cc" aria-label="New tag colour">
+                    <button type="submit" class="btn outline">Add tag</button>
+                </div>
+            </form>
+            <p id="tagResult" class="section-note result" role="status" hidden></p>
+        </section>
+
         <section class="section" id="recordings" aria-labelledby="recordingsTitle">
             <h2 id="recordingsTitle">Video</h2>
             <p class="section-note">Add a video for everyone to watch with these notes.</p>
@@ -108,14 +125,14 @@
                 <div class="row row-wrap">
                     <div class="row-text">
                         <div class="row-label">Reset current session</div>
-                        <p class="section-note">Clear current notes, chat and video for everyone.</p>
+                        <p class="section-note">Clear current notes, chat and video for everyone. Restores the six default tags.</p>
                     </div>
                     <button type="button" id="resetButton" class="btn danger-outline">Reset</button>
                 </div>
             </div>
             <p id="resetResult" class="section-note result" role="status" hidden></p>
             <h3 class="subhead">Recently reset notes</h3>
-            <p class="section-note">Notes are available for 3 days after a reset.</p>
+            <p class="section-note">Notes and their tag definitions can be restored for 3 days after a reset.</p>
             <div class="rows" id="resetRows">
                 <div class="row"><span class="row-value">Loading</span></div>
             </div>
@@ -149,7 +166,7 @@
 
     <dialog id="resetConfirm" class="confirm-dialog" aria-labelledby="resetConfirmTitle" aria-describedby="resetConfirmDetail resetRecovery">
         <h2 id="resetConfirmTitle">Reset current session?</h2>
-        <p id="resetConfirmDetail">Clears notes, chat and video for everyone.</p>
+        <p id="resetConfirmDetail">Clears notes, chat and video for everyone and restores the six default tags.</p>
         <p id="resetRecovery" class="muted">Notes can be restored for 3 days. Chat and video cannot.</p>
         <div class="dialog-actions">
             <button type="button" id="resetCancelButton" class="btn outline" autofocus>Cancel</button>
@@ -159,7 +176,7 @@
 
     <dialog id="saveResetConfirm" class="confirm-dialog" aria-labelledby="saveResetTitle" aria-describedby="saveResetDetail saveResetChat">
         <h2 id="saveResetTitle">Save and reset?</h2>
-        <p id="saveResetDetail">Saves notes and video, then clears the current session for everyone.</p>
+        <p id="saveResetDetail">Saves notes, tags and video, then clears the current session for everyone and restores the six default tags.</p>
         <p id="saveResetChat" class="muted">Chat will be deleted.</p>
         <div class="dialog-actions">
             <button type="button" id="saveResetCancelButton" class="btn outline" autofocus>Cancel</button>

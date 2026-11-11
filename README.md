@@ -76,3 +76,30 @@ JSON downloads are named `BTS Dress Notes YYYY-MM-DD.json` (the download date in
 Under **Video** in Settings, choose **Current notes** or a saved show, then **Add video**. Everyone who opens those notes can watch the shared video; live notes and saved shows use that shared video. Notes opened from a JSON file in Past notes can instead use **Choose video from this device** in playback; those videos stay on the device and are not uploaded. A recording in several parts can be uploaded together or one at a time: the parts play as one timeline in start-time order, with blank time where the recording stopped. Start times come from Vor's dated file names (`Show.2026-10-07 19-30-00.mp4`) and can be adjusted under **Adjust timing**; parts without one play back to back. Playback's **Add video in Settings** link selects the relevant show automatically.
 
 Uploads are kept in `recordings/` (`RECORDINGS_DIR`), up to 32 GiB a file (`RECORDING_MAX_BYTES`, in bytes). The live notes' recording goes with them when the show is saved on `/config.html`, and is removed by **Reset all notes and chat** (the saved show keeps its copy). Anyone logged in can upload or remove a part. Leave room on the disk: a full-length HD recording is several gigabytes.
+
+
+Show tags can be added, renamed, recoloured and deleted in Settings. For example,
+add Crew when the current show needs it. Tags used by current notes cannot be
+deleted. Reset and Save and reset restore the six tags in `default-tags.json`;
+saved shows and reset snapshots keep the custom definitions with their notes.
+Restoring reset notes also restores the definitions they need, keeping conflicting
+definitions separate so existing notes retain their meaning.
+
+The tag settings in [PR #41](https://github.com/jamieernest/BTS-Dress-Notes/pull/41)
+were assessed for reuse for [#36](https://github.com/jamieernest/BTS-Dress-Notes/issues/36).
+Its `config-tags.js` payload helper couples settings to slash commands, and the PR
+includes a broader UI/playback overhaul. This implementation uses the existing
+tag events and settings layout, without importing that overhaul or adding commands.
+
+### Website profile photos
+
+Profile photos retain Ewan’s work from [PR41](https://github.com/jamieernest/BTS-Dress-Notes/pull/41), source commit `7348f59b76491b935ac29fb38a24cc4ac6a72e45`, cherry-picked with his authorship preserved. His unrelated tag-file changes were excluded; the existing tag editor and six defaults remain.
+
+The website source at `643bec9abcd819107e608d5d9d217fb439360b88` confirms the contract:
+
+- [User creation](https://github.com/backstage-technical-services/website/blob/643bec9abcd819107e608d5d9d217fb439360b88/app/Models/Users/User.php#L146) initially uses `<username>@bath.ac.uk` and provisions that username in Keycloak. Contact email can subsequently change, so we use OIDC `preferred_username`, not the email prefix, as the photo filename.
+- [Avatar storage](https://github.com/backstage-technical-services/website/blob/643bec9abcd819107e608d5d9d217fb439360b88/app/Models/Users/User.php#L747) uses `/images/profiles/<username>.jpg`; Intervention Image crops/re-encodes uploads to 500×500. [Its tests](https://github.com/backstage-technical-services/website/blob/643bec9abcd819107e608d5d9d217fb439360b88/tests/Feature/Users/ProfileUpdateTest.php#L163) check the JPEG format and dimensions. A missing custom image falls back to initials in Dress Notes.
+
+Only an account whose validated OIDC email is exactly on `bath.ac.uk`, with a valid website username, receives a photo identifier. Accounts without those claims keep initials; older sessions need a fresh login. Stable identity and colours still use Keycloak `sub`. Website and Keycloak usernames must align: the website can link an existing account by email or allow an administrative username change without evident synchronisation, so filename mapping is an integration assumption rather than a universal identity guarantee. An authoritative photo claim/API would remove that assumption. The shared field `emailPrefix` contains only the website username for compatibility; full addresses and duplicate usernames are not added to notes, chat, user broadcasts or exports.
+
+Security uses the existing DOMPurify HTML sanitizer, Zod schemas, Helmet CSP and openid-client OIDC validation. Browser image URLs are fixed HTTPS paths on `www.bts-crew.com`, with `referrerpolicy="no-referrer"`, no inline handlers, no arbitrary remote URL input, no server-side fetch/proxy and no new upload endpoint. There is no custom HTML or image sanitizer. The browser decodes the remote image; DOMPurify sanitizes markup, not image bytes. A failed/missing image reveals the normal initials in notes, comments, chat and pickers. The website still sees the requesting browser’s IP and photo path. This verifies our integration contract, not a full security audit of the separate website or its upload dependencies.

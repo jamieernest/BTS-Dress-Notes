@@ -22,7 +22,14 @@
             memory.set(sub, selection);
             try { storage.setItem(key(sub), JSON.stringify(selection)); } catch (e) { /* storage unavailable */ }
         }
-        return { key, load, save };
+        function reconcile(sub, available) {
+            const ids = new Set(available.map(tag => tag.id));
+            const previous = load(sub);
+            const next = previous.filter(id => ids.has(id));
+            if (next.length !== previous.length) save(sub, next);
+            return next;
+        }
+        return { key, load, save, reconcile };
     }
     return { createComposerTags };
 }));
