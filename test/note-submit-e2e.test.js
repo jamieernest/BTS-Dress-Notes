@@ -109,6 +109,16 @@ test('a note is backed up within seconds, so killing the server straight after k
     assert.deepStrictEqual(alice.noteTexts(), ['cue 12 late']);
 });
 
+test('backups written in the same minute replace each other', async (t) => {
+    const { app, alice } = await setup(t);
+    for (let i = 0; i < 3; i++) {
+        await ack(alice, 'note-submit', { clientId: `c${i}`, text: `note ${i}`, tags: ['lx'] });
+        await sleep(1300);
+    }
+    const files = fs.readdirSync(app.backupsDir).filter((f) => f.startsWith('backup-'));
+    assert.ok(files.length <= 2, `expected at most one backup per minute, got ${files.join(', ')}`);
+});
+
 test('only a comment\'s author can edit or delete it', async (t) => {
     const { alice, bob } = await setup(t);
     const note = await ack(alice, 'note-submit', { clientId: 'c1', text: 'mic 4 crackles', tags: ['lx'] });
