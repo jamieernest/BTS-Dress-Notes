@@ -901,6 +901,13 @@ document.addEventListener('DOMContentLoaded', function() {
         return element;
     }
 
+    function refreshGroupLabels() {
+        const people = Mentions.accounts(allNotes, chatMessagesList, lastUsers);
+        for (const head of notesList.querySelectorAll('.group-head')) {
+            setHtml(head.firstElementChild, Mentions.labelHtml(head.dataset.act, people, currentUser));
+        }
+    }
+
     function groupHeadElement(act) {
         const wrapper = document.createElement('div');
         setHtml(wrapper, NoteView.groupHeadHTML(act, undefined, '', Mentions.accounts(allNotes, chatMessagesList, lastUsers), currentUser));
@@ -1219,6 +1226,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!live) return false;
         lastUsers = live.users;
         renderUsers(lastUsers);
+        refreshGroupLabels();
         currentAct = live.act;
         drawAct(currentActDisplay, live.act);
         currentGlobalLxCue = live.cue;
@@ -1360,6 +1368,7 @@ document.addEventListener('DOMContentLoaded', function() {
         currentUser.sub = data.sub;
         currentUser.emailPrefix = data.emailPrefix || null;
         identityConfirmed = true;
+        refreshGroupLabels();
         authorSearch.refresh();
         applyRememberedTags();
         // Notes written before we knew who we are are ours; another person's
@@ -1386,6 +1395,7 @@ document.addEventListener('DOMContentLoaded', function() {
     window.socket.on('users-update', (users) => {
         lastUsers = users;
         renderUsers(users);
+        refreshGroupLabels();
     });
 
     window.socket.on('act-update', (act) => {
