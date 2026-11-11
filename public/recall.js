@@ -231,12 +231,11 @@ document.addEventListener('DOMContentLoaded', function() {
         tagDropdown.render(NoteView.tagOptions(usedTags), filters.tag);
         tagFilter.hidden = usedTags.length === 0;
 
-        const shown = NoteOrder.newestFirst(allNotes.filter(note => NoteView.noteMatches(note, filters, tagById)));
-        const groups = [];
-        for (const note of shown) {
-            if (!groups.length || groups[groups.length - 1].act !== note.act) groups.push({ act: note.act, notes: [] });
-            groups[groups.length - 1].notes.push(note);
-        }
+        // Group the full list first so filtering cannot move scene headings.
+        const groups = NoteView.groupNotes(NoteOrder.newestFirst(allNotes))
+            .map(group => ({ act: group.act, notes: group.notes.filter(note => NoteView.noteMatches(note, filters, tagById)) }))
+            .filter(group => group.notes.length);
+        const shown = groups.flatMap(group => group.notes);
         setHtml(notesList, groups.map(group => NoteView.groupHeadHTML(group.act) + group.notes.map(noteHTML).join('')).join(''));
         notesList.querySelectorAll('.group-count').forEach((count, i) => { count.textContent = plural(groups[i].notes.length, 'note'); });
 
