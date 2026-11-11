@@ -237,3 +237,27 @@ test('scene clocks use the first logged entry, then the oldest valid retained no
     assert.ok(!NoteView.groupHeadHTML('Broken', 'invalid').includes('<time'));
     assert.equal(TimecodeFormat.formatClockMinute(null), '');
 });
+
+test('scene groups keep a cross-scene submission with its starting scene', () => {
+    const note = (id, act, second, started = second) => ({ id, act,
+        timestamp: `2026-11-11T19:00:${second}.000Z`, startedAt: `2026-11-11T19:00:${started}.000Z` });
+    const notes = [note('late', 'Song 1', '30', '05'), note('two', 'Song 2', '20'), note('one', 'Song 1', '10')];
+    const groups = NoteView.groupNotes(notes);
+    assert.deepStrictEqual(groups.map(g => [g.act, g.notes.map(n => n.id)]), [
+        ['Song 2', ['two']], ['Song 1', ['late', 'one']]
+    ]);
+    assert.deepStrictEqual(notes.map(n => n.id), ['late', 'two', 'one']);
+    // Even the first note for Song 1 can be submitted during Song 2.
+    assert.deepStrictEqual(NoteView.groupNotes(notes.slice(0, 2)).map(g => g.act), ['Song 2', 'Song 1']);
+});
+
+test('scene grouping supports legacy stamps, ownerless scenes and empty lists', () => {
+    const notes = [
+        { id: 'b', act: 'Two', timestamp: '2026-11-11T19:02:00Z' },
+        { id: 'a', act: 'One', timestamp: '2026-11-11T19:01:00Z' },
+        { id: 'p', act: null, timestamp: '2026-11-11T19:00:00Z' }
+    ];
+    assert.deepStrictEqual(NoteView.groupNotes(notes).map(g => g.act), ['Two', 'One', 'Preshow']);
+    assert.deepStrictEqual(NoteView.groupNotes([{ act: 'Two' }, { act: 'One' }, { act: 'Two' }]).map(g => g.notes.length), [2, 1]);
+    assert.deepStrictEqual(NoteView.groupNotes([]), []);
+});

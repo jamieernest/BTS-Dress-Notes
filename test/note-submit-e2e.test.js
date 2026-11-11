@@ -7,13 +7,14 @@ const assert = require('node:assert');
 const os = require('node:os');
 const fs = require('node:fs');
 const path = require('node:path');
+const { Client } = require('node-osc');
 const { until, sleep, freePort, startOidc, createApp, login, Browser } = require('./e2e-harness');
 
-async function setup(t) {
+async function setup(t, env = {}) {
     const oidc = await startOidc();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'note-submit-e2e-'));
     // The once-a-minute safety-net backup is pushed out of the way: only the backup after a change can save the note.
-    const app = createApp({ issuer: oidc.issuer, sessionsFile: path.join(dir, 'sessions.json'), port: await freePort(), env: { BACKUP_INTERVAL_MS: '3600000' } });
+    const app = createApp({ issuer: oidc.issuer, sessionsFile: path.join(dir, 'sessions.json'), port: await freePort(), env: { BACKUP_INTERVAL_MS: '3600000', ...env } });
     await app.start();
     const alice = new Browser(app, await login(app, oidc, 'alice'));
     const bob = new Browser(app, await login(app, oidc, 'bob'));
@@ -31,6 +32,45 @@ async function setup(t) {
 }
 
 const ack = (browser, event, data) => new Promise((resolve) => browser.page.socket.emit(event, data, resolve));
+
+test('a note keeps its starting scene and LX cue when submitted in the next scene', async (t) => {
+    const oscPort = await freePort();
+    const { alice, bob } = await setup(t, { OSC_PORT: String(oscPort) });
+    const osc = new Client('127.0.0.1', oscPort);
+    t.after(() => osc.close());
+    let scene, cue;
+    alice.page.socket.on('act-update', value => { scene = value; });
+    alice.page.socket.on('lx-cue-update', value => { cue = value; });
+    async function advance(act, lxCue) {
+        osc.send('/bts/scene', act);
+        osc.send('/eos/out/active/cue/text', `1/${lxCue}`);
+        await until(() => scene === act && cue === lxCue, 'scene and cue updates');
+    }
+    await advance('Song 1', '12');
+    const frozen = { act: scene, lxCue: cue };
+    await advance('Song 2', '24');
+    const payload = { clientId: 'across-scenes', text: 'late entrance', tags: ['lx'], ...frozen };
+    const stored = await ack(alice, 'note-submit', payload);
+    assert.strictEqual(stored.act, 'Song 1');
+    assert.strictEqual(stored.lxCue, '12');
+    await until(() => bob.page.notes.some(n => n.id === stored.id), 'the note broadcast');
+    assert.strictEqual(bob.page.notes.find(n => n.id === stored.id).act, 'Song 1');
+
+    // An unacknowledged/offline submission keeps the same stamp on a later send.
+    const late = await ack(alice, 'note-submit', { ...payload, clientId: 'offline', ageMs: 5000 });
+    assert.strictEqual(late.act, 'Song 1');
+    assert.strictEqual(late.lxCue, '12');
+    await advance('Song 3', '36');
+    const resent = await ack(alice, 'note-submit', payload);
+    assert.deepStrictEqual(resent, stored);
+
+    // Older clients and malformed stamps retain the live-scene fallback.
+    for (const act of [undefined, null, '', '   ', {}, []]) {
+        const fallback = await ack(alice, 'note-submit', { text: 'no scene', tags: ['lx'], act });
+        assert.strictEqual(fallback.act, 'Song 3');
+        assert.strictEqual(fallback.lxCue, '36');
+    }
+});
 
 test('malformed notes are refused without taking the server down', async (t) => {
     const { alice, bob } = await setup(t);

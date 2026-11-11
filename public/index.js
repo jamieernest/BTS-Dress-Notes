@@ -190,39 +190,30 @@ document.addEventListener('DOMContentLoaded', function() {
     const noteMatches = (note) => NoteView.noteMatches(note, filters, tagById);
     const filtersActive = () => NoteView.filtersActive(filters);
 
-    // Shows/hides rows, then each act heading with how many of its notes show.
-    // The counts come from the notes, not the rows: a long list is still being
-    // drawn for a moment after a rebuild (see rebuildFullNotesList). Headings
-    // are the runs of one act in newest-first order, the same as drawn.
     function refreshGroupTimes() {
         const times = NoteView.sceneStartTimes(allNotes, currentShowLog);
         for (const head of notesList.querySelectorAll('.group-head')) NoteView.updateGroupTime(head, times.get(head.dataset.act));
     }
 
+    // Counts use the full list, including rows still waiting for a draw batch.
     function filterNotes() {
         authorSearch.refresh();
         const params = NoteView.writeFilters(new URLSearchParams(location.search), filters, searchInput.value);
         history.replaceState(null, '', `${location.pathname}${params.size ? '?' + params : ''}${location.hash}`);
         const notesById = new Map(allNotes.map(n => [n.id, n]));
         const isShown = (note) => !!note && !deletedNotes.has(note.id) && noteMatches(note);
-        const runCounts = [];
-        let lastAct = null;
+        const counts = new Map();
         let shown = 0;
-        for (const note of NoteOrder.newestFirst(allNotes)) {
-            const act = note.act || 'Preshow';
-            if (act !== lastAct) {
-                runCounts.push(0);
-                lastAct = act;
-            }
+        for (const note of allNotes) {
             if (isShown(note)) {
-                runCounts[runCounts.length - 1]++;
+                const act = note.act || 'Preshow';
+                counts.set(act, (counts.get(act) || 0) + 1);
                 shown++;
             }
         }
-        let run = 0;
         for (const el of notesList.children) {
             if (el.classList.contains('group-head')) {
-                const count = runCounts[run++] || 0;
+                const count = counts.get(el.dataset.act) || 0;
                 el.hidden = count === 0;
                 el.querySelector('.group-count').textContent = plural(count, 'note');
             } else if (!el.classList.contains('pending')) {
@@ -934,12 +925,18 @@ document.addEventListener('DOMContentLoaded', function() {
     // Pending notes stay above every note the server has.
     function insertNewestNote(element, note) {
         const act = note.act || 'Preshow';
-        const firstHead = notesList.querySelector('.group-head');
-        if (firstHead && firstHead.dataset.act === act) {
-            firstHead.after(element);
+        const heads = [...notesList.querySelectorAll('.group-head')];
+        const existing = heads.find(head => head.dataset.act === act);
+        if (existing) {
+            existing.after(element);
         } else {
+            // A newly represented scene may precede the current scene in time.
+            const groups = NoteView.groupNotes(NoteOrder.newestFirst(allNotes));
+            const index = groups.findIndex(group => group.act === act);
+            const following = new Set(groups.slice(index + 1).map(group => group.act));
+            const next = heads.find(head => following.has(head.dataset.act));
             const head = groupHeadElement(act);
-            notesList.insertBefore(head, firstHead);
+            notesList.insertBefore(head, next || null);
             head.after(element);
         }
     }
@@ -959,7 +956,7 @@ document.addEventListener('DOMContentLoaded', function() {
         for (const { element, visible } of [...pendingNotes.values()].reverse()) {
             if (visible) notesList.appendChild(element);
         }
-        const order = NoteOrder.newestFirst(allNotes).map(note => note.id);
+        const order = NoteView.groupNotes(NoteOrder.newestFirst(allNotes)).flatMap(group => group.notes.map(note => note.id));
         let next = 0;
         let lastAct = null;
         const drawBatch = (size) => {
@@ -978,7 +975,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             notesList.appendChild(batch);
             filterNotes();
-            if (next < order.length) rebuildTimer = setTimeout(() => drawBatch(LATER_BATCH), 0);
+            rebuildTimer = next < order.length ? setTimeout(() => drawBatch(LATER_BATCH), 0) : null;
         };
         drawBatch(FIRST_BATCH);
         updateActFilter();
@@ -990,7 +987,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (allNotes.some(n => n.id === note.id)) return;
         const index = NoteOrder.insertionIndex(allNotes, note);
         allNotes.splice(index, 0, note);
-        if (index < allNotes.length - 1) {
+        if (index < allNotes.length - 1 || rebuildTimer !== null) {
             // A late note (written while disconnected) belongs below later ones.
             rebuildFullNotesList();
         } else {
@@ -1767,6 +1764,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 mentions: mentionEditor.get(noteInput),
                 timecode: currentUser.frozenTimecode,
                 lxCue: currentUser.frozenLxCue,
+                act: currentUser.frozenAct,
                 typingStartedAt: currentUser.typingStartedAt,
                 frameRate: timeMode === 'realtime' ? 'ms' : currentUser.currentFrameRate,
                 tags: selectedTags,

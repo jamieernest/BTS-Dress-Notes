@@ -277,6 +277,25 @@
     }
 
     // A scene heading in the list; fill .group-count with how many notes show.
+    // Input is newest first. Keep each scene together even when a note was
+    // sent after the next scene began. Order scenes by their earliest captured
+    // moment, and preserve newest-first submission order within each scene.
+    function groupNotes(notes) {
+        const groups = new Map();
+        for (const note of notes) {
+            const act = note.act || 'Preshow';
+            if (!groups.has(act)) groups.set(act, { act, notes: [], startedAt: Infinity });
+            const group = groups.get(act);
+            group.notes.push(note);
+            const stamp = Date.parse(note.startedAt || note.timestamp);
+            if (Number.isFinite(stamp)) group.startedAt = Math.min(group.startedAt, stamp);
+        }
+        return [...groups.values()].sort((a, b) => {
+            if (!Number.isFinite(a.startedAt) || !Number.isFinite(b.startedAt)) return 0;
+            return b.startedAt - a.startedAt;
+        }).map(({ act, notes }) => ({ act, notes }));
+    }
+
     function groupHeadHTML(act, at, count = '') {
         return `<div class="group-head" data-act="${esc(act)}"><span>${esc(act)}</span><span class="muted group-count">${esc(count)}</span>${groupTimeHTML(at)}</div>`;
     }
@@ -654,7 +673,7 @@
         clockTime, fullTime, relativeTime, plural,
         initials, personColor, avatarHTML,
         unknownTag, tagChipHTML, tagChipsHTML, dotHTML,
-        noteHeadHTML, noteHTML, commentHTML, groupHeadHTML, sceneStartTimes, updateGroupTime,
+        noteHeadHTML, noteHTML, commentHTML, groupHeadHTML, groupNotes, sceneStartTimes, updateGroupTime,
         noteMatches, filtersActive, sceneOptions, tagOptions,
         authorOptions, storedAuthorId, readFilters, writeFilters, watchNavigation, createAuthorSearch,
         placePopover, fitPopoverInViewport, watchPopoverResize, createDropdown
