@@ -78,8 +78,8 @@ Under **Video** in Settings, choose **Current notes** or a saved show, then **Ad
 Uploads are kept in `recordings/` (`RECORDINGS_DIR`), up to 32 GiB a file (`RECORDING_MAX_BYTES`, in bytes). The live notes' recording goes with them when the show is saved on `/config.html`, and is removed by **Reset all notes and chat** (the saved show keeps its copy). Anyone logged in can upload or remove a part. Leave room on the disk: a full-length HD recording is several gigabytes.
 
 
-Show tags can be added, renamed, recoloured and deleted in Settings. For example,
-add Crew when the current show needs it. Tags used by current notes cannot be
+Show tags can be added, renamed, recoloured and deleted in Settings; the new-tag colour starts on one no tag
+uses yet. For example, add Crew when the current show needs it. Tags used by current notes cannot be
 deleted. Reset and Save and reset restore the six tags in `default-tags.json`;
 saved shows and reset snapshots keep the custom definitions with their notes.
 Restoring reset notes also restores the definitions they need, keeping conflicting
