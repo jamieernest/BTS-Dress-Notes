@@ -50,3 +50,14 @@ test('sceneAt gives the scene in effect at a time', () => {
     assert.strictEqual(showLog.sceneAt(log, '2026-11-11T21:00:00.000Z'), '');
     assert.strictEqual(showLog.sceneAt([], '2026-11-11T21:00:00.000Z'), '');
 });
+
+test('sceneAt for a note started in A and saved after the show went A, B, A', () => {
+    const log = showLog.cleanShowLog([
+        { type: 'scene', value: 'A', at: '2026-11-11T21:00:00.000Z' },
+        { type: 'scene', value: 'B', at: '2026-11-11T21:05:00.000Z' },
+        { type: 'scene', value: 'A', at: '2026-11-11T21:10:00.000Z' }
+    ]);
+    assert.strictEqual(showLog.sceneAt(log, '2026-11-11T21:04:59.000Z'), 'A');
+    assert.strictEqual(showLog.sceneAt(log, '2026-11-11T21:07:00.000Z'), 'B');
+    assert.strictEqual(showLog.sceneAt(log, '2026-11-11T21:10:30.000Z'), 'A');
+});
