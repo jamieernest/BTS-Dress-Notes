@@ -294,7 +294,7 @@ document.addEventListener('DOMContentLoaded', function() {
         $('stageState').dataset.state = state;
     }
     ['loadstart', 'waiting', 'seeking'].forEach(n => video.addEventListener(n, () => { buffering = true; syncPlayState(); }));
-    ['canplay', 'playing', 'seeked', 'loadeddata', 'emptied', 'error'].forEach(n => video.addEventListener(n, () => { buffering = false; syncPlayState(); }));
+    ['canplay', 'playing', 'seeked', 'loadeddata', 'loadedmetadata', 'suspend', 'emptied', 'error'].forEach(n => video.addEventListener(n, () => { buffering = false; syncPlayState(); }));
 
     video.addEventListener('click', togglePlayback);
     $('gapNotice').addEventListener('click', (e) => { if (!e.target.closest('button')) togglePlayback(); });
