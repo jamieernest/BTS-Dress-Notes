@@ -69,3 +69,14 @@ test('agreement controls retain both slots at zero, one and multiple people', ()
     assert.match(NoteView.agreementsHTML({}, 'actor'), /No agreements yet\./);
     assert.equal(NoteView.updateAgreements(null, {}, 'actor'), false);
 });
+
+test('agreement people keep a valid photo username (notes, replies, restore) and show the photo', () => {
+    const people = [{ userId: 'a', name: 'Alice', emailPrefix: 'alice' }, { userId: 'b', name: 'Bob', emailPrefix: '../bad' }];
+    const clean = cleanAgreements(people);
+    assert.deepEqual(clean, [{ userId: 'a', name: 'Alice', emailPrefix: 'alice' }, { userId: 'b', name: 'Bob' }]);
+    const note = {};
+    toggleAgreement(note, { userId: 'c', name: 'Cy', emailPrefix: 'cy' });
+    assert.equal(note.agreements[0].emailPrefix, 'cy');
+    assert.match(NoteView.agreementsHTML({ agreements: clean }), /profiles\/alice\.jpg/);
+    assert.match(NoteView.agreementsHTML({ agreements: clean }, 'a', { comment: true }), /profiles\/alice\.jpg/);
+});

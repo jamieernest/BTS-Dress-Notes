@@ -39,6 +39,8 @@ test('signed-in photo identity cannot be spoofed and survives notes/chat restart
     const comment = new Promise(resolve => a.page.socket.once('comment-submit', value => resolve(value.comment)));
     a.page.socket.emit('comment-submit', { ...payload, noteId: note.id });
     assert.equal((await comment).emailPrefix, 'abc12');
+    const agreed = await a.page.socket.timeout(3000).emitWithAck('note-agreement-toggle', { noteId: note.id, emailPrefix: 'spoof' });
+    assert.deepEqual(agreed.agreements, [{ userId: 'sub-alice', name: agreed.agreements[0].name, emailPrefix: 'abc12' }]);
     b.page.socket.emit('chat-message', payload);
     await until(() => a.page.log.length === 1, 'non-Bath chat');
     assert.equal(a.page.log[0].emailPrefix, undefined);
