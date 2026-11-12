@@ -281,9 +281,20 @@ document.addEventListener('DOMContentLoaded', function() {
         if (playing) pause(); else play();
     }
 
+    // The picture isn't ready: a part is loading, or playback stalled / is seeking.
+    let buffering = false;
     function syncPlayState() {
         video.setAttribute('aria-label', playing ? 'Pause video' : 'Play video');
+        const state = P.stageState({
+            loaded: !!loadedId,
+            playing,
+            buffering: buffering || loadTarget !== null || (loadedId && video.readyState < 3 && (playing || video.seeking)),
+            inGap: gapAt !== null,
+        });
+        $('stageState').dataset.state = state;
     }
+    ['loadstart', 'waiting', 'seeking'].forEach(n => video.addEventListener(n, () => { buffering = true; syncPlayState(); }));
+    ['canplay', 'playing', 'seeked', 'loadeddata', 'emptied', 'error'].forEach(n => video.addEventListener(n, () => { buffering = false; syncPlayState(); }));
 
     video.addEventListener('click', togglePlayback);
     $('gapNotice').addEventListener('click', (e) => { if (!e.target.closest('button')) togglePlayback(); });

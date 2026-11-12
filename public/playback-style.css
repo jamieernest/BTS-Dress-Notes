@@ -107,6 +107,26 @@ video {
     cursor: pointer;
 }
 
+/* Spinner while loading, a play icon while paused, a brief pause icon on toggle. */
+.stage-state { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.stage-state > * { grid-area: 1 / 1; opacity: 0; }
+.spinner {
+    width: 44px; height: 44px; border-radius: 50%;
+    border: 4px solid rgba(255, 255, 255, 0.3); border-top-color: #fff;
+    animation: spin 0.9s linear infinite;
+}
+.state-icon {
+    width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center;
+    background: rgba(0, 0, 0, 0.6); color: #fff;
+}
+.state-icon .icon { width: 30px; height: 30px; }
+.stage-state[data-state="loading"] .spinner,
+.stage-state[data-state="paused"] .state-paused { opacity: 1; }
+.stage-state[data-state="playing"] .state-playing { animation: state-flash 0.7s ease-out; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes state-flash { from { opacity: 1; transform: scale(0.9); } to { opacity: 0; transform: scale(1.25); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } .stage-state[data-state="playing"] .state-playing { animation: none; } }
+
 /* Chapters above one shared event field: note stems and LX circles. */
 .timeline {
     display: grid;

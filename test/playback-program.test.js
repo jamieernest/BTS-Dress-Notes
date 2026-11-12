@@ -50,3 +50,12 @@ test('with no start times the parts play back to back without a clock', () => {
 test('parts with no length are left out', () => {
     assert.deepStrictEqual(P.layout([part('a', 0, 0), { id: 'b', startAt: T0 }]), { origin: null, total: 0, segments: [] });
 });
+
+test('stage state: spinner until playable, then play or pause', () => {
+    const s = (o) => P.stageState({ loaded: true, playing: false, buffering: false, inGap: false, ...o });
+    assert.strictEqual(s({ buffering: true, playing: true }), 'loading');
+    assert.strictEqual(s({ playing: true }), 'playing');
+    assert.strictEqual(s({}), 'paused');
+    assert.strictEqual(s({ inGap: true }), 'none');
+    assert.strictEqual(s({ loaded: false }), 'none');
+});
