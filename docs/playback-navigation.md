@@ -13,6 +13,8 @@ The source and selected note live in the URL. A local file URL is specific to th
 
 A recording uploaded on the settings page (**Recordings**) is kept on the server with the live notes or the saved show, so everyone opening them watches it straight away; it goes with the live notes when the show is saved and leaves them on reset. A recording in several parts plays as one timeline: each part sits at its start time, the time between parts shows as hatched blank space with a countdown and **Skip to the next part**, and playback carries on across it. A video chosen from this device (one or several parts) stays on it and is chosen again on each new player page.
 
+The timeline can be zoomed so a long show or a busy stretch of notes stays usable. The **−**, **+** and **Fit** buttons, the `+` `-` `0` keys, Ctrl/⌘ + wheel (also a trackpad pinch) and a two-finger pinch zoom; a wheel or swipe then moves along it, and a strip of the whole show below it has a window to drag. While playing, the view turns the page to keep the playhead in sight, unless it was moved away on purpose until the next seek. Double-clicking a scene zooms to it. **Fit** shows the whole video, as the timeline looked before zooming. The zoom is not kept in the URL.
+
 ## Development examples
 
 From this checkout, with the existing OIDC settings in `.env`:

@@ -45,7 +45,9 @@
                 <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous / next visible note</dd>
                 <dt><kbd>Page Up</kbd> <kbd>Page Down</kbd></dt><dd>Previous / next LX cue</dd>
                 <dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>Start / end of the video</dd>
+                <dt><kbd>+</kbd> <kbd>&minus;</kbd> <kbd>0</kbd></dt><dd>Zoom the timeline in / out / to the whole video</dd>
             </dl>
+            <p>To zoom the timeline, use the buttons, pinch, or hold <kbd>Ctrl</kbd> (<kbd>&#8984;</kbd> on a Mac) and scroll over it. When zoomed in, scroll to move along it, or drag the highlighted window in the strip below. Double-click a scene to zoom to it.</p>
             <p class="muted">Keyboard seeking works while the timeline is focused. Escape closes details or help.</p>
         </div>
 
@@ -101,7 +103,7 @@
                 </div>
 
                 <div class="timeline">
-                    <div id="track" class="track" tabindex="0" role="slider" aria-label="Video timeline" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-disabled="true" aria-keyshortcuts="ArrowLeft ArrowRight Home End PageUp PageDown [ ]">
+                    <div id="track" class="track" tabindex="0" role="slider" aria-label="Video timeline" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-disabled="true" aria-keyshortcuts="ArrowLeft ArrowRight Home End PageUp PageDown [ ] + - 0">
                         <div id="sceneStrip" class="scene-strip"></div>
                         <div class="lane">
                             <div id="grid" class="grid"></div>
@@ -114,6 +116,20 @@
                         <span id="axisStart" class="label axis-start">0:00</span>
                         <span id="axisNow" class="label axis-now"></span>
                         <span id="axisEnd" class="label axis-end"></span>
+                        <span id="axisTicks"></span>
+                    </div>
+                    <div id="zoomBar" class="zoom-bar" hidden>
+                        <div id="overview" class="overview" hidden aria-hidden="true">
+                            <div id="overviewMarks"></div>
+                            <div id="overviewWindow" class="ov-window"></div>
+                            <div id="overviewHead" class="ov-head"></div>
+                        </div>
+                        <span id="zoomLevel" class="zoom-level muted mono" aria-live="polite"></span>
+                        <span class="zoom-buttons" role="group" aria-label="Timeline zoom">
+                            <button type="button" id="zoomOut" class="btn outline" aria-label="Zoom out" title="Zoom out (-)">&minus;</button>
+                            <button type="button" id="zoomIn" class="btn outline" aria-label="Zoom in" title="Zoom in (+)">+</button>
+                            <button type="button" id="zoomFit" class="btn outline" title="Show the whole video (0)">Fit</button>
+                        </span>
                     </div>
                 </div>
             </div>
@@ -142,6 +158,7 @@
     <script src="playback-timeline.js"></script>
     <script src="video-file.js"></script>
     <script src="playback-program.js"></script>
+    <script src="playback-viewport.js"></script>
     <script src="playback.js"></script>
 </body>
 </html>
