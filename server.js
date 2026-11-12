@@ -1588,6 +1588,8 @@ io.on('connection', (socket) => {
         // Older tabs don't send it; their notes have no startedAt.
         if (typeof data.startedAgeMs === 'number') {
             note.startedAt = new Date(now - Math.max(ageMs, sanitizeAge(data.startedAgeMs))).toISOString();
+            // The scene in effect when typing began, whatever the browser sent; no log entry that early keeps the browser's.
+            note.act = showLog.sceneAt(globalState.showLog, note.startedAt) || note.act;
         }
 
         globalState.notes.splice(insertionIndex(globalState.notes, note), 0, note);

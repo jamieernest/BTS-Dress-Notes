@@ -55,4 +55,12 @@ function cleanShowLog(list) {
         .slice(-MAX_EVENTS);
 }
 
-module.exports = { cueName, record, cleanShowLog, MAX_EVENTS };
+// The scene in effect at a time: the last scene event at or before it, or ''.
+function sceneAt(log, at) {
+    const t = Date.parse(at);
+    let found = '';
+    for (const e of log) if (e.type === 'scene' && Date.parse(e.at) <= t) found = e.value;
+    return found;
+}
+
+module.exports = { sceneAt, cueName, record, cleanShowLog, MAX_EVENTS };
