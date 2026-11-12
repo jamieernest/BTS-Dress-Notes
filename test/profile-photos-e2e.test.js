@@ -27,6 +27,9 @@ test('signed-in photo identity cannot be spoofed and survives notes/chat restart
     b.load();
     await until(() => a.page.log && b.page.log && current && users?.length === 2, 'signed-in state');
     assert.equal(current.emailPrefix, 'abc12');
+    // Past notes reads the viewer's username here for scene-label mentions and "My scenes".
+    const session = await (await fetch(`http://127.0.0.1:${app.port}/session`, { headers: { cookie: cookies[0] } })).json();
+    assert.equal(session.emailPrefix, 'abc12');
     const alice = users.find(u => u.id === 'sub-alice'), bob = users.find(u => u.id === 'sub-bob');
     assert.equal(alice.emailPrefix, 'abc12'); assert.equal(bob.emailPrefix, 'bob12');
     assert.equal(alice.email, undefined); assert.equal(alice.username, undefined);

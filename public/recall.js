@@ -31,7 +31,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const filters = { act: 'all', tag: 'all', search: '', author: '', mentionedUserId: '' };
     let currentAccountId = null;
     let currentAccountName = null;
+    let currentAccountUsername = null;
+    const me = () => ({ emailPrefix: currentAccountUsername });
     NoteView.watchNavigation();
+    // Scene headers stick just below the toolbar, so they need its real height (as on the notes page).
+    const notesToolbar = document.querySelector('#notesSection > .toolbar');
+    new ResizeObserver(() => document.documentElement.style.setProperty('--toolbar-h', `${notesToolbar.offsetHeight}px`)).observe(notesToolbar);
     const filterDropdown = (button, popover, key) => NoteView.createDropdown({
         button, popover,
         beforeOpen: () => { actDropdown.close(); tagDropdown.close(); authorSearch.close(); },
@@ -52,7 +57,9 @@ document.addEventListener('DOMContentLoaded', function() {
     fetch('/session', { cache: 'no-store' }).then(response => response.ok ? response.json() : null).then(user => {
         currentAccountId = typeof user?.sub === 'string' && user.sub ? user.sub : null;
         currentAccountName = typeof user?.name === 'string' ? user.name : null;
+        currentAccountUsername = typeof user?.emailPrefix === 'string' && user.emailPrefix ? user.emailPrefix : null;
         authorSearch.refresh();
+        if (!notesSection.hidden) render();
     }).catch(() => { /* The identity shortcut remains absent until a fresh page load. */ });
     let scenes = [];
     let usedTags = [];
@@ -216,7 +223,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const used = new Set(allNotes.flatMap(note => note.tags));
         usedTags = [...new Set([...tagsById.keys(), ...used])].filter(id => used.has(id)).map(tagById);
 
-        filters.act = scenes.includes(start.act) ? start.act : 'all';
+        filters.act = scenes.includes(start.act) || start.act === NoteView.MY_SCENES ? start.act : 'all';
         filters.tag = usedTags.some(tag => tag.id === start.tag) ? start.tag : 'all';
         filters.author = NoteView.authorOptions(allNotes).some(p => p.userId === start.author) ? start.author : '';
         filters.mentionedUserId = start.mentionedUserId || '';
@@ -245,7 +252,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Newest first and grouped by scene with counts, as on the notes page (the file itself stays oldest first).
     function render() {
         authorSearch.refresh();
-        actDropdown.render(NoteView.sceneOptions(scenes), filters.act);
+        actDropdown.render(NoteView.sceneOptions(scenes, currentAccountUsername), filters.act);
         actFilter.hidden = scenes.length < 2;
         tagDropdown.render(NoteView.tagOptions(usedTags), filters.tag);
         tagFilter.hidden = usedTags.length === 0;
@@ -255,10 +262,11 @@ document.addEventListener('DOMContentLoaded', function() {
         const allGroups = NoteView.groupNotes(NoteOrder.newestFirst(allNotes));
         const starts = NoteView.groupStartTimes(allGroups, sceneTimes);
         const groups = allGroups
-            .map((group, i) => ({ act: group.act, at: starts[i], notes: group.notes.filter(note => NoteView.noteMatches(note, filters, tagById)) }))
+            .map((group, i) => ({ act: group.act, at: starts[i], notes: group.notes.filter(note => NoteView.noteMatches(note, filters, tagById, currentAccountUsername)) }))
             .filter(group => group.notes.length);
         const shown = groups.flatMap(group => group.notes);
-        setHtml(notesList, groups.map(group => NoteView.groupHeadHTML(group.act, group.at, '', Mentions.accounts(allNotes, [], [])) + group.notes.map(noteHTML).join('')).join(''));
+        setHtml(notesList, groups.map(group => NoteView.groupHeadHTML(group.act, group.at, '', Mentions.accounts(allNotes, [], []), me()) + group.notes.map(noteHTML).join('')).join(''));
+        notesList.querySelectorAll('.group-head').forEach(head => { head.setAttribute('role', 'button'); head.tabIndex = 0; head.title = 'Scroll to the start of this scene'; });
         notesList.querySelectorAll('.group-count').forEach((count, i) => { count.textContent = plural(groups[i].notes.length, 'note'); });
 
         const filtered = NoteView.filtersActive(filters);
@@ -283,6 +291,18 @@ document.addEventListener('DOMContentLoaded', function() {
         filters.search = searchInput.value.trim().toLowerCase();
         render();
         keepInUrl();
+    });
+    // A scene heading scrolls to the first note of its visit (newest first here), under the pinned heading.
+    function goToSceneStart(head) {
+        const rows = [...notesList.children];
+        const row = rows[NoteView.visitStartRow(rows.map(el => ({ head: el.classList.contains('group-head') })), rows.indexOf(head), false)];
+        if (!row) return;
+        const pinned = (parseFloat(getComputedStyle(head).top) || 0) + head.offsetHeight;
+        window.scrollBy({ top: row.getBoundingClientRect().top - pinned, behavior: 'smooth' });
+    }
+    notesList.addEventListener('click', (e) => { const head = e.target.closest('.group-head'); if (head) goToSceneStart(head); });
+    notesList.addEventListener('keydown', (e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target.classList?.contains('group-head')) { e.preventDefault(); goToSceneStart(e.target); }
     });
     clearFiltersBtn.addEventListener('click', clearFilters);
     notesNoMatch.querySelector('[data-action="clear-filters"]').addEventListener('click', clearFilters);
