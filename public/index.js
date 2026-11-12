@@ -1846,8 +1846,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 noteInput.blur();
                 sendNoteBtn.blur();
             } else noteInput.focus();
-            currentUser.isTyping = false;
-            updateComposer();
+            // focus() above restarts typing; release it so the server hears typing-stop too.
+            releaseFreeze();
             window.scrollTo({ top: 0 });
         }
     });
