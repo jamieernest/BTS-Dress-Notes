@@ -150,6 +150,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     socket.on('tags-update', tags => {
         tagCount = tags.length;
+        byId('newTagColour').value = TagColour.nextColour(tags.map(t => t.color));
         const present = new Set();
         tags.forEach((tag, index) => {
             present.add(tag.id);
