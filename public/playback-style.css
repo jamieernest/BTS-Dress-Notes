@@ -448,7 +448,9 @@ video {
 .tag-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .tag-filters:empty { display: none; }
 .side-list { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.side-list .group-head { position: sticky; top: 0; z-index: 1; padding: 6px 12px; }
+.side-list .group-head { position: sticky; top: 0; z-index: 1; padding: 6px 12px; cursor: pointer; }
+.side-list .group-head:hover { background: var(--surface-2, var(--border)); }
+.side-list .group-head:focus-visible { outline: 2px solid var(--accent, currentColor); outline-offset: -2px; }
 .side-list .group-count { margin-left: 0; }
 
 .side-note {

@@ -820,7 +820,10 @@ document.addEventListener('DOMContentLoaded', function() {
                 group = scene; run++;
                 let count = 0;
                 for (let j = i; j < list.length && (list[j].note.act || 'Preshow') === scene; j++) count++;
-                html += NoteView.groupHeadHTML(scene, runTimes[run], NoteView.plural(count, 'note'), Mentions.accounts(data.notes, [], []));
+                // Seeks to the start of this visit to the scene, else to its first note.
+                const at = T.visitStart(scenes, p.note.act, p.at) ?? p.at;
+                html += NoteView.groupHeadHTML(scene, runTimes[run], NoteView.plural(count, 'note'), Mentions.accounts(data.notes, [], []))
+                    .replace('<div class="group-head"', `<div class="group-head" role="button" tabindex="0" title="Go to the start of this scene" data-at="${Number(at)}"`);
             }
             const n = p.note;
             html += `<button type="button" class="side-note" data-id="${esc(n.id)}">
@@ -1273,7 +1276,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     $('sideList').addEventListener('click', (e) => {
         const item = e.target.closest('.side-note');
-        if (item) goToNote(item.dataset.id, false);
+        if (item) { goToNote(item.dataset.id, false); return; }
+        const head = e.target.closest('.group-head[data-at]');
+        if (head && timed()) seekClock(Number(head.dataset.at));
+    });
+    $('sideList').addEventListener('keydown', (e) => {
+        const head = e.target.closest?.('.group-head[data-at]');
+        if (head && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); head.click(); }
     });
 
     document.addEventListener('keydown', (e) => {
