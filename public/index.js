@@ -907,7 +907,23 @@ document.addEventListener('DOMContentLoaded', function() {
     function groupHeadElement(act) {
         const wrapper = document.createElement('div');
         setHtml(wrapper, NoteView.groupHeadHTML(act, undefined, '', Mentions.accounts(allNotes, chatMessagesList, lastUsers), currentUser));
-        return wrapper.firstChild;
+        const head = wrapper.firstChild;
+        head.setAttribute('role', 'button');
+        head.tabIndex = 0;
+        head.title = 'Scroll to the start of this scene';
+        return head;
+    }
+
+    // Scrolls so the first note of this visit sits just under the pinned heading.
+    function goToSceneStart(head) {
+        const rows = [...notesList.children];
+        const row = rows[NoteView.visitStartRow(rows.map(el => ({
+            head: el.classList.contains('group-head'),
+            skip: el.hidden || el.classList.contains('pending')
+        })), rows.indexOf(head), oldestFirst)];
+        if (!row) return;
+        const pinned = (parseFloat(getComputedStyle(head).top) || 0) + head.offsetHeight;
+        window.scrollBy({ top: row.getBoundingClientRect().top - pinned, behavior: 'smooth' });
     }
 
     // Puts focus and caret back where they were if the focused field was re-rendered.
@@ -2037,6 +2053,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     notesList.addEventListener('click', (e) => {
+        const head = e.target.closest('.group-head');
+        if (head) { goToSceneStart(head); return; }
         const button = e.target.closest('button[data-action]');
         if (!button) return;
         const note = noteOf(button);
@@ -2110,6 +2128,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     notesList.addEventListener('keydown', (e) => {
+        if ((e.key === 'Enter' || e.key === ' ') && e.target.classList?.contains('group-head')) { e.preventDefault(); goToSceneStart(e.target); return; }
         const target = e.target;
         const field = target.dataset && target.dataset.field;
         if (!field) return;

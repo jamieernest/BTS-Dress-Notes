@@ -84,6 +84,16 @@
         return current;
     }
 
+    // When the visit to `value` containing time `at` began: its last change at or before `at`.
+    function visitStart(list, value, at) {
+        let start = null;
+        for (const c of list) {
+            if (c.at > at) break;
+            if (c.value === value) start = c.at;
+        }
+        return start;
+    }
+
     // Spans of the show during which notes kept reporting the same value (scene
     // or LX cue), each from its first note to the first note with another value.
     // The last span has end null.
@@ -116,5 +126,5 @@
         return options.reduce((best, t) => Math.abs(t - near) < Math.abs(best - near) ? t : best);
     }
 
-    return { vorStartFromName, vorTitleFromName, noteTimes, cueLabel, spans, changes, valueAt, parseClock };
+    return { vorStartFromName, vorTitleFromName, noteTimes, cueLabel, spans, changes, valueAt, visitStart, parseClock };
 }));

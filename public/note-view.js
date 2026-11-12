@@ -325,6 +325,17 @@
         return `<div class="group-head" data-act="${esc(act)}"><span>${Mentions.labelHtml(act, people, me)}</span><span class="muted group-count">${esc(count)}</span>${groupTimeHTML(at)}</div>`;
     }
 
+    // Index of the chronologically earliest usable row in the visit under the heading at `headIndex`.
+    // `rows` are the list's children in drawn order: { head, skip }. Oldest first means it is the first row after
+    // the heading, newest first the last one before the next heading. Returns -1 if the visit has none.
+    function visitStartRow(rows, headIndex, oldestFirst) {
+        let end = headIndex + 1;
+        while (end < rows.length && !rows[end].head) end++;
+        const usable = [];
+        for (let i = headIndex + 1; i < end; i++) if (!rows[i].skip) usable.push(i);
+        return usable.length ? usable[oldestFirst ? 0 : usable.length - 1] : -1;
+    }
+
     function updateGroupTime(head, at) {
         const clock = TimecodeFormat.formatClockMinute(at);
         let element = head.querySelector('.group-time');
@@ -701,7 +712,7 @@
         clockTime, fullTime, relativeTime, plural,
         initials, personColor, avatarHTML,
         unknownTag, tagChipHTML, tagChipsHTML, dotHTML,
-        noteHeadHTML, noteHTML, commentHTML, groupHeadHTML, groupNotes, groupStartTimes, sceneStartTimes, updateGroupTime,
+        noteHeadHTML, noteHTML, commentHTML, groupHeadHTML, visitStartRow, groupNotes, groupStartTimes, sceneStartTimes, updateGroupTime,
         noteMatches, filtersActive, sceneOptions, MY_SCENES, tagOptions,
         authorOptions, storedAuthorId, readFilters, writeFilters, watchNavigation, createAuthorSearch,
         placePopover, fitPopoverInViewport, watchPopoverResize, createDropdown

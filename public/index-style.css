@@ -276,6 +276,9 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
     top: calc(var(--navigation-top, var(--topbar-h)) + var(--toolbar-h, 0px));
     z-index: 30;
 }
+.notes-list > .group-head { cursor: pointer; }
+.notes-list > .group-head:hover { background: var(--surface-2); }
+.notes-list > .group-head:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .notes-list:empty { display: none; }
 .empty-link { color: var(--accent); text-underline-offset: 3px; }
 .empty-link:hover { color: var(--accent-hover); }
