@@ -294,7 +294,7 @@ test('scene grouping supports legacy stamps, ownerless scenes and empty lists', 
     assert.deepStrictEqual(NoteView.groupNotes([]), []);
 });
 
-test('visitStartRow picks the earliest visible note of the visit under a heading', () => {
+test('visitStartRow picks the earliest visible note of the visit under its own heading, even when two headings share a label', () => {
     const h = { head: true }, n = (skip = false) => ({ head: false, skip });
     const rows = [h, n(), n(), n(), h, n(), n(true)];
     assert.strictEqual(NoteView.visitStartRow(rows, 0, false), 3);

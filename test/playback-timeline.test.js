@@ -44,7 +44,7 @@ test('a clock read off the video lands on the day of the recording, nearest am o
     assert.strictEqual(T.parseClock('25:00', near), null);
 });
 
-test('visitStart finds the start of the visit to a scene containing a time', () => {
+test('visitStart gives each visit of a repeated scene label its own start', () => {
     const list = [{ value: 'A', at: 10 }, { value: 'B', at: 20 }, { value: 'A', at: 30 }];
     assert.strictEqual(T.visitStart(list, 'A', 25), 10);
     assert.strictEqual(T.visitStart(list, 'A', 35), 30);
