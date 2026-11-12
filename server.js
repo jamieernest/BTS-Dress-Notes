@@ -405,7 +405,7 @@ app.use(requireAuth);
 app.get('/session', (req, res) => {
     res.set('Cache-Control', 'no-store');
     const user = req.session.user || {};
-    res.json({ name: user.name, sub: user.sub });
+    res.json({ name: user.name, sub: user.sub, emailPrefix: usernameFromClaims({ preferred_username: user.username ?? user.emailPrefix }) });
 });
 
 // Saved shows for Past notes (saved from the config page, see saved-shows.js).
