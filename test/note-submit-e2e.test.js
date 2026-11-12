@@ -33,6 +33,22 @@ async function setup(t, env = {}) {
 
 const ack = (browser, event, data) => new Promise((resolve) => browser.page.socket.emit(event, data, resolve));
 
+test('a note started in one scene is filed there when the browser sends the next scene', async (t) => {
+    const oscPort = await freePort();
+    const { alice } = await setup(t, { OSC_PORT: String(oscPort) });
+    const osc = new Client('127.0.0.1', oscPort);
+    t.after(() => osc.close());
+    let scene;
+    alice.page.socket.on('act-update', value => { scene = value; });
+    osc.send('/bts/scene', 'Debs');
+    await until(() => scene === 'Debs', 'first scene');
+    await sleep(500);
+    osc.send('/bts/scene', 'Alice');
+    await until(() => scene === 'Alice', 'second scene');
+    const stored = await ack(alice, 'note-submit', { clientId: 'late-save', text: 'x', tags: ['lx'], act: 'Alice', startedAgeMs: 300 });
+    assert.strictEqual(stored.act, 'Debs');
+});
+
 test('a note keeps its starting scene and LX cue when submitted in the next scene', async (t) => {
     const oscPort = await freePort();
     const { alice, bob } = await setup(t, { OSC_PORT: String(oscPort) });

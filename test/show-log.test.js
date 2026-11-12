@@ -38,3 +38,15 @@ test('a restored log keeps only valid events, in time order', () => {
         { type: 'scene', value: 'Two', at: '2026-10-07T18:50:00.000Z' }
     ]);
 });
+
+test('sceneAt gives the scene in effect at a time', () => {
+    const log = showLog.cleanShowLog([
+        { type: 'scene', value: 'Debs', at: '2026-11-11T21:15:53.000Z' },
+        { type: 'cue', value: '1630', at: '2026-11-11T21:19:00.000Z' },
+        { type: 'scene', value: 'Alice', at: '2026-11-11T21:20:07.000Z' }
+    ]);
+    assert.strictEqual(showLog.sceneAt(log, '2026-11-11T21:19:08.668Z'), 'Debs');
+    assert.strictEqual(showLog.sceneAt(log, '2026-11-11T21:20:08.877Z'), 'Alice');
+    assert.strictEqual(showLog.sceneAt(log, '2026-11-11T21:00:00.000Z'), '');
+    assert.strictEqual(showLog.sceneAt([], '2026-11-11T21:00:00.000Z'), '');
+});
