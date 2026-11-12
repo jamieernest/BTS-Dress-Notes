@@ -211,7 +211,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function refreshGroupTimes() {
         const times = NoteView.sceneStartTimes(allNotes, currentShowLog);
-        for (const head of notesList.querySelectorAll('.group-head')) NoteView.updateGroupTime(head, times.get(head.dataset.act));
+        const starts = NoteView.groupStartTimes(orderedGroups(), times);
+        notesList.querySelectorAll('.group-head').forEach((head, i) => NoteView.updateGroupTime(head, starts[i]));
     }
 
     // Counts use the full list, including rows still waiting for a draw batch.

@@ -271,9 +271,25 @@
         return new Map([...noteStarts, ...sceneStarts].map(([scene, at]) => [scene, new Date(at).toISOString()]));
     }
 
+    // One start time per group, in the groups' order. A scene's earliest visit
+    // keeps its scene start time; a return visit uses its own earliest note.
+    function groupStartTimes(groups, sceneTimes) {
+        const own = groups.map(group => {
+            const stamps = group.notes.map(n => Date.parse(n.startedAt || n.timestamp)).filter(Number.isFinite);
+            return stamps.length ? Math.min(...stamps) : NaN;
+        });
+        const first = new Map();
+        groups.forEach((group, i) => {
+            const j = first.get(group.act);
+            if (j === undefined || own[i] < own[j]) first.set(group.act, i);
+        });
+        return groups.map((group, i) => first.get(group.act) === i || !Number.isFinite(own[i])
+            ? sceneTimes.get(group.act) : new Date(own[i]).toISOString());
+    }
+
     function groupTimeHTML(at) {
         const clock = TimecodeFormat.formatClockMinute(at);
-        return clock ? `<time class="group-time mono" datetime="${esc(at)}" title="First recorded time for this scene">${esc(clock)}</time>` : '';
+        return clock ? `<time class="group-time mono" datetime="${esc(at)}" title="When this scene started">${esc(clock)}</time>` : '';
     }
 
     // A scene heading in the list; fill .group-count with how many notes show.
@@ -315,7 +331,7 @@
         if (!clock) { element?.remove(); return; }
         if (!element) {
             element = document.createElement('time'); element.className = 'group-time mono';
-            element.title = 'First recorded time for this scene'; head.append(element);
+            element.title = 'When this scene started'; head.append(element);
         }
         if (element.textContent !== clock) element.textContent = clock;
         element.dateTime = at;
@@ -685,7 +701,7 @@
         clockTime, fullTime, relativeTime, plural,
         initials, personColor, avatarHTML,
         unknownTag, tagChipHTML, tagChipsHTML, dotHTML,
-        noteHeadHTML, noteHTML, commentHTML, groupHeadHTML, groupNotes, sceneStartTimes, updateGroupTime,
+        noteHeadHTML, noteHTML, commentHTML, groupHeadHTML, groupNotes, groupStartTimes, sceneStartTimes, updateGroupTime,
         noteMatches, filtersActive, sceneOptions, MY_SCENES, tagOptions,
         authorOptions, storedAuthorId, readFilters, writeFilters, watchNavigation, createAuthorSearch,
         placePopover, fitPopoverInViewport, watchPopoverResize, createDropdown

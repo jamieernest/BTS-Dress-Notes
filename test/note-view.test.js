@@ -213,6 +213,15 @@ test('note headers show name, cue and reference in order without a per-note cloc
     assert.ok(!header.includes('note-tc') && !header.includes('01:02:03:04'));
 });
 
+test('a returning scene heading uses its own visit time', () => {
+    const note = (act, at) => ({ act, timestamp: at, startedAt: at });
+    const notes = [note('Preshow', '2026-11-05T19:00:00Z'), note('Scene A', '2026-11-05T19:10:00Z'), note('Preshow', '2026-11-05T19:30:00Z')];
+    const groups = NoteView.groupNotes([...notes].reverse());
+    const starts = NoteView.groupStartTimes(groups, NoteView.sceneStartTimes(notes, []));
+    assert.deepEqual(groups.map(g => g.act), ['Preshow', 'Scene A', 'Preshow']);
+    assert.deepEqual(starts, ['2026-11-05T19:30:00.000Z', '2026-11-05T19:10:00.000Z', '2026-11-05T19:00:00.000Z']);
+});
+
 test('scene clocks use the first logged entry, then the oldest valid retained note, independent of order', () => {
     const notes = [
         { act: 'Preshow', timestamp: '2026-11-05T20:49:00Z' },

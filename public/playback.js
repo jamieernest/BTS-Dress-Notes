@@ -743,14 +743,21 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         let html = '';
         let group = null;
-        const sceneTimes = NoteView.sceneStartTimes(data.notes, data.showLog);
+        const runs = [];
+        for (const p of list) {
+            const scene = p.note.act || 'Preshow';
+            if (runs[runs.length - 1]?.act !== scene) runs.push({ act: scene, notes: [] });
+            runs[runs.length - 1].notes.push(p.note);
+        }
+        const runTimes = NoteView.groupStartTimes(runs, NoteView.sceneStartTimes(data.notes, data.showLog));
+        let run = -1;
         list.forEach((p, i) => {
             const scene = p.note.act || 'Preshow';
             if (i === 0 || scene !== group) {
-                group = scene;
+                group = scene; run++;
                 let count = 0;
                 for (let j = i; j < list.length && (list[j].note.act || 'Preshow') === scene; j++) count++;
-                html += NoteView.groupHeadHTML(scene, sceneTimes.get(scene), NoteView.plural(count, 'note'), Mentions.accounts(data.notes, [], []));
+                html += NoteView.groupHeadHTML(scene, runTimes[run], NoteView.plural(count, 'note'), Mentions.accounts(data.notes, [], []));
             }
             const n = p.note;
             html += `<button type="button" class="side-note" data-id="${esc(n.id)}">
