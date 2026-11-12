@@ -59,3 +59,20 @@ test('stage state: spinner until playable, then play or pause', () => {
     assert.strictEqual(s({ inGap: true }), 'none');
     assert.strictEqual(s({ loaded: false }), 'none');
 });
+
+test('stall tracker: flags a clock that stops while it should move, clears when it moves', () => {
+    const c = P.stallTracker(2);
+    assert.strictEqual(c(1, true), false);
+    assert.strictEqual(c(1, true), false);
+    assert.strictEqual(c(1, true), true);
+    assert.strictEqual(c(1.2, true), false);
+    assert.strictEqual(c(1.2, false), false);
+});
+
+test('paused icon fades after the delay unless hovered or focused', () => {
+    const i = (o) => P.iconIdle({ idleMs: 3000, hovering: false, focused: false, ...o });
+    assert.strictEqual(i({}), true);
+    assert.strictEqual(i({ idleMs: 2999 }), false);
+    assert.strictEqual(i({ hovering: true }), false);
+    assert.strictEqual(i({ focused: true }), false);
+});

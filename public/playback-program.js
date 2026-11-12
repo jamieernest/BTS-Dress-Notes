@@ -74,5 +74,23 @@
         return playing ? 'playing' : 'paused';
     }
 
-    return { layout, locate, gaps, stageState };
+    // Playback that should be moving but whose clock hasn't advanced for
+    // `ticks` checks in a row is stalled, whatever events the browser fired.
+    function stallTracker(ticks) {
+        let last = null, still = 0;
+        return function check(time, shouldMove) {
+            if (!shouldMove || time !== last) still = 0;
+            else still++;
+            last = time;
+            return still >= ticks;
+        };
+    }
+
+    // The paused icon fades once the pointer has been still for `delay` ms, except
+    // while a mouse rests over the video or the video has keyboard focus.
+    function iconIdle({ idleMs, hovering, focused, delay = 3000 }) {
+        return idleMs >= delay && !hovering && !focused;
+    }
+
+    return { layout, locate, gaps, stageState, stallTracker, iconIdle };
 }));
