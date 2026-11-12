@@ -283,18 +283,36 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // The picture isn't ready: a part is loading, or playback stalled / is seeking.
     let buffering = false;
+    // 'waiting' isn't fired on every stall and 'suspend' arrives mid-stall, so also
+    // watch the clock: still for 2 checks (~0.5 s) while playing counts as buffering.
+    let stalled = false;
+    const stallCheck = P.stallTracker(2);
+    // Fade the paused icon after 3 s of no pointer activity (touch has no hover).
+    let lastActive = Date.now(), hovering = false;
+    const wake = (e) => {
+        lastActive = Date.now();
+        hovering = !!e && e.pointerType !== 'touch' && e.type !== 'pointerleave';
+        $('stageState').classList.remove('idle');
+    };
+    ['pointermove', 'pointerdown', 'pointerenter', 'pointerleave'].forEach(n => $('screen').addEventListener(n, wake));
+    video.addEventListener('focus', () => wake());
+    setInterval(() => {
+        $('stageState').classList.toggle('idle', P.iconIdle({ idleMs: Date.now() - lastActive, hovering, focused: video.matches(':focus-visible') }));
+        const now = stallCheck(video.currentTime, playing && gapAt === null && loadTarget === null && !video.paused && !video.ended && !video.seeking);
+        if (now !== stalled) { stalled = now; syncPlayState(); }
+    }, 250);
     function syncPlayState() {
         video.setAttribute('aria-label', playing ? 'Pause video' : 'Play video');
         const state = P.stageState({
             loaded: !!loadedId,
             playing,
-            buffering: buffering || loadTarget !== null || (loadedId && video.readyState < 3 && (playing || video.seeking)),
+            buffering: buffering || stalled || loadTarget !== null || (loadedId && video.readyState < 3 && (playing || video.seeking)),
             inGap: gapAt !== null,
         });
         $('stageState').dataset.state = state;
     }
     ['loadstart', 'waiting', 'seeking'].forEach(n => video.addEventListener(n, () => { buffering = true; syncPlayState(); }));
-    ['canplay', 'playing', 'seeked', 'loadeddata', 'loadedmetadata', 'suspend', 'emptied', 'error'].forEach(n => video.addEventListener(n, () => { buffering = false; syncPlayState(); }));
+    ['canplay', 'playing', 'seeked', 'loadeddata', 'loadedmetadata', 'emptied', 'error'].forEach(n => video.addEventListener(n, () => { buffering = false; syncPlayState(); }));
 
     video.addEventListener('click', togglePlayback);
     $('gapNotice').addEventListener('click', (e) => { if (!e.target.closest('button')) togglePlayback(); });

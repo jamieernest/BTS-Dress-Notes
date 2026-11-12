@@ -119,6 +119,8 @@ video {
     width: 64px; height: 64px; border-radius: 50%; display: grid; place-items: center;
     background: rgba(0, 0, 0, 0.6); color: #fff;
 }
+.state-icon { transition: opacity 0.3s; }
+.stage-state.idle .state-paused { opacity: 0 !important; }
 .state-icon .icon { width: 30px; height: 30px; }
 .stage-state[data-state="loading"] .spinner,
 .stage-state[data-state="paused"] .state-paused { opacity: 1; }
