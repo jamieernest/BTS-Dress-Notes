@@ -148,9 +148,13 @@ document.addEventListener('DOMContentLoaded', function() {
     window.addEventListener('resize', () => {
         for (const editor of tagEditors.values()) editor.deleteControl.classList.add('tooltip-dismissed');
     });
+    let newColourPicked = false, suggestedTags = [];
+    const suggestNewColour = () => { byId('newTagColour').value = TagColour.nextColour(suggestedTags.map(t => t.color)); };
+    byId('newTagColour').addEventListener('input', () => { newColourPicked = true; });
     socket.on('tags-update', tags => {
         tagCount = tags.length;
-        byId('newTagColour').value = TagColour.nextColour(tags.map(t => t.color));
+        suggestedTags = tags;
+        if (!newColourPicked) suggestNewColour();
         const present = new Set();
         tags.forEach((tag, index) => {
             present.add(tag.id);
@@ -179,7 +183,7 @@ document.addEventListener('DOMContentLoaded', function() {
     byId('addTagForm').addEventListener('submit', e => {
         e.preventDefault();
         tagAction('create-tag', { name: byId('newTagName').value, color: byId('newTagColour').value },
-            e.submitter, () => { byId('newTagName').value = ''; byId('newTagName').focus(); });
+            e.submitter, () => { newColourPicked = false; suggestNewColour(); byId('newTagName').value = ''; byId('newTagName').focus(); });
     });
 
     socket.on('connect', () => {
