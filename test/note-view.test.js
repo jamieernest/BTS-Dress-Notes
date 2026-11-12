@@ -213,6 +213,15 @@ test('note headers show name, cue and reference in order without a per-note cloc
     assert.ok(!header.includes('note-tc') && !header.includes('01:02:03:04'));
 });
 
+test('a returning scene heading uses its own visit time', () => {
+    const note = (act, at) => ({ act, timestamp: at, startedAt: at });
+    const notes = [note('Preshow', '2026-11-05T19:00:00Z'), note('Scene A', '2026-11-05T19:10:00Z'), note('Preshow', '2026-11-05T19:30:00Z')];
+    const groups = NoteView.groupNotes([...notes].reverse());
+    const starts = NoteView.groupStartTimes(groups, NoteView.sceneStartTimes(notes, []));
+    assert.deepEqual(groups.map(g => g.act), ['Preshow', 'Scene A', 'Preshow']);
+    assert.deepEqual(starts, ['2026-11-05T19:30:00.000Z', '2026-11-05T19:10:00.000Z', '2026-11-05T19:00:00.000Z']);
+});
+
 test('scene clocks use the first logged entry, then the oldest valid retained note, independent of order', () => {
     const notes = [
         { act: 'Preshow', timestamp: '2026-11-05T20:49:00Z' },
@@ -249,6 +258,29 @@ test('scene groups keep a cross-scene submission with its starting scene', () =>
     assert.deepStrictEqual(notes.map(n => n.id), ['late', 'two', 'one']);
     // Even the first note for Song 1 can be submitted during Song 2.
     assert.deepStrictEqual(NoteView.groupNotes(notes.slice(0, 2)).map(g => g.act), ['Song 2', 'Song 1']);
+});
+
+test('a scene that returns later gets its own group at the current end', () => {
+    const note = (id, act, minute) => ({ id, act, timestamp: `2026-11-11T19:${minute}:00.000Z` });
+    // Oldest first: Preshow, Scene A, Scene B, then Preshow again.
+    const oldest = [note('p1', 'Preshow', '00'), note('p2', 'Preshow', '01'), note('a', 'Scene A', '10'),
+        note('b', 'Scene B', '20'), note('p3', 'Preshow', '30'), note('p4', 'Preshow', '31')];
+    const groups = NoteView.groupNotes([...oldest].reverse());
+    assert.deepStrictEqual(groups.map(g => [g.act, g.notes.map(n => n.id)]), [
+        ['Preshow', ['p4', 'p3']], ['Scene B', ['b']], ['Scene A', ['a']], ['Preshow', ['p2', 'p1']]
+    ]);
+    // A scene that never returns still has a single group.
+    assert.deepStrictEqual(NoteView.groupNotes(oldest.slice(0, 4).reverse()).map(g => g.act), ['Scene B', 'Scene A', 'Preshow']);
+});
+
+test('a returning scene keeps a note with the occurrence where it was started', () => {
+    const note = (id, act, second, started = second) => ({ id, act,
+        timestamp: `2026-11-11T19:00:${second}.000Z`, startedAt: `2026-11-11T19:00:${started}.000Z` });
+    // 'late' was started in the first Preshow but sent after Scene A began.
+    const notes = [note('p3', 'Preshow', '50'), note('a', 'Scene A', '30'), note('late', 'Preshow', '40', '05'), note('p1', 'Preshow', '10')];
+    assert.deepStrictEqual(NoteView.groupNotes(notes).map(g => [g.act, g.notes.map(n => n.id)]), [
+        ['Preshow', ['p3']], ['Scene A', ['a']], ['Preshow', ['late', 'p1']]
+    ]);
 });
 
 test('scene grouping supports legacy stamps, ownerless scenes and empty lists', () => {
