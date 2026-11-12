@@ -28,7 +28,7 @@ test('signed-in photo identity cannot be spoofed and survives notes/chat restart
     await until(() => a.page.log && b.page.log && current && users?.length === 2, 'signed-in state');
     assert.equal(current.emailPrefix, 'abc12');
     const alice = users.find(u => u.id === 'sub-alice'), bob = users.find(u => u.id === 'sub-bob');
-    assert.equal(alice.emailPrefix, 'abc12'); assert.equal(bob.emailPrefix, undefined);
+    assert.equal(alice.emailPrefix, 'abc12'); assert.equal(bob.emailPrefix, 'bob12');
     assert.equal(alice.email, undefined); assert.equal(alice.username, undefined);
     const base = `http://127.0.0.1:${app.port}`;
     const response = await fetch(base, { headers: { cookie: cookies[0] } });
@@ -43,7 +43,7 @@ test('signed-in photo identity cannot be spoofed and survives notes/chat restart
     assert.deepEqual(agreed.agreements, [{ userId: 'sub-alice', name: agreed.agreements[0].name, emailPrefix: 'abc12' }]);
     b.page.socket.emit('chat-message', payload);
     await until(() => a.page.log.length === 1, 'non-Bath chat');
-    assert.equal(a.page.log[0].emailPrefix, undefined);
+    assert.equal(a.page.log[0].emailPrefix, 'bob12');
     a.page.socket.emit('chat-message', { ...payload, replyTo: a.page.log[0].id });
     await until(() => a.page.log.length === 2 && b.page.log.length === 2, 'photo reply');
     assert.equal(a.page.log[1].emailPrefix, 'abc12');

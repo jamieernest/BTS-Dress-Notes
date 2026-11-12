@@ -1311,8 +1311,7 @@ io.on('connection', (socket) => {
     const user = {
         id: sessionUser.sub,
         name: sessionUser.name,
-        emailPrefix: usernameFromClaims({ email: sessionUser.email,
-            preferred_username: sessionUser.username ?? sessionUser.emailPrefix }),
+        emailPrefix: usernameFromClaims({ preferred_username: sessionUser.username ?? sessionUser.emailPrefix }),
         isTyping: false,
         currentTimecode: null,
         currentLxCue: null,
