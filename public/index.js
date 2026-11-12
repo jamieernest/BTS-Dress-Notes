@@ -206,7 +206,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- Filtering ---
-    const noteMatches = (note) => NoteView.noteMatches(note, filters, tagById);
+    const noteMatches = (note) => NoteView.noteMatches(note, filters, tagById, currentUser.emailPrefix);
     const filtersActive = () => NoteView.filtersActive(filters);
 
     function refreshGroupTimes() {
@@ -291,7 +291,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function updateActFilter() {
         const acts = [...new Set(allNotes.filter(n => !deletedNotes.has(n.id)).map(note => note.act || 'Preshow'))];
-        actDropdown.render(NoteView.sceneOptions(acts), filters.act);
+        actDropdown.render(NoteView.sceneOptions(acts, currentUser.emailPrefix), filters.act);
         actFilter.hidden = acts.length < 2 && filters.act === 'all';
     }
 
@@ -1367,6 +1367,7 @@ document.addEventListener('DOMContentLoaded', function() {
         currentUser.name = data.name;
         currentUser.sub = data.sub;
         currentUser.emailPrefix = data.emailPrefix || null;
+        updateActFilter();
         identityConfirmed = true;
         refreshGroupLabels();
         authorSearch.refresh();

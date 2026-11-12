@@ -123,3 +123,17 @@ test('group heading draws mentions but keeps data-act raw', () => {
     const h = require('../public/note-view').groupHeadHTML('S1 @jkong', undefined, '', people);
     assert.ok(h.includes('data-act="S1 @jkong"') && h.includes('<strong class="mention">@jkong</strong>'));
 });
+
+test('My scenes matches exactly the labels that highlight for the viewer', () => {
+    const NV = require('../public/note-view');
+    const tags = () => ({ name: '' });
+    const note = act => ({ act, tags: ['t'] });
+    const f = { act: NV.MY_SCENES, tag: 'all', search: '', author: '', mentionedUserId: '' };
+    assert.equal(NV.noteMatches(note('Scene 4 @JKong.'), f, tags, 'jkong'), true);
+    assert.equal(NV.noteMatches(note('Scene 4 @bo.lee'), f, tags, 'jkong'), false);
+    assert.equal(NV.noteMatches(note('mail a@jkong.com'), f, tags, 'jkong'), false);
+    assert.equal(NV.noteMatches(note('Scene 4 @jkong'), f, tags, ''), false);
+    assert.equal(NV.noteMatches(note('Scene 4'), { ...f, act: 'Scene 4' }, tags, ''), true);
+    assert.deepEqual(NV.sceneOptions(['A'], 'jkong').map(o => o.label), ['All scenes', 'My scenes', 'A']);
+    assert.deepEqual(NV.sceneOptions(['A']).map(o => o.label), ['All scenes', 'A']);
+});
