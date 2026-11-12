@@ -8,6 +8,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const $ = id => document.getElementById(id);
     const T = PlaybackTimeline;
     const P = PlaybackProgram;
+    const V = PlaybackViewport;
     const { esc, setHtml, safeColor } = NoteView;
     const C = PlaybackContext;
     const params = new URLSearchParams(location.search);
@@ -20,6 +21,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const video = $('video');
     const track = $('track');
+    const timeline = track.parentElement;
     const hoverCard = $('hoverCard');
 
     const PREROLL_MS = 3000;       // jumping to a note starts this far before it
@@ -55,6 +57,14 @@ document.addEventListener('DOMContentLoaded', function() {
     let pendingSeek = null;        // timeline seconds to go to once the video finishes its current seek
     let cardPinned = false;        // taps and keyboard cue jumps keep details open
     let initialSelectionShown = false;
+    let view = V.fit(0);           // the stretch of the timeline on screen (public/playback-viewport.js)
+    let drawnDuration = 0;         // the duration the view was last drawn for
+    let holdFollow = false;        // the view was moved away from the playhead on purpose
+    let sceneRanges = [];          // the scene strip's scenes, in timeline seconds, in order
+    let axisTicks = [];            // labels along the axis while zoomed: { t, el }
+    let pinch = null;              // two fingers on the timeline: zooming, not scrubbing
+    const touches = new Map();     // fingers down on the timeline: pointer id -> { x, y }
+    const EDGE = 1e-6;
 
     // --- Opening files ---
     function showError(message) {
@@ -198,9 +208,11 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function relayout() {
+        const wasFit = V.isFit(view, duration);
         program = P.layout(recording.parts);
         videoStart = program.origin;
         duration = program.total;
+        setView(wasFit ? V.fit(duration) : view);
     }
 
     function unload() {
@@ -678,27 +690,45 @@ document.addEventListener('DOMContentLoaded', function() {
         update();
     });
 
-    // Faint time guides; the axis only labels the ends and the playhead.
+    // A bare element for the grid and overview: they are rebuilt while zooming,
+    // too often for sanitising markup. Values are numbers or safeColor() output.
+    function mark(className, vars, text) {
+        const el = document.createElement('span');
+        el.className = className;
+        for (const key in vars) el.style.setProperty(key, vars[key]);
+        if (text !== undefined) el.textContent = text;
+        return el;
+    }
+
+    // Stretches with no video, in timeline seconds: between parts, or a part this browser can't play.
+    const blankRanges = () => [...P.gaps(program), ...program.segments.filter(s => broken.has(s.id)).map(s => ({ from: s.offset, to: s.end }))];
+
+    // Faint time guides. Whole video: lines on the clock's minutes and the axis
+    // labels the ends and the playhead. Zoomed: lines and labels on round video times.
     function renderGrid() {
-        $('axis').hidden = !duration;
+        $('axis').hidden = $('zoomBar').hidden = !duration;
         $('axisEnd').textContent = videoTimeText(duration);
-        if (!timed()) { setHtml($('grid'), ''); return; }
-        const end = videoStart + duration * 1000;
-        const pxPerMin = track.clientWidth / (duration / 60);
-        const step = [1, 5, 10, 15, 30].find(m => m * pxPerMin >= 32) || 60;
-        const first = new Date(videoStart);
-        first.setSeconds(0, 0);
-        first.setMinutes(Math.ceil(first.getMinutes() / step) * step);
-        if (first.getTime() < videoStart) first.setMinutes(first.getMinutes() + step);
-        let lines = '';
-        for (let t = first.getTime(); t <= end; t += step * 60000) {
-            lines += `<span class="line" style="left:${pct(t)}"></span>`;
+        const lines = [];
+        axisTicks = [];
+        if (zoomed()) {
+            for (const t of V.ticks(view, track.clientWidth)) {
+                lines.push(mark('line tick', { '--at': t }));
+                axisTicks.push({ t, el: mark('label', { left: `${(frac(t) * 100).toFixed(3)}%` }, videoTimeText(t)) });
+            }
+            axisTicks = axisTicks.filter(x => { const px = frac(x.t) * track.clientWidth; return px >= 18 && px <= track.clientWidth - 18; });
+        } else if (timed()) {
+            const end = videoStart + duration * 1000;
+            const pxPerMin = track.clientWidth / (duration / 60);
+            const step = [1, 5, 10, 15, 30].find(m => m * pxPerMin >= 32) || 60;
+            const first = new Date(videoStart);
+            first.setSeconds(0, 0);
+            first.setMinutes(Math.ceil(first.getMinutes() / step) * step);
+            if (first.getTime() < videoStart) first.setMinutes(first.getMinutes() + step);
+            for (let t = first.getTime(); t <= end; t += step * 60000) lines.push(mark('line', { left: pct(t) }));
         }
-        // Where nothing was recorded (or this browser can't play the part).
-        const share = (seconds) => `${Math.min(100, Math.max(0, seconds / duration * 100)).toFixed(3)}%`;
-        const blanks = [...P.gaps(program), ...program.segments.filter(s => broken.has(s.id)).map(s => ({ from: s.offset, to: s.end }))];
-        lines += blanks.map(g => `<span class="gap" style="left:${share(g.from)};width:${share(g.to - g.from)}"></span>`).join('');
-        setHtml($('grid'), lines);
+        if (timed()) lines.push(...blankRanges().map(g => mark('gap', { '--from': g.from, '--to': g.to })));
+        $('grid').replaceChildren(...lines);
+        $('axisTicks').replaceChildren(...axisTicks.map(x => x.el));
     }
 
     // Each scene as a stretch of the video, from its start to the next one's.
@@ -714,23 +744,27 @@ document.addEventListener('DOMContentLoaded', function() {
     function renderMarks() {
         track.setAttribute('aria-disabled', String(!timed()));
         hideCard();
-        if (!timed()) { setHtml($('sceneStrip'), ''); setHtml($('laneMarks'), ''); return; }
+        if (!timed()) { setHtml($('sceneStrip'), ''); setHtml($('laneMarks'), ''); sceneRanges = []; renderOverview(); return; }
         const end = videoStart + duration * 1000;
         const visibleCues = cues.filter(c => c.at >= videoStart && c.at <= end);
         const spans = sceneSpans();
-        const width = (s) => `${(((s.to - s.from) / 1000 / duration) * 100).toFixed(3)}%`;
+        // Positions are seconds along the timeline; the CSS turns them into x for the current view.
+        const secs = (clock) => toVideo(clock).toFixed(3);
+        sceneRanges = spans.map(s => ({ from: toVideo(s.from), to: toVideo(s.to) }));
         setHtml($('sceneStrip'), spans.map(s =>
-            `<span class="scene" data-scene="${s.at}" style="left:${pct(s.from)};width:${width(s)}">${esc(s.value)}</span>`
+            `<span class="scene" data-scene="${s.at}" style="--from:${secs(s.from)};--to:${secs(s.to)}">${esc(s.value)}</span>`
         ).join(''));
         const cueMarks = visibleCues.map(c =>
-            `<span class="cue-mark" data-cue="${c.at}" style="left:${pct(c.at)}"></span>`
+            `<span class="cue-mark" data-cue="${c.at}" style="--at:${secs(c.at)}"></span>`
         ).join('');
         setHtml($('laneMarks'),
-            spans.filter(s => s.at > videoStart).map(s => `<span class="scene-line" style="left:${pct(s.at)}"></span>`).join('') +
+            spans.filter(s => s.at > videoStart).map(s => `<span class="scene-line" style="--at:${secs(s.at)}"></span>`).join('') +
             cueMarks +
             placed.filter(shown).map(p =>
-                `<span class="note-mark" data-id="${esc(p.note.id)}" style="left:${pct(p.at)};--tag:${safeColor((tagOf(p.note) || {}).color)}"></span>`
+                `<span class="note-mark" data-id="${esc(p.note.id)}" style="--at:${secs(p.at)};--tag:${safeColor((tagOf(p.note) || {}).color)}"></span>`
             ).join(''));
+        placeScenes();
+        renderOverview();
         markSelected();
     }
 
@@ -798,18 +832,30 @@ document.addEventListener('DOMContentLoaded', function() {
         showGap();
         if (duration) {
             const seconds = position();
-            const x = seconds / duration * $('axis').clientWidth;
+            if (!holdFollow && !(scrub && scrub.moved) && !pinch && zoomed()) {
+                const next = V.follow(view, seconds, duration, playing);
+                if (next !== view) setView(next);
+            }
+            const width = $('axis').clientWidth;
+            const f = frac(seconds);
+            const x = f * width;
+            const inView = f >= -EDGE && f <= 1 + EDGE;
             $('axisNow').textContent = videoTimeText(seconds);
-            $('axisNow').style.left = `${Math.min(Math.max(24, x), $('axis').clientWidth - 24)}px`;
-            $('axisStart').hidden = x < 65;
-            $('axisEnd').hidden = $('axis').clientWidth - x < 65;
+            $('axisNow').style.left = `${Math.min(Math.max(24, x), width - 24)}px`;
+            $('axisNow').hidden = !inView;
+            $('axisStart').hidden = zoomed() || x < 65;
+            $('axisEnd').hidden = zoomed() || width - x < 65;
+            for (const tick of axisTicks) tick.el.hidden = inView && Math.abs(frac(tick.t) * width - x) < 40;
+            $('overviewHead').style.left = `${(seconds / duration * 100).toFixed(3)}%`;
             track.setAttribute('aria-valuemax', String(duration));
             track.setAttribute('aria-valuenow', String(Math.floor(seconds)));
             track.setAttribute('aria-valuetext', `${videoTimeText(seconds)} of ${videoTimeText(duration)}`);
         }
         if (!timed()) return;
         const now = nowClock();
-        $('playhead').style.left = pct(now);
+        const f = frac(toVideo(now));
+        $('playhead').hidden = f < -EDGE || f > 1 + EDGE;
+        $('playhead').style.left = `${(Math.min(1, Math.max(0, f)) * 100).toFixed(3)}%`;
         const scene = T.valueAt(scenes, now);
         $('sceneStrip').querySelectorAll('.scene').forEach(el =>
             el.classList.toggle('current', !!scene && Number(el.dataset.scene) === scene.at));
@@ -888,10 +934,12 @@ document.addEventListener('DOMContentLoaded', function() {
         if (scene) return scene;
         let closest = null;
         let distance = 12;
+        const bounds = track.getBoundingClientRect();
         track.querySelectorAll('.note-mark, .cue-mark').forEach(el => {
             const box = el.getBoundingClientRect();
-            const dx = Math.abs(e.clientX - (box.left + box.width / 2));
-            if (e.clientY >= box.top && e.clientY < box.bottom && dx <= distance &&
+            const centre = box.left + box.width / 2;
+            const dx = Math.abs(e.clientX - centre);
+            if (centre >= bounds.left && centre <= bounds.right && e.clientY >= box.top && e.clientY < box.bottom && dx <= distance &&
                 (!closest || dx < distance || el.classList.contains('cue-mark'))) {
                 closest = el;
                 distance = dx;
@@ -938,6 +986,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // for it, so dragging shows frames as fast as they come instead of queueing.
     function seekTo(seconds) {
         if (!duration) return;
+        holdFollow = false;
         pendingSeek = Math.min(Math.max(0, seconds), duration);
         if (!video.seeking && loadTarget === null) flushSeek();
         update();
@@ -973,10 +1022,15 @@ document.addEventListener('DOMContentLoaded', function() {
     const DRAG_PX = 4;
     const secondsAt = (e) => {
         const rect = track.getBoundingClientRect();
-        return Math.min(Math.max(0, (e.clientX - rect.left) / rect.width), 1) * duration;
+        return view.t0 + Math.min(Math.max(0, (e.clientX - rect.left) / rect.width), 1) * view.span;
     };
 
     track.addEventListener('pointerdown', (e) => {
+        if (e.pointerType === 'touch') {
+            touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (touches.size === 2 && timed()) { startPinch(); return; }
+            if (touches.size > 1) return;
+        }
         if (!timed() || e.button !== 0 || scrub) return;
         e.preventDefault();
         track.focus({ preventScroll: true });
@@ -986,6 +1040,10 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     track.addEventListener('pointermove', (e) => {
+        if (touches.has(e.pointerId)) {
+            touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (pinch && touches.size === 2) movePinch();
+        }
         if (!scrub || e.pointerId !== scrub.pointerId) return;
         if (!scrub.moved) {
             if (Math.abs(e.clientX - scrub.x) < DRAG_PX) return;
@@ -996,7 +1054,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         const seconds = secondsAt(e);
         seekTo(seconds);
-        showCard(`<strong class="mono">${esc(clockText(videoStart + seconds * 1000))}</strong>`, (seconds / duration) * track.clientWidth);
+        showCard(`<strong class="mono">${esc(clockText(videoStart + seconds * 1000))}</strong>`, frac(seconds) * track.clientWidth);
     });
 
     function endScrub(e) {
@@ -1013,7 +1071,13 @@ document.addEventListener('DOMContentLoaded', function() {
         return press;
     }
 
+    const releaseTouch = (e) => {
+        touches.delete(e.pointerId);
+        if (touches.size < 2) pinch = null;
+    };
+
     track.addEventListener('pointerup', (e) => {
+        releaseTouch(e);
         const press = endScrub(e);
         if (!press || press.moved) return;
         const mark = press.mark;
@@ -1022,8 +1086,165 @@ document.addEventListener('DOMContentLoaded', function() {
         else seekTo(secondsAt(e));
         if (mark) describeMark(mark, true);
     });
-    track.addEventListener('pointercancel', endScrub);
+    track.addEventListener('pointercancel', (e) => { releaseTouch(e); endScrub(e); });
     track.addEventListener('lostpointercapture', endScrub);
+
+    // --- Zooming ---
+    // The view is a window on the timeline (public/playback-viewport.js). The
+    // marks are positioned from the --t0/--span set here, so a zoom or pan
+    // frame is a couple of style writes, not a redraw of the marks.
+    const zoomed = () => !V.isFit(view, duration);
+    const frac = (seconds) => (seconds - view.t0) / view.span;
+    const inWindow = (seconds) => seconds >= view.t0 - EDGE && seconds <= view.t0 + view.span + EDGE;
+
+    // Scenes are clamped to the view by CSS; the ones outside it, and the edge
+    // line of one that began before it, are switched off here.
+    function placeScenes() {
+        const els = $('sceneStrip').children;
+        sceneRanges.forEach((r, i) => {
+            if (!els[i]) return;
+            els[i].hidden = r.to <= view.t0 || r.from >= view.t0 + view.span;
+            els[i].classList.toggle('cut', r.from < view.t0);
+        });
+    }
+
+    // Draws the view. Callers redraw the playhead (update()) afterwards.
+    function setView(next, manual) {
+        next = V.clamp(next, duration);
+        const same = next.t0 === view.t0 && next.span === view.span && duration === drawnDuration;
+        view = next;
+        if (manual) holdFollow = !inWindow(position());
+        if (!zoomed()) holdFollow = false;
+        if (same) return;
+        drawnDuration = duration;
+        hideCard();
+        timeline.style.setProperty('--t0', view.t0);
+        timeline.style.setProperty('--span', view.span);
+        timeline.style.setProperty('--dur', duration);
+        const on = zoomed();
+        track.classList.toggle('zoomed', on);
+        $('overview').hidden = !on;
+        $('zoomOut').disabled = $('zoomFit').disabled = !on;
+        $('zoomIn').disabled = !duration || view.span <= V.minSpan(duration) + EDGE;
+        const times = duration / view.span;
+        $('zoomLevel').textContent = on ? `${times.toFixed(times < 10 ? 1 : 0)}×` : '';
+        placeScenes();
+        renderGrid();
+        const box = $('overviewWindow');
+        box.style.left = `${(view.t0 / duration * 100).toFixed(3)}%`;
+        box.style.width = `${(view.span / duration * 100).toFixed(3)}%`;
+    }
+
+    const moveView = (next, manual = true) => { setView(next, manual); update(); };
+    // The playhead if it is on screen, else the middle: where zooming should centre.
+    const zoomAnchor = () => { const f = frac(position()); return f >= 0 && f <= 1 ? f : 0.5; };
+    const zoomBy = (factor) => moveView(V.zoomAt(view, zoomAnchor(), factor, duration));
+
+    $('zoomIn').addEventListener('click', () => zoomBy(2));
+    $('zoomOut').addEventListener('click', () => zoomBy(0.5));
+    $('zoomFit').addEventListener('click', () => moveView(V.fit(duration)));
+
+    // The whole video in a thin strip: where the window is, and a way to move it.
+    function renderOverview() {
+        const parts = [];
+        if (timed()) {
+            sceneRanges.forEach((r, i) => parts.push(mark(i % 2 ? 'ov-scene alt' : 'ov-scene', { '--from': r.from.toFixed(3), '--to': r.to.toFixed(3) })));
+            parts.push(...blankRanges().map(g => mark('ov-gap', { '--from': g.from, '--to': g.to })));
+            parts.push(...placed.filter(shown).map(p => mark('ov-note', { '--at': toVideo(p.at).toFixed(3), '--tag': safeColor((tagOf(p.note) || {}).color) })));
+        }
+        $('overviewMarks').replaceChildren(...parts);
+    }
+
+    let overviewDrag = null;
+    const overviewMove = (e) => {
+        const rect = $('overview').getBoundingClientRect();
+        const at = Math.min(Math.max(0, (e.clientX - rect.left) / rect.width), 1) * duration;
+        moveView({ t0: at - overviewDrag.grab, span: view.span });
+    };
+    $('overview').addEventListener('pointerdown', (e) => {
+        if (e.button !== 0 || !zoomed()) return;
+        e.preventDefault();
+        const rect = $('overview').getBoundingClientRect();
+        const at = (e.clientX - rect.left) / rect.width * duration;
+        // Grabbing the window keeps the point you hold under the pointer; elsewhere it centres there.
+        overviewDrag = { id: e.pointerId, grab: inWindow(at) ? at - view.t0 : view.span / 2 };
+        $('overview').setPointerCapture(e.pointerId);
+        overviewMove(e);
+    });
+    $('overview').addEventListener('pointermove', (e) => { if (overviewDrag && e.pointerId === overviewDrag.id) overviewMove(e); });
+    const overviewEnd = (e) => { if (overviewDrag && e.pointerId === overviewDrag.id) overviewDrag = null; };
+    $('overview').addEventListener('pointerup', overviewEnd);
+    $('overview').addEventListener('pointercancel', overviewEnd);
+
+    // Ctrl/⌘ + wheel (also how Chrome and Firefox report a trackpad pinch) zooms about the pointer;
+    // a plain wheel or swipe moves along the timeline once zoomed in.
+    track.addEventListener('wheel', (e) => {
+        if (!duration) return;
+        const rect = track.getBoundingClientRect();
+        const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? rect.width : 1;
+        if (e.ctrlKey || e.metaKey) {
+            e.preventDefault();
+            const delta = Math.max(-40, Math.min(40, e.deltaY * unit));
+            moveView(V.zoomAt(view, (e.clientX - rect.left) / rect.width, Math.exp(-delta * 0.01), duration));
+        } else if (zoomed()) {
+            e.preventDefault();
+            const delta = (Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY) * unit;
+            moveView(V.panBy(view, delta / rect.width * view.span, duration));
+        }
+    }, { passive: false });
+
+    // Safari reports a trackpad pinch as gesture events (and a touch pinch too, which pointers already handle).
+    let gesture = null;
+    track.addEventListener('gesturestart', (e) => {
+        e.preventDefault();
+        if (touches.size >= 2 || !duration) return;
+        const rect = track.getBoundingClientRect();
+        gesture = { view, frac: (e.clientX - rect.left) / rect.width };
+    });
+    track.addEventListener('gesturechange', (e) => {
+        e.preventDefault();
+        if (gesture) moveView(V.zoomAt(gesture.view, gesture.frac, e.scale, duration));
+    });
+    track.addEventListener('gestureend', () => { gesture = null; });
+
+    // Two fingers: pinch to zoom and slide to move, keeping the time under each finger where it was.
+    function cancelScrub() {
+        if (!scrub) return;
+        const press = scrub;
+        scrub = null;
+        if (track.hasPointerCapture(press.pointerId)) track.releasePointerCapture(press.pointerId);
+        track.classList.remove('scrubbing');
+        if (press.moved) {
+            hideCard();
+            if (press.wasPlaying) play();
+        }
+    }
+
+    const fingers = () => {
+        const [a, b] = [...touches.values()];
+        return { distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), x: (a.x + b.x) / 2 };
+    };
+    const fingerFrac = (x) => { const rect = track.getBoundingClientRect(); return (x - rect.left) / rect.width; };
+
+    function startPinch() {
+        cancelScrub();
+        hideCard();
+        const start = fingers();
+        pinch = { view, distance: start.distance, time: view.t0 + fingerFrac(start.x) * view.span };
+    }
+
+    function movePinch() {
+        const now = fingers();
+        moveView(V.zoomTo(pinch.view, pinch.time, fingerFrac(now.x), pinch.view.span * pinch.distance / now.distance, duration));
+    }
+
+    // Double-click a scene to zoom to it.
+    track.addEventListener('dblclick', (e) => {
+        if (!timed() || e.clientY > $('sceneStrip').getBoundingClientRect().bottom) return;
+        const at = videoStart + secondsAt(e) * 1000;
+        const scene = sceneSpans().find(s => at >= s.from && at < s.to);
+        if (scene) moveView(V.fitRange(toVideo(scene.from), toVideo(scene.to), duration));
+    });
 
     $('sideList').addEventListener('click', (e) => {
         const item = e.target.closest('.side-note');
@@ -1064,6 +1285,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 const mark = track.querySelector(`[data-cue="${next.at}"]`);
                 if (mark) describeMark(mark, true);
             }
+        } else if (e.key === '+' || e.key === '=') {
+            e.preventDefault();
+            zoomBy(2);
+        } else if (e.key === '-' || e.key === '_') {
+            e.preventDefault();
+            zoomBy(0.5);
+        } else if (e.key === '0') {
+            e.preventDefault();
+            moveView(V.fit(duration));
         } else if ((e.key === '[' || e.key === ']') && timed()) {
             e.preventDefault();
             // Notes are reached at PREROLL_MS before them, so measure from just past that.

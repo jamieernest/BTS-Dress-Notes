@@ -127,7 +127,10 @@ video {
 @keyframes state-flash { from { opacity: 1; transform: scale(0.9); } to { opacity: 0; transform: scale(1.25); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } .stage-state[data-state="playing"] .state-playing { animation: none; } }
 
-/* Chapters above one shared event field: note stems and LX circles. */
+/* Chapters above one shared event field: note stems and LX circles.
+   The timeline sets --t0 and --span (seconds on screen, from the left edge)
+   and --dur; each mark has --at, or --from and --to, in seconds. At Fit that
+   is the whole video, so x is a share of the width, as it always was. */
 .timeline {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -157,6 +160,8 @@ video {
     position: absolute;
     top: 0;
     bottom: 0;
+    left: max(0%, calc((var(--from) - var(--t0)) / var(--span) * 100%));
+    right: max(0%, calc((var(--t0) + var(--span) - var(--to)) / var(--span) * 100%));
     text-indent: 6px;
     border-left: 1px solid var(--border-strong);
     font-size: 12px;
@@ -166,12 +171,15 @@ video {
     overflow: hidden;
     text-overflow: ellipsis;
 }
-.scene:first-child { border-left-color: transparent; }
+.scene:first-child, .scene.cut { border-left-color: transparent; }
 .scene:nth-child(even) { background: color-mix(in srgb, var(--text) 3%, transparent); }
 .scene.current { background: var(--accent-soft); color: var(--text); }
 .scene.hover { color: var(--text); }
 
+.note-mark, .cue-mark, .scene-line, .grid .line.tick { left: calc((var(--at) - var(--t0)) / var(--span) * 100%); }
 .lane { position: relative; height: 80px; }
+/* Zoomed in, marks beyond either edge are scrolled out of view. */
+.track.zoomed .lane { overflow: hidden; }
 
 /* Faint time guides, with only the current position and endpoints labelled. */
 .grid .line {
@@ -200,6 +208,7 @@ video {
     white-space: nowrap;
 }
 .axis .axis-start { left: 0; transform: none; }
+.axis .label[hidden] { display: none; }
 .axis .axis-end { right: 0; transform: none; }
 .axis .axis-now { color: var(--text-2); }
 
@@ -311,12 +320,55 @@ video {
 
 /* Where the recording stopped between two parts. */
 .grid .gap {
+    left: max(0%, calc((var(--from) - var(--t0)) / var(--span) * 100%));
+    right: max(0%, calc((var(--t0) + var(--span) - var(--to)) / var(--span) * 100%));
     position: absolute;
     top: 0;
     bottom: 0;
     background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--text) 8%, transparent) 0 3px, transparent 3px 7px);
     pointer-events: none;
 }
+
+/* Zoom: the buttons, and a strip of the whole video with the window on screen. */
+.zoom-bar { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.zoom-buttons { margin-left: auto; display: inline-flex; gap: 4px; flex: none; }
+.zoom-buttons .btn { min-width: 30px; justify-content: center; padding: 0 8px; }
+.zoom-level { flex: none; font-size: 11px; min-width: 2.5em; text-align: right; }
+.overview {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    height: 24px;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    touch-action: none;
+}
+.ov-scene, .ov-gap {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--from) / var(--dur) * 100%);
+    width: calc((var(--to) - var(--from)) / var(--dur) * 100%);
+}
+.ov-scene.alt { background: color-mix(in srgb, var(--text) 5%, transparent); }
+.ov-gap { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--text) 8%, transparent) 0 3px, transparent 3px 7px); }
+.ov-note { position: absolute; top: 5px; bottom: 5px; left: calc(var(--at) / var(--dur) * 100%); width: 1px; background: var(--tag, var(--text-3)); }
+.ov-window {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    min-width: 6px;
+    box-sizing: border-box;
+    border: 1px solid var(--accent);
+    border-radius: 3px;
+    background: var(--accent-soft);
+    cursor: grab;
+}
+.ov-head { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--text); opacity: 0.8; pointer-events: none; }
+@media (pointer: coarse) { .overview { height: 36px; } .zoom-buttons .btn { min-width: 44px; } }
 
 /* --- Timing, tucked away until needed --- */
 .timing-panel {
