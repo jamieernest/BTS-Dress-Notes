@@ -7,13 +7,11 @@ const Mentions = require('../public/mentions');
 const { cleanStoredNotes } = require('../note-input');
 const { sanitizeChatLog, boundChatMessage, messageKey } = require('../chat-restore');
 
-test('only a Bath SSO account with a valid website username gets a photo', () => {
-    assert.equal(usernameFromClaims({ email: 'alias@bath.ac.uk', preferred_username: 'abc12' }), 'abc12');
-    assert.equal(usernameFromClaims({ email: 'ABC12@BATH.AC.UK', preferred_username: 'abc12' }), 'abc12');
-    for (const email of ['abc12@gmail.com', 'abc12@bath.ac.uk.evil.test', 'a@@bath.ac.uk', '<img>@bath.ac.uk', null]) {
-        assert.equal(usernameFromClaims({ email, preferred_username: 'abc12' }), undefined);
+test('a valid Keycloak username gets a photo whatever the email domain', () => {
+    for (const email of ['alias@bath.ac.uk', 'abc12@gmail.com', null, undefined]) {
+        assert.equal(usernameFromClaims({ email, preferred_username: 'abc12' }), 'abc12');
     }
-    assert.equal(usernameFromClaims({ email: 'alias@bath.ac.uk' }), undefined, 'no guessing from editable email aliases');
+    assert.equal(usernameFromClaims({ email: 'alias@bath.ac.uk' }), undefined, 'no guessing from email');
     assert.equal(usernameFromClaims({ email: 'abc12@bath.ac.uk', preferred_username: '../other' }), undefined);
 });
 

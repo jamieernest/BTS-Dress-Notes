@@ -3,16 +3,12 @@ const { usernamePattern } = require('./public/profile-photos');
 
 const usernameSchema = z.string().regex(usernamePattern);
 const optionalUsernameSchema = usernameSchema.optional().catch(undefined);
-const bathEmailSchema = z.email().max(254).refine(value => value.split('@')[1].toLowerCase() === 'bath.ac.uk');
 
-// Only trusted OIDC/session claims choose a live author's photo. The website
-// keys photos by username, not by a user's editable contact email. Missing or
+// Only the trusted OIDC username chooses a live author's photo (the website
+// keys photos by username; email is never consulted, since not every account is on bath.ac.uk). Missing or
 // invalid usernames keep initials rather than guessing another person's photo.
 function usernameFromClaims(claims) {
-    const email = bathEmailSchema.safeParse(claims?.email);
-    if (!email.success) return undefined;
-    const candidate = claims.preferred_username;
-    const username = usernameSchema.safeParse(candidate);
+    const username = usernameSchema.safeParse(claims?.preferred_username);
     return username.success ? username.data : undefined;
 }
 
