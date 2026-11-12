@@ -1,10 +1,13 @@
 // Agreement identity is always supplied by the authenticated server session.
 const { z } = require('zod');
+const { optionalUsernameSchema } = require('./profile-photos');
 const MAX_AGREEMENTS = 500;
 const person = z.object({
     userId: z.string().min(1).max(200),
-    name: z.string().trim().min(1).transform(s => s.slice(0, 200))
-});
+    name: z.string().trim().min(1).transform(s => s.slice(0, 200)),
+    // The website username (historical wire name), so the list can show profile photos.
+    emailPrefix: optionalUsernameSchema
+}).transform(p => p.emailPrefix ? p : { userId: p.userId, name: p.name });
 
 function cleanAgreements(value) {
     const people = new Map();

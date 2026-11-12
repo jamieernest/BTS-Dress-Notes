@@ -1382,7 +1382,7 @@ io.on('connection', (socket) => {
         const noteId = input.cleanId(data?.noteId);
         const note = globalState.notes.find(n => n.id === noteId);
         if (!note) return respond({ error: 'Note not found.' });
-        if (!toggleAgreement(note, { userId: user.id, name: user.name })) {
+        if (!toggleAgreement(note, { userId: user.id, name: user.name, emailPrefix: user.emailPrefix })) {
             return respond({ error: 'This note has reached its agreement limit.' });
         }
         // A small delta, not the whole list: the list would delay every Agree click.
@@ -1399,7 +1399,7 @@ io.on('connection', (socket) => {
         const note = globalState.notes.find(n => n.id === noteId);
         const comment = note?.comments?.find(c => c.id === commentId);
         if (!comment) return respond({ error: 'Reply not found.' });
-        if (!toggleAgreement(comment, { userId: user.id, name: user.name })) {
+        if (!toggleAgreement(comment, { userId: user.id, name: user.name, emailPrefix: user.emailPrefix })) {
             return respond({ error: 'This reply has reached its agreement limit.' });
         }
         io.emit('agreements-update', { noteId: note.id, commentId: comment.id, agreements: comment.agreements });
