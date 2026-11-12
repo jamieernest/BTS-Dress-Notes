@@ -15,3 +15,18 @@ test('generates distinct unused colours once the palette is taken', () => {
         used.push(c);
     }
 });
+test('suggester tracks unused colours, keeps a hand-picked one, resumes after create', () => {
+    const { createSuggester } = require('../public/tag-colour');
+    let onInput;
+    const input = { value: '', addEventListener: (_, f) => { onInput = f; } };
+    const s = createSuggester(input);
+    s.update([PALETTE[0]]);
+    assert.equal(input.value, PALETTE[1]);
+    s.update([PALETTE[0], PALETTE[1]]);
+    assert.equal(input.value, PALETTE[2]);
+    input.value = '#123456'; onInput();
+    s.update([PALETTE[0], PALETTE[1], PALETTE[2]]);
+    assert.equal(input.value, '#123456');
+    s.created();
+    assert.equal(input.value, PALETTE[3]);
+});

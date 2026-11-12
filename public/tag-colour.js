@@ -23,5 +23,15 @@
             if (!taken.has(c)) return c;
         }
     }
-    return { PALETTE, nextColour };
+    // Keeps `input` on an unused colour, except while a hand-picked one is showing.
+    function createSuggester(input) {
+        let picked = false, used = [];
+        const suggest = () => { input.value = nextColour(used); };
+        input.addEventListener('input', () => { picked = true; });
+        return {
+            update(colours) { used = colours; if (!picked) suggest(); },
+            created() { picked = false; suggest(); }
+        };
+    }
+    return { PALETTE, nextColour, createSuggester };
 }));
