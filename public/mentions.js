@@ -28,6 +28,33 @@
         }
         return result + SafeHtml.escapeHtml(text.slice(at));
     }
+    // Scene labels arrive over OSC with no picker, so `@username` (the profile-photo username) is resolved at draw time only; the stored label never changes.
+    function labelHandles(label) {
+        const found = [];
+        for (const m of String(label || '').matchAll(/(^|\s)@([A-Za-z0-9_][A-Za-z0-9_.]{0,99})/g)) {
+            const handle = m[2].replace(/\.+$/, '');
+            if (ProfilePhotos.validUsername(handle.toLowerCase())) found.push({ handle: handle.toLowerCase(), start: m.index + m[1].length, end: m.index + m[1].length + 1 + handle.length });
+        }
+        return found;
+    }
+    // Same token rule as the highlight, so "My scenes" matches exactly what is highlighted for the viewer.
+    function labelMentions(label, handle) {
+        handle = String(handle || '').toLowerCase();
+        return !!handle && labelHandles(label).some(h => h.handle === handle);
+    }
+    function labelHtml(label, people = [], me = null) {
+        label = String(label || '');
+        const known = new Set(people.map(p => String(p.emailPrefix || '').toLowerCase()).filter(Boolean));
+        const mine = String(me?.emailPrefix || '').toLowerCase();
+        if (mine) known.add(mine);
+        let at = 0, result = '';
+        for (const h of labelHandles(label)) {
+            if (!known.has(h.handle)) continue;
+            result += SafeHtml.escapeHtml(label.slice(at, h.start)) + `<strong class="mention${h.handle === mine ? ' mention-me' : ''}">${SafeHtml.escapeHtml(label.slice(h.start, h.end))}</strong>`;
+            at = h.end;
+        }
+        return result + SafeHtml.escapeHtml(label.slice(at));
+    }
     // Keep only untouched ranges when the text is edited. Never infer identity from names.
     function rebase(before, after, raw) {
         let start = 0;
@@ -211,5 +238,5 @@
             clear(el) { states.delete(key(el)); histories.delete(key(el)); highlighter.render(el, []); close(); }
         };
     }
-    return { clean, has, html, rebase, accounts, createUnread, install };
+    return { clean, has, html, labelHtml, labelMentions, rebase, accounts, createUnread, install };
 }));

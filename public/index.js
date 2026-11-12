@@ -206,7 +206,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // --- Filtering ---
-    const noteMatches = (note) => NoteView.noteMatches(note, filters, tagById);
+    const noteMatches = (note) => NoteView.noteMatches(note, filters, tagById, currentUser.emailPrefix);
     const filtersActive = () => NoteView.filtersActive(filters);
 
     function refreshGroupTimes() {
@@ -291,7 +291,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function updateActFilter() {
         const acts = [...new Set(allNotes.filter(n => !deletedNotes.has(n.id)).map(note => note.act || 'Preshow'))];
-        actDropdown.render(NoteView.sceneOptions(acts), filters.act);
+        actDropdown.render(NoteView.sceneOptions(acts, currentUser.emailPrefix), filters.act);
         actFilter.hidden = acts.length < 2 && filters.act === 'all';
     }
 
@@ -369,13 +369,14 @@ document.addEventListener('DOMContentLoaded', function() {
     let composerHold = null;
     let composerHoldTimer = null;
     let composerHoldWatch = null;
+    function drawAct(el, act) { setHtml(el, Mentions.labelHtml(act, Mentions.accounts(allNotes, chatMessagesList, lastUsers), currentUser)); }
     function updateComposer() {
         const open = currentUser.isTyping || noteInput.value.length > 0 || document.activeElement === noteInput || !!composerHold;
         composer.classList.toggle('open', open);
         composer.classList.toggle('focused', composer.contains(document.activeElement) || !!composerHold);
         personalTimecodeContainer.classList.toggle('frozen', currentUser.isTyping);
         stampLabel.textContent = currentUser.isTyping ? 'Note taken during' : 'Taken when you start typing';
-        personalActElement.textContent = currentUser.frozenAct || currentAct;
+        drawAct(personalActElement, currentUser.frozenAct || currentAct);
         personalTimecodeContainer.title = 'Locked when you start writing, so it matches the moment you saw';
         noteInput.style.height = 'auto';
         noteInput.style.height = `${noteInput.scrollHeight}px`;
@@ -900,9 +901,16 @@ document.addEventListener('DOMContentLoaded', function() {
         return element;
     }
 
+    function refreshGroupLabels() {
+        const people = Mentions.accounts(allNotes, chatMessagesList, lastUsers);
+        for (const head of notesList.querySelectorAll('.group-head')) {
+            setHtml(head.firstElementChild, Mentions.labelHtml(head.dataset.act, people, currentUser));
+        }
+    }
+
     function groupHeadElement(act) {
         const wrapper = document.createElement('div');
-        setHtml(wrapper, NoteView.groupHeadHTML(act));
+        setHtml(wrapper, NoteView.groupHeadHTML(act, undefined, '', Mentions.accounts(allNotes, chatMessagesList, lastUsers), currentUser));
         return wrapper.firstChild;
     }
 
@@ -1218,8 +1226,9 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!live) return false;
         lastUsers = live.users;
         renderUsers(lastUsers);
+        refreshGroupLabels();
         currentAct = live.act;
-        currentActDisplay.textContent = live.act;
+        drawAct(currentActDisplay, live.act);
         currentGlobalLxCue = live.cue;
         lxCueInput.value = live.cue;
         oscAvailable = live.oscAvailable;
@@ -1358,7 +1367,9 @@ document.addEventListener('DOMContentLoaded', function() {
         currentUser.name = data.name;
         currentUser.sub = data.sub;
         currentUser.emailPrefix = data.emailPrefix || null;
+        updateActFilter();
         identityConfirmed = true;
+        refreshGroupLabels();
         authorSearch.refresh();
         applyRememberedTags();
         // Notes written before we knew who we are are ours; another person's
@@ -1385,12 +1396,13 @@ document.addEventListener('DOMContentLoaded', function() {
     window.socket.on('users-update', (users) => {
         lastUsers = users;
         renderUsers(users);
+        refreshGroupLabels();
     });
 
     window.socket.on('act-update', (act) => {
         currentAct = act;
-        currentActDisplay.textContent = act;
-        if (!currentUser.frozenAct) personalActElement.textContent = act;
+        drawAct(currentActDisplay, act);
+        if (!currentUser.frozenAct) drawAct(personalActElement, act);
         receivedLive('act');
     });
 

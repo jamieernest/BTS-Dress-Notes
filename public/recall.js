@@ -256,7 +256,7 @@ document.addEventListener('DOMContentLoaded', function() {
             .filter(group => group.notes.length);
         const shown = groups.flatMap(group => group.notes);
         const sceneTimes = NoteView.sceneStartTimes(allNotes, showLog);
-        setHtml(notesList, groups.map(group => NoteView.groupHeadHTML(group.act, sceneTimes.get(group.act)) + group.notes.map(noteHTML).join('')).join(''));
+        setHtml(notesList, groups.map(group => NoteView.groupHeadHTML(group.act, sceneTimes.get(group.act), '', Mentions.accounts(allNotes, [], [])) + group.notes.map(noteHTML).join('')).join(''));
         notesList.querySelectorAll('.group-count').forEach((count, i) => { count.textContent = plural(groups[i].notes.length, 'note'); });
 
         const filtered = NoteView.filtersActive(filters);

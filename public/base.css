@@ -216,6 +216,7 @@ a.btn { text-decoration: none; }
     .note-agreements .icon-btn, .agreement-count { width: 44px; height: 44px; }
 }
 .mention { color: #c3c9ff; background: #6c78e626; border-radius: 3px; padding: 0 2px; font-weight: 700; }
+.mention.mention-me { color: #fff; background: #6c78e6; }
 .mention-picker { position: fixed; z-index: 1000; max-height: 260px; overflow-y: auto; min-width: 240px; max-width: calc(100vw - 16px); }
 .mention-picker button { display: flex; align-items: center; gap: 8px; width: 100%; border: 0; background: transparent; color: inherit; text-align: left; padding: 8px 12px; cursor: pointer; }
 .mention-picker button[aria-selected="true"] { background: #8070d526; }

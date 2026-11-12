@@ -106,3 +106,34 @@ test('picker survives its own scroll, closes on page scroll, and only commits on
         assert.equal(menu.hidden, true);
     } finally { Object.assign(globalThis, saved); }
 });
+
+const people = [{ userId: 'a', name: 'Jamie', emailPrefix: 'jkong' }, { userId: 'b', name: 'Bo', emailPrefix: 'bo.lee' }];
+test('scene label @username resolves only known handles, at word starts, case-insensitively', () => {
+    assert.equal(M.labelHtml('Scene 4 Chase @jkong', people), 'Scene 4 Chase <strong class="mention">@jkong</strong>');
+    assert.equal(M.labelHtml('@JKong. go', people), '<strong class="mention">@JKong</strong>. go');
+    assert.equal(M.labelHtml('@bo.lee: x', people), '<strong class="mention">@bo.lee</strong>: x');
+    assert.equal(M.labelHtml('mail a@jkong.com @nobody <b>', people), 'mail a@jkong.com @nobody &lt;b&gt;');
+    assert.equal(M.labelHtml('1/1899 B/O', people), '1/1899 B/O');
+});
+test('scene label marks the viewer with mention-me', () => {
+    assert.match(M.labelHtml('Go @jkong @bo.lee', people, { emailPrefix: 'JKong' }), /mention mention-me">@jkong<.*"mention">@bo\.lee/);
+    assert.match(M.labelHtml('Go @me', [], { emailPrefix: 'me' }), /mention-me/);
+});
+test('group heading draws mentions but keeps data-act raw', () => {
+    const h = require('../public/note-view').groupHeadHTML('S1 @jkong', undefined, '', people);
+    assert.ok(h.includes('data-act="S1 @jkong"') && h.includes('<strong class="mention">@jkong</strong>'));
+});
+
+test('My scenes matches exactly the labels that highlight for the viewer', () => {
+    const NV = require('../public/note-view');
+    const tags = () => ({ name: '' });
+    const note = act => ({ act, tags: ['t'] });
+    const f = { act: NV.MY_SCENES, tag: 'all', search: '', author: '', mentionedUserId: '' };
+    assert.equal(NV.noteMatches(note('Scene 4 @JKong.'), f, tags, 'jkong'), true);
+    assert.equal(NV.noteMatches(note('Scene 4 @bo.lee'), f, tags, 'jkong'), false);
+    assert.equal(NV.noteMatches(note('mail a@jkong.com'), f, tags, 'jkong'), false);
+    assert.equal(NV.noteMatches(note('Scene 4 @jkong'), f, tags, ''), false);
+    assert.equal(NV.noteMatches(note('Scene 4'), { ...f, act: 'Scene 4' }, tags, ''), true);
+    assert.deepEqual(NV.sceneOptions(['A'], 'jkong').map(o => o.label), ['All scenes', 'My scenes', 'A']);
+    assert.deepEqual(NV.sceneOptions(['A']).map(o => o.label), ['All scenes', 'A']);
+});

@@ -296,8 +296,9 @@
         }).map(({ act, notes }) => ({ act, notes }));
     }
 
-    function groupHeadHTML(act, at, count = '') {
-        return `<div class="group-head" data-act="${esc(act)}"><span>${esc(act)}</span><span class="muted group-count">${esc(count)}</span>${groupTimeHTML(at)}</div>`;
+    // people/me only affect how the label is drawn; data-act stays the raw label.
+    function groupHeadHTML(act, at, count = '', people = [], me = null) {
+        return `<div class="group-head" data-act="${esc(act)}"><span>${Mentions.labelHtml(act, people, me)}</span><span class="muted group-count">${esc(count)}</span>${groupTimeHTML(at)}</div>`;
     }
 
     function updateGroupTime(head, at) {
@@ -315,10 +316,12 @@
     // --- Search and filters ---
     // filters.author is an exact Keycloak userId; empty means any author.
     // act/tag use 'all'; search is lower case.
-    function noteMatches(note, filters, tagById) {
+    // `me` is the viewer's username (emailPrefix); only the "My scenes" filter needs it.
+    function noteMatches(note, filters, tagById, me = '') {
         if (filters.author && note.userId !== filters.author) return false;
         if (filters.tag !== 'all' && !note.tags.includes(filters.tag)) return false;
-        if (filters.act !== 'all' && (note.act || 'Preshow') !== filters.act) return false;
+        if (filters.act === MY_SCENES) { if (!Mentions.labelMentions(note.act || 'Preshow', me)) return false; }
+        else if (filters.act !== 'all' && (note.act || 'Preshow') !== filters.act) return false;
         if (filters.mentionedUserId && !Mentions.has(note, filters.mentionedUserId) && !(note.comments || []).some(c => Mentions.has(c, filters.mentionedUserId))) return false;
         if (filters.search) {
             const reference = /^(?:#|note\s*#?\s*)?(\d+)$/i.exec(filters.search.trim());
@@ -533,8 +536,9 @@
     }
 
     // The scene and tag dropdowns' choices.
-    function sceneOptions(acts) {
-        return [{ value: 'all', label: 'All scenes' }, ...acts.map(act => ({ value: act, label: act }))];
+    const MY_SCENES = '@my-scenes';
+    function sceneOptions(acts, me = '') {
+        return [{ value: 'all', label: 'All scenes' }, ...(me ? [{ value: MY_SCENES, label: 'My scenes' }] : []), ...acts.map(act => ({ value: act, label: act }))];
     }
 
     function tagOptions(tags) {
@@ -674,7 +678,7 @@
         initials, personColor, avatarHTML,
         unknownTag, tagChipHTML, tagChipsHTML, dotHTML,
         noteHeadHTML, noteHTML, commentHTML, groupHeadHTML, groupNotes, sceneStartTimes, updateGroupTime,
-        noteMatches, filtersActive, sceneOptions, tagOptions,
+        noteMatches, filtersActive, sceneOptions, MY_SCENES, tagOptions,
         authorOptions, storedAuthorId, readFilters, writeFilters, watchNavigation, createAuthorSearch,
         placePopover, fitPopoverInViewport, watchPopoverResize, createDropdown
     };
