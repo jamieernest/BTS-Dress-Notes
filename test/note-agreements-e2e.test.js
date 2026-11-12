@@ -26,6 +26,14 @@ test('authenticated agreements broadcast, ignore spoofed actors and survive save
         const state = { socket, notes: null };
         socket.on('notes-update', notes => { state.notes = notes; });
         socket.on('note-added', note => state.notes.push(note));
+        socket.on('comment-submit', ({ noteId, comment }) => {
+            const note = state.notes.find(n => n.id === noteId);
+            (note.comments ||= []).push(comment);
+        });
+        socket.on('agreements-update', ({ noteId, commentId, agreements }) => {
+            const note = state.notes?.find(n => n.id === noteId);
+            (commentId ? note?.comments?.find(c => c.id === commentId) : note).agreements = agreements;
+        });
         return state;
     }
     const alice = connect(aliceCookie);

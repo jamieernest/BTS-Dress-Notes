@@ -485,7 +485,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }, 100);
         };
         if (live) {
-            for (const event of ['connect', 'notes-update', 'note-added', 'note-edit-text', 'note-update-tags', 'note-delete', 'tags-update', 'show-log-update']) socket.on(event, refresh);
+            for (const event of ['connect', 'notes-update', 'agreements-update', 'note-added', 'note-edit-text', 'note-update-tags', 'note-delete', 'tags-update', 'show-log-update']) socket.on(event, refresh);
         }
         socket.on('connect', refreshShared);
         socket.on('recordings-update', (update) => {

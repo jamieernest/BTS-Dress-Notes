@@ -1385,8 +1385,8 @@ io.on('connection', (socket) => {
         if (!toggleAgreement(note, { userId: user.id, name: user.name })) {
             return respond({ error: 'This note has reached its agreement limit.' });
         }
-        // Existing consumers (including live playback) refresh on notes-update.
-        io.emit('notes-update', globalState.notes);
+        // A small delta, not the whole list: the list would delay every Agree click.
+        io.emit('agreements-update', { noteId: note.id, agreements: note.agreements });
         scheduleBackup();
         respond({ agreements: note.agreements });
     });
@@ -1402,7 +1402,7 @@ io.on('connection', (socket) => {
         if (!toggleAgreement(comment, { userId: user.id, name: user.name })) {
             return respond({ error: 'This reply has reached its agreement limit.' });
         }
-        io.emit('notes-update', globalState.notes);
+        io.emit('agreements-update', { noteId: note.id, commentId: comment.id, agreements: comment.agreements });
         scheduleBackup();
         respond({ agreements: comment.agreements });
     });

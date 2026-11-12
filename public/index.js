@@ -1463,6 +1463,19 @@ document.addEventListener('DOMContentLoaded', function() {
         rebuildFullNotesList();
     });
 
+    window.socket.on('agreements-update', ({ noteId, commentId, agreements } = {}) => {
+        const note = allNotes.find(n => n.id === noteId);
+        const element = noteElements.get(noteId);
+        if (!note) return;
+        const target = commentId ? note.comments?.find(c => c.id === commentId) : note;
+        if (!target) return;
+        target.agreements = agreements || [];
+        if (!element) return;
+        if (!commentId) return void NoteView.updateAgreements(element, note, currentUser.sub);
+        const row = element.querySelector(`.comment[data-comment-id="${CSS.escape(commentId)}"]`);
+        if (row) NoteView.updateAgreements(row, target, currentUser.sub, { comment: true });
+    });
+
     window.socket.on('note-added', (note) => {
         if (isMyStoredNote(note, note.clientId)) clearPendingNote(note.clientId);
         addNote(withLists(note));
