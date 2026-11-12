@@ -65,5 +65,14 @@
         return out;
     }
 
-    return { layout, locate, gaps };
+    // What the stage overlay shows: a spinner while the picture isn't ready,
+    // otherwise the play/pause state (a pause is always visible, a play only
+    // flashes). Gaps have their own notice.
+    function stageState({ loaded, playing, buffering, inGap }) {
+        if (inGap || !loaded) return 'none';
+        if (buffering) return 'loading';
+        return playing ? 'playing' : 'paused';
+    }
+
+    return { layout, locate, gaps, stageState };
 }));

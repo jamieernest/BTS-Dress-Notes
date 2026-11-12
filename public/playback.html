@@ -71,6 +71,11 @@
                 </div>
                 <div id="screen" class="screen" hidden>
                     <video id="video" playsinline preload="metadata" tabindex="0" role="button" aria-label="Play video"></video>
+                    <div id="stageState" class="stage-state" data-state="none" aria-live="polite">
+                        <span class="spinner" role="status" aria-label="Loading video"></span>
+                        <span class="state-icon state-paused"><svg class="icon" aria-hidden="true"><use href="icons.svg#i-play"/></svg></span>
+                        <span class="state-icon state-playing"><svg class="icon" aria-hidden="true"><use href="icons.svg#i-pause"/></svg></span>
+                    </div>
                     <div id="gapNotice" class="gap-notice" hidden>
                         <p id="gapText"></p>
                         <p id="gapNext" class="muted"></p>
