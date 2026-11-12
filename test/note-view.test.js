@@ -251,6 +251,29 @@ test('scene groups keep a cross-scene submission with its starting scene', () =>
     assert.deepStrictEqual(NoteView.groupNotes(notes.slice(0, 2)).map(g => g.act), ['Song 2', 'Song 1']);
 });
 
+test('a scene that returns later gets its own group at the current end', () => {
+    const note = (id, act, minute) => ({ id, act, timestamp: `2026-11-11T19:${minute}:00.000Z` });
+    // Oldest first: Preshow, Scene A, Scene B, then Preshow again.
+    const oldest = [note('p1', 'Preshow', '00'), note('p2', 'Preshow', '01'), note('a', 'Scene A', '10'),
+        note('b', 'Scene B', '20'), note('p3', 'Preshow', '30'), note('p4', 'Preshow', '31')];
+    const groups = NoteView.groupNotes([...oldest].reverse());
+    assert.deepStrictEqual(groups.map(g => [g.act, g.notes.map(n => n.id)]), [
+        ['Preshow', ['p4', 'p3']], ['Scene B', ['b']], ['Scene A', ['a']], ['Preshow', ['p2', 'p1']]
+    ]);
+    // A scene that never returns still has a single group.
+    assert.deepStrictEqual(NoteView.groupNotes(oldest.slice(0, 4).reverse()).map(g => g.act), ['Scene B', 'Scene A', 'Preshow']);
+});
+
+test('a returning scene keeps a note with the occurrence where it was started', () => {
+    const note = (id, act, second, started = second) => ({ id, act,
+        timestamp: `2026-11-11T19:00:${second}.000Z`, startedAt: `2026-11-11T19:00:${started}.000Z` });
+    // 'late' was started in the first Preshow but sent after Scene A began.
+    const notes = [note('p3', 'Preshow', '50'), note('a', 'Scene A', '30'), note('late', 'Preshow', '40', '05'), note('p1', 'Preshow', '10')];
+    assert.deepStrictEqual(NoteView.groupNotes(notes).map(g => [g.act, g.notes.map(n => n.id)]), [
+        ['Preshow', ['p3']], ['Scene A', ['a']], ['Preshow', ['late', 'p1']]
+    ]);
+});
+
 test('scene grouping supports legacy stamps, ownerless scenes and empty lists', () => {
     const notes = [
         { id: 'b', act: 'Two', timestamp: '2026-11-11T19:02:00Z' },

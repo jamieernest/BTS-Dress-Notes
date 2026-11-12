@@ -221,18 +221,13 @@ document.addEventListener('DOMContentLoaded', function() {
         history.replaceState(null, '', `${location.pathname}${params.size ? '?' + params : ''}${location.hash}`);
         const notesById = new Map(allNotes.map(n => [n.id, n]));
         const isShown = (note) => !!note && !deletedNotes.has(note.id) && noteMatches(note);
-        const counts = new Map();
-        let shown = 0;
-        for (const note of allNotes) {
-            if (isShown(note)) {
-                const act = note.act || 'Preshow';
-                counts.set(act, (counts.get(act) || 0) + 1);
-                shown++;
-            }
-        }
+        const shown = allNotes.filter(isShown).length;
+        // Heads are drawn in group order, so the nth head is the nth group (a scene can have several).
+        const groups = orderedGroups();
+        let head = 0;
         for (const el of notesList.children) {
             if (el.classList.contains('group-head')) {
-                const count = counts.get(el.dataset.act) || 0;
+                const count = groups[head++]?.notes.filter(isShown).length || 0;
                 el.hidden = count === 0;
                 el.querySelector('.group-count').textContent = plural(count, 'note');
             } else if (!el.classList.contains('pending')) {
@@ -950,23 +945,23 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Only for a note that is the newest; addNote rebuilds the list for one that isn't.
     // Pending notes stay at the newest end, beyond every note the server has.
+    // Returns false when the drawn headings don't line up with the groups; the caller rebuilds.
     function insertNewestNote(element, note) {
         const act = note.act || 'Preshow';
         const heads = [...notesList.querySelectorAll('.group-head')];
-        const existing = heads.find(head => head.dataset.act === act);
-        if (existing && !oldestFirst) return existing.after(element);
-        if (existing) {
-            const next = heads[heads.indexOf(existing) + 1];
-            return notesList.insertBefore(element, next || firstPendingElement());
-        }
-        // A newly represented scene may precede the current scene in time.
         const groups = orderedGroups();
-        const index = groups.findIndex(group => group.act === act);
-        const following = new Set(groups.slice(index + 1).map(group => group.act));
-        const next = heads.find(head => following.has(head.dataset.act));
-        const head = groupHeadElement(act);
-        notesList.insertBefore(head, next || (oldestFirst ? firstPendingElement() : null));
-        head.after(element);
+        const index = groups.findIndex(group => group.notes.includes(note));
+        if (heads.length === groups.length && heads[index]?.dataset.act === act) {
+            const next = heads[index + 1];
+            if (oldestFirst) notesList.insertBefore(element, next || firstPendingElement());
+            else heads[index].after(element);
+        } else if (heads.length === groups.length - 1) {
+            // The scene is new, or it came back after other scenes: a group of its own.
+            const head = groupHeadElement(act);
+            notesList.insertBefore(head, heads[index] || (oldestFirst ? firstPendingElement() : null));
+            head.after(element);
+        } else return false;
+        return true;
     }
 
     // Drawing a note costs about half a millisecond (mostly DOMPurify), so a
@@ -1030,7 +1025,7 @@ document.addEventListener('DOMContentLoaded', function() {
             rebuildFullNotesList();
         } else {
             const element = createNoteElement(note);
-            insertNewestNote(element, note);
+            if (!insertNewestNote(element, note)) return rebuildFullNotesList();
             updateActFilter();
             filterNotes();
             element.classList.add('arriving');

@@ -277,23 +277,31 @@
     }
 
     // A scene heading in the list; fill .group-count with how many notes show.
-    // Input is newest first. Keep each scene together even when a note was
-    // sent after the next scene began. Order scenes by their earliest captured
-    // moment, and preserve newest-first submission order within each scene.
+    // Input is newest first. A group is one stretch of the show in one scene:
+    // when a scene returns (Preshow, Scene A, Preshow) the second visit is its
+    // own group at the current end, not merged into the first. Notes are placed
+    // by the moment they were started, so one sent after the next scene began
+    // stays with its starting scene; within a group they keep submission order.
+    // shortcut: a visit with no notes leaves no trace here, so two visits with
+    // nothing between them merge; upgrade by feeding in the show log.
     function groupNotes(notes) {
-        const groups = new Map();
-        for (const note of notes) {
-            const act = note.act || 'Preshow';
-            if (!groups.has(act)) groups.set(act, { act, notes: [], startedAt: Infinity });
-            const group = groups.get(act);
-            group.notes.push(note);
-            const stamp = Date.parse(note.startedAt || note.timestamp);
-            if (Number.isFinite(stamp)) group.startedAt = Math.min(group.startedAt, stamp);
+        const act = (note) => note.act || 'Preshow';
+        const stampOf = (note) => Date.parse(note.startedAt || note.timestamp);
+        const entries = notes.map((note, i) => ({ note, i, at: stampOf(note) }));
+        const stamped = entries.filter(e => Number.isFinite(e.at)).sort((a, b) => a.at - b.at || b.i - a.i);
+        const groups = []; // oldest first
+        for (const entry of stamped) {
+            let group = groups[groups.length - 1];
+            if (group?.act !== act(entry.note)) groups.push(group = { act: act(entry.note), entries: [] });
+            group.entries.push(entry);
         }
-        return [...groups.values()].sort((a, b) => {
-            if (!Number.isFinite(a.startedAt) || !Number.isFinite(b.startedAt)) return 0;
-            return b.startedAt - a.startedAt;
-        }).map(({ act, notes }) => ({ act, notes }));
+        // Notes with no usable stamp (old files) join the latest group of their scene.
+        for (const entry of entries.filter(e => !Number.isFinite(e.at))) {
+            let group = groups.findLast(g => g.act === act(entry.note));
+            if (!group) groups.unshift(group = { act: act(entry.note), entries: [] });
+            group.entries.push(entry);
+        }
+        return groups.reverse().map(group => ({ act: group.act, notes: group.entries.sort((a, b) => a.i - b.i).map(e => e.note) }));
     }
 
     // people/me only affect how the label is drawn; data-act stays the raw label.
