@@ -148,8 +148,10 @@ document.addEventListener('DOMContentLoaded', function() {
     window.addEventListener('resize', () => {
         for (const editor of tagEditors.values()) editor.deleteControl.classList.add('tooltip-dismissed');
     });
+    const newColour = TagColour.createSuggester(byId('newTagColour'));
     socket.on('tags-update', tags => {
         tagCount = tags.length;
+        newColour.update(tags.map(t => t.color));
         const present = new Set();
         tags.forEach((tag, index) => {
             present.add(tag.id);
@@ -178,7 +180,7 @@ document.addEventListener('DOMContentLoaded', function() {
     byId('addTagForm').addEventListener('submit', e => {
         e.preventDefault();
         tagAction('create-tag', { name: byId('newTagName').value, color: byId('newTagColour').value },
-            e.submitter, () => { byId('newTagName').value = ''; byId('newTagName').focus(); });
+            e.submitter, () => { newColour.created(); byId('newTagName').value = ''; byId('newTagName').focus(); });
     });
 
     socket.on('connect', () => {
