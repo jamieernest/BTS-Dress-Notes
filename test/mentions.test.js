@@ -67,3 +67,42 @@ test('composing highlights only selected account ranges and escapes all text', (
     assert.equal(M.html('@Bob', [{ ...mention(), userId: '' }], true), '@Bob');
     assert.equal(M.html('@Rob', [mention()], true), '@Rob', 'editing through a mention removes its identity highlight');
 });
+test('picker survives its own scroll, closes on page scroll, and only commits on click', () => {
+    const listeners = {};
+    const on = (target, type, fn) => { (listeners[target.name + ':' + type] ||= []).push(fn); };
+    const fire = (name, type, event) => (listeners[name + ':' + type] || []).forEach(fn => fn(event));
+    const element = name => ({
+        name, hidden: false, style: {}, dataset: {}, classList: { toggle() {} }, value: '', id: '',
+        append() {}, before() {}, setAttribute() {}, removeAttribute() {}, focus() {}, observe() {},
+        addEventListener(type, fn) { on(this, type, fn); },
+        contains(t) { return t === this || t?.inside === this; },
+        setSelectionRange(a, b) { this.selectionStart = a; this.selectionEnd = b; },
+        dispatchEvent() {}, matches: () => true
+    });
+    const doc = element('document'), win = element('window'), menu = element('menu'), input = element('input');
+    doc.createElement = () => (menu.created ? element('other') : (menu.created = true, menu));
+    doc.body = element('body');
+    doc.querySelectorAll = () => [];
+    const saved = { document: globalThis.document, window: globalThis.window, getComputedStyle: globalThis.getComputedStyle, ResizeObserver: globalThis.ResizeObserver };
+    Object.assign(globalThis, { document: doc, window: win, getComputedStyle: () => ({}), ResizeObserver: class { observe() {} } });
+    try {
+        M.install({ getAccounts: () => [{ userId: 'sub-bob', name: 'Bob' }], seed: () => null, avatarHTML: () => '', place() {} });
+        const open = () => {
+            input.value = '@Bo'; input.selectionStart = input.selectionEnd = 3; input.id = 'noteInput';
+            fire('document', 'input', { target: input, stopImmediatePropagation() {} });
+            menu.hidden = false;
+        };
+        const row = { inside: menu, closest: () => ({ dataset: { choice: '0' } }) };
+        open();
+        fire('document', 'scroll', { target: row });
+        assert.equal(menu.hidden, false, 'scrolling inside the picker keeps it open');
+        fire('document', 'scroll', { target: {} });
+        assert.equal(menu.hidden, true, 'scrolling the page closes it');
+        open();
+        fire('menu', 'pointerdown', { target: row });
+        assert.equal(input.value, '@Bo', 'pointerdown alone does not choose');
+        fire('menu', 'click', { target: row });
+        assert.equal(input.value, '@Bob ', 'click chooses the person');
+        assert.equal(menu.hidden, true);
+    } finally { Object.assign(globalThis, saved); }
+});
