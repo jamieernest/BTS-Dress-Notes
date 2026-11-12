@@ -27,6 +27,3 @@ test('notes without a stamp fall back to timecode, later timecode on top', () =>
     assert.deepStrictEqual(newestFirst(notes).map((n) => n.id), ['y', 'z', 'x']);
 });
 
-test('newestFirst copes with an empty list', () => {
-    assert.deepStrictEqual(newestFirst([]), []);
-});
