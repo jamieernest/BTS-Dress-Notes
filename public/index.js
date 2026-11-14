@@ -195,9 +195,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Tags for the note being written: toggles under the note box.
     function updateTagsDisplay() {
         selectedTags = selectedTags.filter(id => availableTags.some(t => t.id === id));
-        setHtml(tagsContainer, availableTags.map(tag =>
-            NoteView.tagChipHTML(tag, `type="button" data-tag="${esc(tag.id)}" aria-pressed="${selectedTags.includes(tag.id)}"`)
-        ).join(''));
+        setHtml(tagsContainer, availableTags.map(tag => {
+            const command = tag.command || tagCommands.suggestTagCommand(tag.name);
+            return NoteView.tagChipHTML(tag, `type="button" data-tag="${esc(tag.id)}" aria-pressed="${selectedTags.includes(tag.id)}" data-tooltip="Type /${esc(command)} to select, or click to toggle"`);
+        }).join(''));
     }
 
     function updateFilterTags() {
