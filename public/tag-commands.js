@@ -40,14 +40,29 @@
     }
 
     function consumeShitpostCommand(value) {
+        const result = consumeShitpostCommandAt(value);
+        return result ? result.text : null;
+    }
+
+    function consumeShitpostCommandAt(value, cursor = String(value || '').length) {
         const source = String(value || '');
         const match = source.match(/(^|\s)\/shitpost(?=\s|$)/i);
         if (!match) return null;
-        const before = source.slice(0, match.index);
-        const after = source.slice(match.index + match[0].length);
-        const text = `${before} ${after}`.replace(/\s+/g, ' ').trim();
-        return text;
+        const tokenStart = match.index + match[1].length;
+        const tokenEnd = tokenStart + '/shitpost'.length;
+        const before = source.slice(0, tokenStart).replace(/\s+$/, '');
+        const after = source.slice(tokenEnd);
+        const text = before ? before + after : after.replace(/^\s+/, '');
+        const position = Math.max(0, Math.min(Number(cursor) || 0, source.length));
+        const rawPrefix = position <= tokenStart ? source.slice(0, position) : source.slice(tokenEnd, position);
+        const cursorBeforeCommand = position <= tokenStart
+            ? rawPrefix.replace(/\s+$/, '').length
+            : before.length + (before ? rawPrefix : rawPrefix.replace(/^\s+/, '')).length;
+        return {
+            text,
+            cursor: cursorBeforeCommand
+        };
     }
 
-    return { suggestTagCommand, consumeTagCommand, consumeShitpostCommand };
+    return { suggestTagCommand, consumeTagCommand, consumeShitpostCommand, consumeShitpostCommandAt };
 }));

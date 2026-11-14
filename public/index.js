@@ -446,12 +446,16 @@ document.addEventListener('DOMContentLoaded', function() {
         clearDraft();
     }
 
-    function switchToChat(text) {
+    function switchToChat(text, cursor = text.length) {
         resetComposer();
         chooseChatOpen(true);
         chatInput.value = text;
         chatInput.dispatchEvent(new Event('input'));
         chatInput.focus();
+        chatInput.setSelectionRange(cursor, cursor);
+        requestAnimationFrame(() => {
+            if (document.activeElement === chatInput) chatInput.setSelectionRange(cursor, cursor);
+        });
     }
 
     // A note needs a tag (unless none are set up) so it reaches the right department.
@@ -1737,9 +1741,9 @@ document.addEventListener('DOMContentLoaded', function() {
         updateComposer();
     });
     noteInput.addEventListener('input', () => {
-        const shitpost = tagCommands.consumeShitpostCommand(noteInput.value, availableTags, noteInput.selectionStart);
+        const shitpost = tagCommands.consumeShitpostCommandAt(noteInput.value, noteInput.selectionStart);
         if (shitpost !== null) {
-            switchToChat(shitpost);
+            switchToChat(shitpost.text, shitpost.cursor);
             return;
         }
         const command = tagCommands.consumeTagCommand(noteInput.value, availableTags, noteInput.selectionStart);

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { suggestTagCommand, consumeTagCommand, consumeShitpostCommand } = require('../public/tag-commands');
+const { suggestTagCommand, consumeTagCommand, consumeShitpostCommand, consumeShitpostCommandAt } = require('../public/tag-commands');
 
 const tags = [
     { id: 'safety', name: 'Safety/Show Critical' },
@@ -34,4 +34,10 @@ test('routes a standalone shitpost command to chat text', () => {
     assert.equal(consumeShitpostCommand('before /shitpost after'), 'before after');
     assert.equal(consumeShitpostCommand('/shitpost'), '');
     assert.equal(consumeShitpostCommand('not/shitpost text'), null);
+});
+
+test('preserves the cursor while consuming a shitpost command', () => {
+    assert.deepEqual(consumeShitpostCommandAt('/shitpost keep typing'), { text: 'keep typing', cursor: 11 });
+    assert.deepEqual(consumeShitpostCommandAt('before /shitpost after'), { text: 'before after', cursor: 12 });
+    assert.deepEqual(consumeShitpostCommandAt('lemon /shitpost pie', 15), { text: 'lemon pie', cursor: 5 });
 });
