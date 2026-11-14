@@ -32,5 +32,6 @@ test('selects a tag without disturbing the note', () => {
 test('routes a standalone shitpost command to chat text', () => {
     assert.equal(consumeShitpostCommand('/shitpost this belongs in chat'), 'this belongs in chat');
     assert.equal(consumeShitpostCommand('before /shitpost after'), 'before after');
+    assert.equal(consumeShitpostCommand('/shitpost'), '');
     assert.equal(consumeShitpostCommand('not/shitpost text'), null);
 });

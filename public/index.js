@@ -445,6 +445,14 @@ document.addEventListener('DOMContentLoaded', function() {
         clearDraft();
     }
 
+    function switchToChat(text) {
+        resetComposer();
+        chooseChatOpen(true);
+        chatInput.value = text;
+        chatInput.dispatchEvent(new Event('input'));
+        chatInput.focus();
+    }
+
     // A note needs a tag (unless none are set up) so it reaches the right department.
     function needsTag() {
         return availableTags.length > 0 && selectedTags.length === 0;
@@ -1728,6 +1736,11 @@ document.addEventListener('DOMContentLoaded', function() {
         updateComposer();
     });
     noteInput.addEventListener('input', () => {
+        const shitpost = tagCommands.consumeShitpostCommand(noteInput.value, availableTags, noteInput.selectionStart);
+        if (shitpost !== null) {
+            switchToChat(shitpost);
+            return;
+        }
         const command = tagCommands.consumeTagCommand(noteInput.value, availableTags, noteInput.selectionStart);
         if (command) {
             if (!selectedTags.includes(command.tagId)) selectedTags = [...selectedTags, command.tagId];
@@ -1835,15 +1848,8 @@ document.addEventListener('DOMContentLoaded', function() {
     sendNoteBtn.addEventListener('click', () => {
         const text = noteInput.value.trim();
         const shitpost = tagCommands.consumeShitpostCommand(text);
-        if (shitpost) {
-            sendChatMessage(shitpost, false);
-            resetComposer();
-            if (touchInput.matches) {
-                noteInput.blur();
-                sendNoteBtn.blur();
-            } else noteInput.focus();
-            currentUser.isTyping = false;
-            updateComposer();
+        if (shitpost !== null) {
+            switchToChat(shitpost);
             return;
         }
         if (text && needsTag()) {

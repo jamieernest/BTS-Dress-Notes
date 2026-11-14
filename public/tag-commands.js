@@ -46,7 +46,7 @@
         const before = source.slice(0, match.index);
         const after = source.slice(match.index + match[0].length);
         const text = `${before} ${after}`.replace(/\s+/g, ' ').trim();
-        return text || null;
+        return text;
     }
 
     return { suggestTagCommand, consumeTagCommand, consumeShitpostCommand };
