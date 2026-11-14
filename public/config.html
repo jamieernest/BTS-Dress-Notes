@@ -39,6 +39,8 @@
                     <input id="newTagName" class="input" placeholder="New tag name" maxlength="60" required>
                     <label class="sr-only" for="newTagColour">New tag colour</label>
                     <input id="newTagColour" type="color" value="#9966cc" aria-label="New tag colour">
+                    <label class="sr-only" for="newTagCommand">New tag slash command</label>
+                    <input id="newTagCommand" class="input command-input" placeholder="Slash command" maxlength="40" pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*">
                     <button type="submit" class="btn outline">Add tag</button>
                 </div>
             </form>
@@ -190,6 +192,7 @@
     <script src="playback-timeline.js"></script>
     <script src="video-file.js"></script>
     <script src="tag-colour.js"></script>
+    <script src="tag-commands.js"></script>
     <script src="config.js"></script>
 </body>
 </html>

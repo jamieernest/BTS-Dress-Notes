@@ -3,7 +3,8 @@
     {
       "id": "safety",
       "name": "Safety/Show Critical",
-      "color": "#E63946"
+      "color": "#e63946",
+      "command": "safety"
     },
     {
       "id": "lighting",

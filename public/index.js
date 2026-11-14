@@ -784,15 +784,17 @@ document.addEventListener('DOMContentLoaded', function() {
         document.documentElement.style.setProperty('--connection-banner-h', `${connectionBanner.offsetHeight}px`);
     }).observe(connectionBanner);
 
-    function sendChatMessage() {
-        const text = chatInput.value.trim();
+    function sendChatMessage(textOverride = null, includeReply = true) {
+        const text = textOverride === null ? chatInput.value.trim() : String(textOverride).trim();
         if (text) {
-            window.socket.emit('chat-message', { text, mentions: mentionEditor.get(chatInput), ...(chatReplyTo ? { replyTo: chatReplyTo } : {}) });
-            chatReplyTo = null;
-            updateChatReplyPreview();
-            mentionEditor.clear(chatInput);
-            chatInput.value = '';
-            sendChatBtn.disabled = true;
+            window.socket.emit('chat-message', { text, mentions: textOverride === null ? mentionEditor.get(chatInput) : [], ...(includeReply && chatReplyTo ? { replyTo: chatReplyTo } : {}) });
+            if (textOverride === null) {
+                chatReplyTo = null;
+                updateChatReplyPreview();
+                mentionEditor.clear(chatInput);
+                chatInput.value = '';
+                sendChatBtn.disabled = true;
+            }
         }
     }
 
@@ -1726,6 +1728,15 @@ document.addEventListener('DOMContentLoaded', function() {
         updateComposer();
     });
     noteInput.addEventListener('input', () => {
+        const command = tagCommands.consumeTagCommand(noteInput.value, availableTags, noteInput.selectionStart);
+        if (command) {
+            if (!selectedTags.includes(command.tagId)) selectedTags = [...selectedTags, command.tagId];
+            mentionEditor.clear(noteInput);
+            noteInput.value = command.value;
+            noteInput.setSelectionRange(command.cursor, command.cursor);
+            updateTagsDisplay();
+            if (!needsTag()) showTagError(false);
+        }
         sendNoteBtn.disabled = noteInput.value.trim().length === 0;
         // After a release, the next key freezes the stamp at that moment.
         if (!currentUser.isTyping && noteInput.value.length > 0) startTyping();
@@ -1823,6 +1834,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
     sendNoteBtn.addEventListener('click', () => {
         const text = noteInput.value.trim();
+        const shitpost = tagCommands.consumeShitpostCommand(text);
+        if (shitpost) {
+            sendChatMessage(shitpost, false);
+            resetComposer();
+            if (touchInput.matches) {
+                noteInput.blur();
+                sendNoteBtn.blur();
+            } else noteInput.focus();
+            currentUser.isTyping = false;
+            updateComposer();
+            return;
+        }
         if (text && needsTag()) {
             showTagError(true);
             if (phoneLayout.matches) tagsContainer.querySelector('button')?.focus();

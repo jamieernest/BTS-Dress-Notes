@@ -63,9 +63,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     function refreshTagEditor(editor) {
-        const { tag, name, colour, save, remove, help, deleteReason } = editor;
+        const { tag, name, colour, command, save, remove, help, deleteReason } = editor;
         const used = [...tagNotes.values()].some(ids => ids.includes(tag.id));
-        const dirty = name.value !== tag.name || colour.value !== hexColour(tag.color);
+        const dirty = name.value !== tag.name || colour.value !== hexColour(tag.color)
+            || command.value !== (tag.command || tagCommands.suggestTagCommand(tag.name));
         save.disabled = editor.saving || editor.deleted || !dirty || !name.value.trim();
         editor.deleteBlocked = !editor.deleted && (used || tagCount < 2);
         remove.disabled = editor.deleting;
@@ -89,6 +90,9 @@ document.addEventListener('DOMContentLoaded', function() {
         const name = document.createElement('input');
         name.className = 'input'; name.maxLength = 60; name.required = true;
         const colour = document.createElement('input'); colour.type = 'color';
+        const command = document.createElement('input');
+        command.className = 'input command-input'; command.maxLength = 40;
+        command.pattern = '[a-zA-Z0-9][a-zA-Z0-9_-]*'; command.placeholder = 'Slash command';
         const save = document.createElement('button'); save.type = 'submit'; save.className = 'btn outline'; save.textContent = 'Save';
         const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn danger-outline';
         const help = document.createElement('span'); help.className = 'tag-usage'; help.id = 'tag-usage-' + (++tagHelpNumber);
@@ -96,7 +100,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const deleteReason = document.createElement('span'); deleteReason.className = 'tag-delete-reason';
         deleteReason.id = 'tag-delete-reason-' + tagHelpNumber; deleteReason.setAttribute('role', 'tooltip');
         deleteControl.append(remove, deleteReason);
-        const editor = { form, tag, name, colour, save, remove, help, deleteControl, deleteReason, saving: false, deleting: false, deleted: false, deleteBlocked: false };
+        const editor = { form, tag, name, colour, command, save, remove, help, deleteControl, deleteReason, saving: false, deleting: false, deleted: false, deleteBlocked: false };
         const showDeleteReason = () => {
             deleteControl.classList.remove('tooltip-dismissed', 'tooltip-above');
             deleteReason.style.transform = '';
@@ -110,22 +114,24 @@ document.addEventListener('DOMContentLoaded', function() {
         deleteControl.addEventListener('keydown', event => {
             if (event.key === 'Escape') deleteControl.classList.add('tooltip-dismissed');
         });
-        name.value = tag.name; colour.value = hexColour(tag.color);
+        name.value = tag.name; colour.value = hexColour(tag.color); command.value = tag.command || tagCommands.suggestTagCommand(tag.name);
         form.addEventListener('input', () => refreshTagEditor(editor));
         form.addEventListener('submit', event => {
             event.preventDefault();
             if (save.disabled) return;
             const submittedName = name.value.trim().slice(0, 60);
             const submittedColour = colour.value;
+            const submittedCommand = command.value;
             name.value = submittedName;
             editor.saving = true; refreshTagEditor(editor);
-            tagAction('create-tag', { id: editor.tag.id, name: submittedName, color: submittedColour }, save,
+            tagAction('create-tag', { id: editor.tag.id, name: submittedName, color: submittedColour, command: submittedCommand }, save,
                 reply => {
                     if (!reply.tag) return;
                     // Mark the acknowledged version clean without overwriting
                     // anything typed while the save was in flight.
                     if (name.value === submittedName) name.value = reply.tag.name;
                     if (colour.value === submittedColour) colour.value = hexColour(reply.tag.color);
+                    if (command.value === submittedCommand) command.value = reply.tag.command || tagCommands.suggestTagCommand(reply.tag.name);
                     editor.tag = reply.tag;
                 }, () => { editor.saving = false; refreshTagEditor(editor); });
         });
@@ -137,7 +143,7 @@ document.addEventListener('DOMContentLoaded', function() {
             tagAction('delete-tag', editor.tag.id, remove, undefined,
                 () => { editor.deleting = false; refreshTagEditor(editor); });
         });
-        form.append(name, colour, save, deleteControl, help);
+        form.append(name, colour, command, save, deleteControl, help);
         return editor;
     }
     document.addEventListener('pointerdown', event => {
@@ -161,6 +167,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Update untouched fields while preserving local edits and focus.
                 if (editor.name.value === editor.tag.name) editor.name.value = tag.name;
                 if (editor.colour.value === hexColour(editor.tag.color)) editor.colour.value = hexColour(tag.color);
+                if (editor.command.value === (editor.tag.command || tagCommands.suggestTagCommand(editor.tag.name))) editor.command.value = tag.command || tagCommands.suggestTagCommand(tag.name);
                 editor.tag = tag; editor.deleted = false;
             }
             editor.name.setAttribute('aria-label', 'Tag name: ' + tag.name);
@@ -172,14 +179,15 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         for (const [id, editor] of tagEditors) {
             if (present.has(id)) continue;
-            const dirty = editor.name.value !== editor.tag.name || editor.colour.value !== hexColour(editor.tag.color);
+            const dirty = editor.name.value !== editor.tag.name || editor.colour.value !== hexColour(editor.tag.color)
+                || editor.command.value !== (editor.tag.command || tagCommands.suggestTagCommand(editor.tag.name));
             if (dirty && !editor.deleting) { editor.deleted = true; refreshTagEditor(editor); }
             else { editor.form.remove(); tagEditors.delete(id); }
         }
     });
     byId('addTagForm').addEventListener('submit', e => {
         e.preventDefault();
-        tagAction('create-tag', { name: byId('newTagName').value, color: byId('newTagColour').value },
+        tagAction('create-tag', { name: byId('newTagName').value, color: byId('newTagColour').value, command: byId('newTagCommand').value },
             e.submitter, () => { newColour.created(); byId('newTagName').value = ''; byId('newTagName').focus(); });
     });
 

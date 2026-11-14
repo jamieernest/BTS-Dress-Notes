@@ -1433,8 +1433,12 @@ io.on('connection', (socket) => {
         if (globalState.tags.some(t => t.id !== tag.id && t.name.toLowerCase() === tag.name.toLowerCase())) {
             return respond({ error: 'A tag with that name already exists.' });
         }
+        const command = tag.command || tag.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, '-');
+        if (globalState.tags.some(t => t.id !== tag.id && (t.command || t.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, '-')) === command)) {
+            return respond({ error: 'A tag with that slash command already exists.' });
+        }
         const newTag = { id: existing ? existing.id : generateId(), name: tag.name,
-            color: tag.color || (existing && existing.color) || getRandomColor() };
+            color: tag.color || (existing && existing.color) || getRandomColor(), command };
         const next = existing ? globalState.tags.map(t => t.id === existing.id ? newTag : t) : [...globalState.tags, newTag];
         if (!saveTagsToFile(next)) return respond({ error: 'The tags could not be changed. Try again.' });
         globalState.tags = next;
