@@ -1464,6 +1464,45 @@ io.on('connection', (socket) => {
         respond({});
     });
 
+    on('tags-export-request', () => {
+        if (user.isOverlay) return;
+        const date = new Date().toISOString().slice(0, 10);
+        socket.emit('tags-export-data', {
+            data: JSON.stringify({ tags: globalState.tags }, null, 2),
+            filename: `BTS Dress Tags ${date}.json`
+        });
+    });
+
+    on('tags-import', (data, ack) => {
+        const respond = typeof ack === 'function' ? ack : () => {};
+        if (user.isOverlay) return respond({ error: 'Tags cannot be changed here.' });
+        const source = data && Array.isArray(data.tags) ? data.tags : data;
+        if (!Array.isArray(source) || !source.length) return respond({ error: 'The tag file must contain at least one tag.' });
+        const imported = input.cleanStoredTags(source);
+        if (imported.length !== source.length) return respond({ error: 'The tag file contains an invalid tag.' });
+        const ids = new Set();
+        const names = new Set();
+        const commands = new Set();
+        for (const tag of imported) {
+            const command = tag.command || tag.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, '-');
+            if (ids.has(tag.id) || names.has(tag.name.toLowerCase()) || commands.has(command)) {
+                return respond({ error: 'The tag file contains duplicate ids, names or slash commands.' });
+            }
+            ids.add(tag.id);
+            names.add(tag.name.toLowerCase());
+            commands.add(command);
+        }
+        if (globalState.notes.some(note => note.tags.some(id => !ids.has(id)))) {
+            return respond({ error: 'The tag file would remove a tag used by live notes.' });
+        }
+        const next = storedTags(imported);
+        if (!saveTagsToFile(next)) return respond({ error: 'The tags could not be imported.' });
+        globalState.tags = next;
+        io.emit('tags-update', next);
+        scheduleBackup();
+        respond({});
+    });
+
     // Handle user starting to type (only for non-overlay users)
     on('typing-start', (data) => {
         if (user.isOverlay) return; // Overlay users can't type
@@ -1741,7 +1780,7 @@ io.on('connection', (socket) => {
         const respond = typeof ack === 'function' ? ack : () => {};
         if (user.isOverlay) return;
         console.log(`Reset of all notes and chat requested by ${user.name}`);
-        respond(resetNotesAndChat(user.name) ? {} : { error: "The notes or default tags could not be saved. Nothing was reset." });
+        respond(resetNotesAndChat(user.name) ? {} : { error: "The notes or tags could not be saved. Nothing was reset." });
     });
 
     // Notes kept from recent resets, for the config page to restore.
@@ -1929,7 +1968,7 @@ function resetNotesAndChat(resetBy) {
         }
         resetsChanged();
     }
-    const nextTags = defaultTags.map(tag => ({ ...tag }));
+    const nextTags = globalState.tags.map(tag => ({ ...tag }));
     if (!saveTagsToFile(nextTags)) return false;
     globalState.tags = nextTags;
     resetCount++;

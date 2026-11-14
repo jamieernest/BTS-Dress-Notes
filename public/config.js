@@ -44,9 +44,13 @@ document.addEventListener('DOMContentLoaded', function() {
 
     const tagRows = byId('tagRows');
     const tagResult = byId('tagResult');
+    const exportTagsButton = byId('exportTagsButton');
+    const importTagsButton = byId('importTagsButton');
+    const importTagsInput = byId('importTagsInput');
     const tagEditors = new Map();
     let tagNotes = new Map();
     let tagCount = 0;
+    let currentTags = [];
     let tagHelpNumber = 0;
     const hexColour = value => {
         const hex = String(value).slice(1);
@@ -156,6 +160,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     const newColour = TagColour.createSuggester(byId('newTagColour'));
     socket.on('tags-update', tags => {
+        currentTags = tags;
         tagCount = tags.length;
         newColour.update(tags.map(t => t.color));
         const present = new Set();
@@ -184,6 +189,36 @@ document.addEventListener('DOMContentLoaded', function() {
             if (dirty && !editor.deleting) { editor.deleted = true; refreshTagEditor(editor); }
             else { editor.form.remove(); tagEditors.delete(id); }
         }
+    });
+    socket.on('tags-export-data', ({ data, filename }) => {
+        const url = URL.createObjectURL(new Blob([data], { type: 'application/json' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(url);
+    });
+    exportTagsButton.addEventListener('click', () => socket.emit('tags-export-request'));
+    importTagsButton.addEventListener('click', () => importTagsInput.click());
+    importTagsInput.addEventListener('change', () => {
+        const file = importTagsInput.files[0];
+        importTagsInput.value = '';
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+            let data;
+            try { data = JSON.parse(reader.result); } catch (error) {
+                tagResult.textContent = 'Could not read that JSON file.';
+                tagResult.hidden = false;
+                return;
+            }
+            tagAction('tags-import', data, importTagsButton, null);
+        };
+        reader.onerror = () => {
+            tagResult.textContent = 'Could not read that file.';
+            tagResult.hidden = false;
+        };
+        reader.readAsText(file);
     });
     byId('addTagForm').addEventListener('submit', e => {
         e.preventDefault();
