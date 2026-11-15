@@ -195,9 +195,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Tags for the note being written: toggles under the note box.
     function updateTagsDisplay() {
         selectedTags = selectedTags.filter(id => availableTags.some(t => t.id === id));
-        setHtml(tagsContainer, availableTags.map(tag =>
-            NoteView.tagChipHTML(tag, `type="button" data-tag="${esc(tag.id)}" aria-pressed="${selectedTags.includes(tag.id)}"`)
-        ).join(''));
+        setHtml(tagsContainer, availableTags.map(tag => {
+            const command = tag.command || tagCommands.suggestTagCommand(tag.name);
+            return NoteView.tagChipHTML(tag, `type="button" data-tag="${esc(tag.id)}" aria-pressed="${selectedTags.includes(tag.id)}" data-tooltip="Type /${esc(command)} to select, or click to toggle"`);
+        }).join(''));
     }
 
     function updateFilterTags() {
@@ -443,6 +444,18 @@ document.addEventListener('DOMContentLoaded', function() {
         showTagError(false);
         releaseFreeze();
         clearDraft();
+    }
+
+    function switchToChat(text, cursor = text.length) {
+        resetComposer();
+        chooseChatOpen(true);
+        chatInput.value = text;
+        chatInput.dispatchEvent(new Event('input'));
+        chatInput.focus();
+        chatInput.setSelectionRange(cursor, cursor);
+        requestAnimationFrame(() => {
+            if (document.activeElement === chatInput) chatInput.setSelectionRange(cursor, cursor);
+        });
     }
 
     // A note needs a tag (unless none are set up) so it reaches the right department.
@@ -784,15 +797,17 @@ document.addEventListener('DOMContentLoaded', function() {
         document.documentElement.style.setProperty('--connection-banner-h', `${connectionBanner.offsetHeight}px`);
     }).observe(connectionBanner);
 
-    function sendChatMessage() {
-        const text = chatInput.value.trim();
+    function sendChatMessage(textOverride = null, includeReply = true) {
+        const text = textOverride === null ? chatInput.value.trim() : String(textOverride).trim();
         if (text) {
-            window.socket.emit('chat-message', { text, mentions: mentionEditor.get(chatInput), ...(chatReplyTo ? { replyTo: chatReplyTo } : {}) });
-            chatReplyTo = null;
-            updateChatReplyPreview();
-            mentionEditor.clear(chatInput);
-            chatInput.value = '';
-            sendChatBtn.disabled = true;
+            window.socket.emit('chat-message', { text, mentions: textOverride === null ? mentionEditor.get(chatInput) : [], ...(includeReply && chatReplyTo ? { replyTo: chatReplyTo } : {}) });
+            if (textOverride === null) {
+                chatReplyTo = null;
+                updateChatReplyPreview();
+                mentionEditor.clear(chatInput);
+                chatInput.value = '';
+                sendChatBtn.disabled = true;
+            }
         }
     }
 
@@ -1726,6 +1741,22 @@ document.addEventListener('DOMContentLoaded', function() {
         updateComposer();
     });
     noteInput.addEventListener('input', () => {
+        const shitpost = tagCommands.consumeShitpostCommandAt(noteInput.value, noteInput.selectionStart);
+        if (shitpost !== null) {
+            switchToChat(shitpost.text, shitpost.cursor);
+            return;
+        }
+        const command = tagCommands.consumeTagCommand(noteInput.value, availableTags, noteInput.selectionStart);
+        if (command) {
+            selectedTags = selectedTags.includes(command.tagId)
+                ? selectedTags.filter(id => id !== command.tagId)
+                : [...selectedTags, command.tagId];
+            mentionEditor.clear(noteInput);
+            noteInput.value = command.value;
+            noteInput.setSelectionRange(command.cursor, command.cursor);
+            updateTagsDisplay();
+            showTagError(needsTag());
+        }
         sendNoteBtn.disabled = noteInput.value.trim().length === 0;
         // After a release, the next key freezes the stamp at that moment.
         if (!currentUser.isTyping && noteInput.value.length > 0) startTyping();
@@ -1810,7 +1841,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const chip = e.target.closest('.chip');
         if (!chip) return;
         const id = chip.dataset.tag;
-        selectedTags = rememberedTags().filter(id => availableTags.some(t => t.id === id));
+        selectedTags = selectedTags.filter(id => availableTags.some(t => t.id === id));
         selectedTags = selectedTags.includes(id) ? selectedTags.filter(t => t !== id) : [...selectedTags, id];
         composerTags.save(currentUser.sub, selectedTags);
         // Keep the focused chip in place for keyboard selection.
@@ -1823,6 +1854,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     sendNoteBtn.addEventListener('click', () => {
         const text = noteInput.value.trim();
+        const shitpost = tagCommands.consumeShitpostCommand(text);
+        if (shitpost !== null) {
+            switchToChat(shitpost);
+            return;
+        }
         if (text && needsTag()) {
             showTagError(true);
             if (phoneLayout.matches) tagsContainer.querySelector('button')?.focus();

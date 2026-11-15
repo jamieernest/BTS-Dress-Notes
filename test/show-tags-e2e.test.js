@@ -4,9 +4,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { startOidc, createApp, login, Browser, freePort, until } = require('./e2e-harness');
-const defaults = require('../default-tags.json').tags;
 
-test('show tags validate, persist, protect used ids, travel with saved/reset notes and reset to defaults', async t => {
+test('show tags validate, persist, export/import and survive resets', async t => {
     const oidc = await startOidc();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'show-tags-'));
     const app = createApp({ issuer: oidc.issuer, sessionsFile: path.join(dir, 'sessions.json'), port: await freePort() });
@@ -35,21 +34,26 @@ test('show tags validate, persist, protect used ids, travel with saved/reset not
     await ack('create-tag', { id: 'sound', name: 'Band', color: '#ff00ff' });
     alice.note('Synthetic band entrance', { tags: ['sound'] });
     await until(() => alice.noteTexts().length === 2, 'band note');
+    const tagsBeforeReset = JSON.parse(JSON.stringify(tags));
+    const exportedTags = new Promise(resolve => config.once('tags-export-data', resolve));
+    config.emit('tags-export-request');
+    assert.deepEqual(JSON.parse((await exportedTags).data).tags, tagsBeforeReset);
+    assert.deepEqual(await ack('tags-import', { tags: tagsBeforeReset }), {});
     const saved = await ack('save-show', { name: 'Synthetic show', reset: true });
     assert.ok(saved.show);
     const show = JSON.parse(fs.readFileSync(path.join(app.savedShowsDir, saved.show.id + '.json')));
     assert.ok(show.tags.some(tag => tag.name === 'Running Crew'));
     assert.ok(show.tags.some(tag => tag.name === 'Band'));
-    await until(() => JSON.stringify(tags) === JSON.stringify(defaults), 'default tags broadcast');
-    assert.deepEqual(disk(), defaults);
+    await until(() => JSON.stringify(tags) === JSON.stringify(tagsBeforeReset), 'tags preserved');
+    assert.deepEqual(disk(), tagsBeforeReset);
     const [reset] = await config.timeout(5000).emitWithAck('resets-list');
     const kept = JSON.parse(fs.readFileSync(path.join(app.resetsDir, reset.id + '.json')));
     assert.ok(kept.tags.some(tag => tag.id === crew.id));
     assert.deepEqual(await ack('restore-reset', { id: reset.id }), { restored: 2 });
     await until(() => alice.noteTexts().length === 2 && tags.some(tag => tag.name === 'Band'), 'restored tags');
     const band = tags.find(tag => tag.name === 'Band');
-    assert.notEqual(band.id, 'sound');
-    assert.equal(alice.page.notes.find(note => note.text.includes('band')).tags[0], band.id);
+    assert.equal(band.id, 'sound');
+    assert.equal(alice.page.notes.find(note => note.text.includes('band')).tags[0], 'sound');
     assert.deepEqual(await ack('restore-reset', { id: reset.id }), { restored: 0 });
     // A failed tag write refuses the entire reset and a failed edit leaves live tags alone.
     const file = path.join(dir, 'tags.json');
@@ -62,12 +66,12 @@ test('show tags validate, persist, protect used ids, travel with saved/reset not
     fs.rmdirSync(file);
     fs.renameSync(file + '.old', file);
     assert.deepEqual(await config.timeout(5000).emitWithAck('reset-all'), {});
-    await until(() => tags.length === 6 && alice.noteTexts().length === 0, 'reset defaults');
-    assert.deepEqual(disk(), defaults);
+    await until(() => JSON.stringify(tags) === JSON.stringify(tagsBeforeReset) && alice.noteTexts().length === 0, 'reset preserves tags');
+    assert.deepEqual(disk(), tagsBeforeReset);
     const spare = await ack('create-tag', { name: 'Unused' });
     assert.deepEqual(await ack('delete-tag', spare.tag.id), {});
     assert.ok(!disk().some(tag => tag.id === spare.tag.id));
     await app.stop();
     await app.start();
-    assert.deepEqual(disk(), defaults);
+    assert.deepEqual(disk(), tagsBeforeReset);
 });

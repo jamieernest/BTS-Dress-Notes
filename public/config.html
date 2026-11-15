@@ -30,7 +30,7 @@
 
         <section class="section" id="tags" aria-labelledby="tagsTitle">
             <h2 id="tagsTitle">Show tags</h2>
-            <p class="section-note">Add tags such as Crew for this show. Reset and Save and reset restore the six default tags. Saved notes keep their tags.</p>
+            <p class="section-note">Add tags such as Crew for this show. Resets preserve the current tags. You can move tag definitions between shows as a JSON file.</p>
             <div class="rows" id="tagRows"></div>
             <form id="addTagForm" class="rows tag-add" aria-labelledby="newTagTitle">
                 <div class="row tag-add-heading"><span id="newTagTitle">New tag</span></div>
@@ -39,9 +39,16 @@
                     <input id="newTagName" class="input" placeholder="New tag name" maxlength="60" required>
                     <label class="sr-only" for="newTagColour">New tag colour</label>
                     <input id="newTagColour" type="color" value="#9966cc" aria-label="New tag colour">
+                    <label class="sr-only" for="newTagCommand">New tag slash command</label>
+                    <input id="newTagCommand" class="input command-input" placeholder="Slash command" maxlength="40" pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*">
                     <button type="submit" class="btn outline">Add tag</button>
                 </div>
             </form>
+            <div class="tag-transfer">
+                <button type="button" id="exportTagsButton" class="btn outline">Export tags</button>
+                <button type="button" id="importTagsButton" class="btn outline">Import tags</button>
+                <input type="file" id="importTagsInput" accept=".json,application/json" hidden>
+            </div>
             <p id="tagResult" class="section-note result" role="status" hidden></p>
         </section>
 
@@ -125,7 +132,7 @@
                 <div class="row row-wrap">
                     <div class="row-text">
                         <div class="row-label">Reset current session</div>
-                        <p class="section-note">Clear current notes, chat and video for everyone. Restores the six default tags.</p>
+                        <p class="section-note">Clear current notes, chat and video for everyone. Tags are preserved.</p>
                     </div>
                     <button type="button" id="resetButton" class="btn danger-outline">Reset</button>
                 </div>
@@ -166,7 +173,7 @@
 
     <dialog id="resetConfirm" class="confirm-dialog" aria-labelledby="resetConfirmTitle" aria-describedby="resetConfirmDetail resetRecovery">
         <h2 id="resetConfirmTitle">Reset current session?</h2>
-        <p id="resetConfirmDetail">Clears notes, chat and video for everyone and restores the six default tags.</p>
+        <p id="resetConfirmDetail">Clears notes, chat and video for everyone while preserving the current tags.</p>
         <p id="resetRecovery" class="muted">Notes can be restored for 3 days. Chat and video cannot.</p>
         <div class="dialog-actions">
             <button type="button" id="resetCancelButton" class="btn outline" autofocus>Cancel</button>
@@ -176,7 +183,7 @@
 
     <dialog id="saveResetConfirm" class="confirm-dialog" aria-labelledby="saveResetTitle" aria-describedby="saveResetDetail saveResetChat">
         <h2 id="saveResetTitle">Save and reset?</h2>
-        <p id="saveResetDetail">Saves notes, tags and video, then clears the current session for everyone and restores the six default tags.</p>
+        <p id="saveResetDetail">Saves notes, tags and video, then clears the current session for everyone while preserving the tags.</p>
         <p id="saveResetChat" class="muted">Chat will be deleted.</p>
         <div class="dialog-actions">
             <button type="button" id="saveResetCancelButton" class="btn outline" autofocus>Cancel</button>
@@ -190,6 +197,7 @@
     <script src="playback-timeline.js"></script>
     <script src="video-file.js"></script>
     <script src="tag-colour.js"></script>
+    <script src="tag-commands.js"></script>
     <script src="config.js"></script>
 </body>
 </html>
