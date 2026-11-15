@@ -1748,12 +1748,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         const command = tagCommands.consumeTagCommand(noteInput.value, availableTags, noteInput.selectionStart);
         if (command) {
-            if (!selectedTags.includes(command.tagId)) selectedTags = [...selectedTags, command.tagId];
+            selectedTags = selectedTags.includes(command.tagId)
+                ? selectedTags.filter(id => id !== command.tagId)
+                : [...selectedTags, command.tagId];
             mentionEditor.clear(noteInput);
             noteInput.value = command.value;
             noteInput.setSelectionRange(command.cursor, command.cursor);
             updateTagsDisplay();
-            if (!needsTag()) showTagError(false);
+            showTagError(needsTag());
         }
         sendNoteBtn.disabled = noteInput.value.trim().length === 0;
         // After a release, the next key freezes the stamp at that moment.
@@ -1839,7 +1841,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const chip = e.target.closest('.chip');
         if (!chip) return;
         const id = chip.dataset.tag;
-        selectedTags = rememberedTags().filter(id => availableTags.some(t => t.id === id));
+        selectedTags = selectedTags.filter(id => availableTags.some(t => t.id === id));
         selectedTags = selectedTags.includes(id) ? selectedTags.filter(t => t !== id) : [...selectedTags, id];
         composerTags.save(currentUser.sub, selectedTags);
         // Keep the focused chip in place for keyboard selection.

@@ -30,6 +30,12 @@
       "id": "set",
       "name": "Set",
       "color": "#FF6F91"
+    },
+    {
+      "id": "0b42711c-0465-48eb-90bd-e2e85af40d21",
+      "name": "general",
+      "color": "#ff40ff",
+      "command": "general"
     }
   ]
 }
