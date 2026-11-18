@@ -354,7 +354,13 @@
     // `me` is the viewer's username (emailPrefix); only the "My scenes" filter needs it.
     function noteMatches(note, filters, tagById, me = '') {
         if (filters.author && note.userId !== filters.author) return false;
-        if (filters.tag !== 'all' && !note.tags.includes(filters.tag)) return false;
+        const selectedTags = tagFilterValues(filters.tag);
+        if (selectedTags.length) {
+            const matches = filters.tagMode === 'all'
+                ? selectedTags.every(id => note.tags.includes(id))
+                : selectedTags.some(id => note.tags.includes(id));
+            if (!matches) return false;
+        }
         if (filters.act === MY_SCENES) { if (!Mentions.labelMentions(note.act || 'Preshow', me)) return false; }
         else if (filters.act !== 'all' && (note.act || 'Preshow') !== filters.act) return false;
         if (filters.mentionedUserId && !Mentions.has(note, filters.mentionedUserId) && !(note.comments || []).some(c => Mentions.has(c, filters.mentionedUserId))) return false;
@@ -373,7 +379,7 @@
     }
 
     function filtersActive(filters) {
-        return !!filters.author || !!filters.mentionedUserId || filters.tag !== 'all' || filters.act !== 'all' || filters.search !== '';
+        return !!filters.author || !!filters.mentionedUserId || tagFilterValues(filters.tag).length > 0 || filters.act !== 'all' || filters.search !== '';
     }
 
     // Names label accounts; they never identify them. No name-based fallback for old notes.
@@ -400,15 +406,21 @@
     }
 
     function readFilters(params) {
-        return { act: params.get('scene') || 'all', tag: params.get('tag') || 'all',
+        const tags = params.getAll('tag').filter(Boolean);
+        return { act: params.get('scene') || 'all', tag: tags.length ? [...new Set(tags)] : 'all',
+            tagMode: params.get('tagMode') === 'all' ? 'all' : 'any',
             author: params.get('author') || '', mentionedUserId: params.get('mentioned') || '', search: (params.get('q') || '').trim().toLowerCase() };
     }
 
     function writeFilters(params, filters, query) {
         for (const [key, value] of [['scene', filters.act === 'all' ? '' : filters.act],
-            ['tag', filters.tag === 'all' ? '' : filters.tag], ['author', filters.author], ['mentioned', filters.mentionedUserId], ['q', query.trim()]]) {
+            ['author', filters.author], ['mentioned', filters.mentionedUserId], ['q', query.trim()]]) {
             if (value) params.set(key, value); else params.delete(key);
         }
+        params.delete('tag');
+        for (const tag of tagFilterValues(filters.tag)) params.append('tag', tag);
+        if (filters.tagMode === 'all') params.set('tagMode', 'all');
+        else params.delete('tagMode');
         return params;
     }
 
@@ -580,6 +592,11 @@
         return [{ value: 'all', label: 'All tags', color: '' }, ...tags.map(tag => ({ value: tag.id, label: tag.name, color: tag.color }))];
     }
 
+    function tagFilterValues(value) {
+        if (Array.isArray(value)) return [...new Set(value.filter(id => id && id !== 'all'))];
+        return value && value !== 'all' ? [value] : [];
+    }
+
     // --- Popovers ---
     function mobilePopoverViewport() {
         if (!window.matchMedia('(max-width: 860px), (pointer: coarse)').matches) return null;
@@ -707,6 +724,101 @@
         return { render, open, close, isOpen, reposition };
     }
 
+    function createMultiDropdown({ button, popover, onChange, onModeChange, beforeOpen, mode = 'any' }) {
+        let selected = [];
+        let options = [];
+        let tagMode = mode;
+
+        function isOpen() { return !popover.hidden; }
+        function reposition() { if (isOpen()) placePopover(popover, button, 'left'); }
+        function close() {
+            if (!isOpen()) return false;
+            const hadFocus = popover.contains(document.activeElement);
+            popover.hidden = true;
+            button.setAttribute('aria-expanded', 'false');
+            if (hadFocus) button.focus({ preventScroll: true });
+            return true;
+        }
+        function open() {
+            if (beforeOpen) beforeOpen();
+            placePopover(popover, button, 'left');
+            button.setAttribute('aria-expanded', 'true');
+            popover.querySelector('[aria-checked="true"], [aria-selected="true"]')?.focus();
+        }
+
+        function render(nextOptions, value, nextMode) {
+            options = nextOptions;
+            selected = tagFilterValues(value);
+            if (nextMode === 'any' || nextMode === 'all') tagMode = nextMode;
+            if (selected.length) {
+                const names = selected.map(id => options.find(o => o.value === id)?.label || id);
+                const label = names.length === 1 ? names[0] : `${names.length} tags`;
+                const color = names.length === 1 ? options.find(o => o.value === selected[0])?.color : undefined;
+                setHtml(button, `${dotHTML(color)}<span>${esc(label)}</span>`);
+            } else {
+                setHtml(button, `${dotHTML('')}<span>All tags</span>`);
+            }
+            button.classList.toggle('active', selected.length > 0);
+            setHtml(popover, `<div class="tag-match" role="radiogroup" aria-label="Match selected tags">
+                <button type="button" class="tag-match-option" role="radio" data-mode="any" aria-checked="${tagMode === 'any'}">Match any</button>
+                <button type="button" class="tag-match-option" role="radio" data-mode="all" aria-checked="${tagMode === 'all'}">Match all</button>
+            </div>` + options.map(o => {
+                const checked = o.value === 'all' ? selected.length === 0 : selected.includes(o.value);
+                return `
+                    <button type="button" class="tag-option" role="menuitemcheckbox" data-value="${esc(o.value)}" aria-checked="${checked}">
+                        ${dotHTML(o.color)}${esc(o.label)}<i data-icon="check" data-class="check"></i>
+                    </button>`;
+            }).join(''));
+        }
+
+        button.setAttribute('aria-controls', popover.id);
+        button.setAttribute('aria-haspopup', 'menu');
+        button.setAttribute('aria-expanded', 'false');
+        button.addEventListener('click', e => {
+            e.stopPropagation();
+            if (isOpen()) close(); else open();
+        });
+        popover.addEventListener('click', e => {
+            e.preventDefault();
+            e.stopPropagation();
+            const match = e.target.closest('[role="radio"]');
+            if (match) {
+                tagMode = match.dataset.mode;
+                render(options, selected);
+                if (onModeChange) onModeChange(tagMode);
+                else if (onChange) onChange(selected, tagMode);
+                popover.querySelector(`[role="radio"][data-mode="${tagMode}"]`)?.focus();
+                return;
+            }
+            const option = e.target.closest('[role="menuitemcheckbox"]');
+            if (!option) return;
+            if (option.dataset.value === 'all') selected = [];
+            else if (selected.includes(option.dataset.value)) selected = selected.filter(id => id !== option.dataset.value);
+            else selected = [...selected, option.dataset.value];
+            render(options, selected);
+            onChange(selected, tagMode);
+            [...popover.querySelectorAll('[role="menuitemcheckbox"]')]
+                .find(item => item.dataset.value === option.dataset.value)?.focus();
+        });
+        popover.addEventListener('keydown', e => {
+            if (e.key === 'Escape') { e.preventDefault(); close(); return; }
+            const options = [...popover.querySelectorAll('[role="menuitemcheckbox"]')];
+            const i = options.indexOf(document.activeElement);
+            const next = { ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: options.length - 1 }[e.key];
+            if (next === undefined) return;
+            e.preventDefault();
+            options[Math.max(0, Math.min(next, options.length - 1))].focus();
+        });
+        document.addEventListener('click', e => {
+            const insideMenu = popover.contains(e.target) ||
+                (typeof e.composedPath === 'function' && e.composedPath().includes(popover));
+            if (!insideMenu) close();
+        });
+        watchPopoverResize(close, reposition);
+
+        return { render, open, close, isOpen, reposition };
+    }
+
     return {
         esc, safeColor, setHtml, playbackLinkHTML, agreementsHTML, updateAgreements,
         clockTime, fullTime, relativeTime, plural,
@@ -715,6 +827,6 @@
         noteHeadHTML, noteHTML, commentHTML, groupHeadHTML, visitStartRow, groupNotes, groupStartTimes, sceneStartTimes, updateGroupTime,
         noteMatches, filtersActive, sceneOptions, MY_SCENES, tagOptions,
         authorOptions, storedAuthorId, readFilters, writeFilters, watchNavigation, createAuthorSearch,
-        placePopover, fitPopoverInViewport, watchPopoverResize, createDropdown
+        placePopover, fitPopoverInViewport, watchPopoverResize, createDropdown, createMultiDropdown
     };
 }));
