@@ -9,6 +9,13 @@ test('direct GIF links and Giphy media URLs embed', () => {
     assert.match(GifLinks.html(`Look ${url}`), /<img class="chat-gif"[^>]*src="https:\/\/media0\.giphy\.com\//);
 });
 
+test('direct Tenor media URLs embed', () => {
+    const url = 'https://media.tenor.com/abc123/tenor.gif';
+    assert.equal(GifLinks.isGifUrl(url), true);
+    assert.equal(GifLinks.ranges(`Look ${url}`).length, 1);
+    assert.match(GifLinks.html(`Look ${url}`), /<img class="chat-gif"[^>]*src="https:\/\/media\.tenor\.com\//);
+});
+
 test('Giphy page links normalize to Giphy media GIF URLs', () => {
     const page = 'https://giphy.com/gifs/funny-cat-dance-AbCd1234Ef';
     assert.equal(GifLinks.isGifUrl(page), true);
