@@ -172,7 +172,17 @@
                 <button type="button" id="chatReplyCancel" class="btn ghost icon-only" aria-label="Cancel reply" title="Cancel reply"><svg class="icon" aria-hidden="true"><use href="icons.svg#i-close"/></svg></button>
             </div>
             <textarea id="chatInput" rows="2" placeholder="Shitpost here…" aria-label="Shitpost to everyone"></textarea>
+            <section id="stickerPicker" class="sticker-picker" aria-label="Sticker picker" hidden>
+                <div class="sticker-picker-head">
+                    <span class="muted">Stickers</span>
+                    <button type="button" id="stickerUpload" class="btn outline">Add sticker</button>
+                    <input id="stickerUploadInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
+                </div>
+                <div id="stickerStatus" class="muted" role="status" aria-live="polite"></div>
+                <div id="stickerResults" class="sticker-results" role="listbox" aria-label="Server stickers"></div>
+            </section>
             <div class="chat-compose-foot">
+                <button type="button" id="stickerButton" class="btn ghost" aria-expanded="false">Stickers</button>
                 <button type="button" id="sendChat" class="btn primary" disabled>Send</button>
             </div>
         </div>
@@ -196,6 +206,7 @@
     <script src="profile-photos.js"></script>
     <script src="mentions.js"></script>
     <script src="gifs.js"></script>
+    <script src="stickers.js"></script>
     <script src="note-view.js"></script>
     <script src="loading-state.js"></script>
     <script src="playback-context.js"></script>

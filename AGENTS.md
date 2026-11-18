@@ -79,6 +79,8 @@ After a restart clients offer their copy (`chat-restore-offer`). `chat-restore.j
 
 The copy is kept in `localStorage` (2 h expiry), not page memory, so it survives reloads and `/login` bounces while the server is down. `test/chat-restore-e2e.test.js` runs the real `server.js` against a stub OIDC provider (`SESSIONS_FILE` overrides the session file) with logged-in users through restarts, reloads and a lost session.
 
+Shared chat stickers live in git-ignored `stickers/` (`STICKERS_DIR` for tests), with a manifest and one raster file per id (`stickers.js`). `POST /stickers` accepts only PNG/JPEG/GIF/WebP, at most `STICKER_MAX_BYTES` (5 MB default); SVG is rejected. The picker sends `/stickers/:id` as a normal chat message, rendered by `public/stickers.js`, and sticker updates broadcast as `stickers-update`. Sticker files are not cleared by a chat reset.
+
 ## Notes backup, restore and reset
 
 Human note references use `note.noteNumber`; UUID `id` remains authoritative. `public/note-numbers.js` handles legacy oldest-first migration and reset-merge collisions; `nextNoteNumber` travels in backups/exports/saved shows, including when no notes remain, so deletions never release numbers. Only a show reset starts at 1. New notes allocate on server acceptance (offline arrivals keep their older timestamp without renumbering existing references); deduped resends keep their number, pending rows have none. Reset merges preserve live references and reassign incoming numbers below the live high-watermark. Past notes/playback migrate legacy files locally.

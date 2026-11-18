@@ -47,6 +47,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const chatUnread = $('chatUnread');
     const chatInput = $('chatInput');
     const sendChatBtn = $('sendChat');
+    const stickerButton = $('stickerButton');
+    const stickerPicker = $('stickerPicker');
+    const stickerUpload = $('stickerUpload');
+    const stickerUploadInput = $('stickerUploadInput');
+    const stickerStatus = $('stickerStatus');
+    const stickerResults = $('stickerResults');
     const chatMessages = $('chatMessages');
     const chatCount = $('chatCount');
     const scrollToTopBtn = $('scrollToTopBtn');
@@ -672,7 +678,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <div data-chat-id="${esc(msg.id)}" class="chat-msg${mine ? ' mine' : ''}${cont ? ' cont' : ''}">
                 ${face}
                 <div class="chat-msg-main">${head}
-                    <div class="chat-bubble-row"><div class="bubble" title="${esc(fullTime(msg.timestamp))}">${msg.replyTo ? chatQuoteHTML(msg.replyTo) : ''}${GifLinks.html(msg.text, msg.mentions, (text, mentions) => Mentions.html(text, mentions))}</div><button type="button" class="chat-reply-action" data-chat-reply="${esc(msg.id)}" aria-label="Reply to ${esc(msg.user)}" title="Reply"><i data-icon="reply"></i></button></div>
+                    <div class="chat-bubble-row"><div class="bubble${Stickers.html(msg.text) ? ' sticker-bubble' : ''}" title="${esc(fullTime(msg.timestamp))}">${msg.replyTo ? chatQuoteHTML(msg.replyTo) : ''}${Stickers.html(msg.text) || GifLinks.html(msg.text, msg.mentions, (text, mentions) => Mentions.html(text, mentions))}</div><button type="button" class="chat-reply-action" data-chat-reply="${esc(msg.id)}" aria-label="Reply to ${esc(msg.user)}" title="Reply"><i data-icon="reply"></i></button></div>
                 </div>
             </div>`;
     }
@@ -1703,6 +1709,77 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!chatDrawer.hidden) (modalChatLayout.matches ? chatClose : chatInput).focus();
     });
     chatClose.addEventListener('click', () => { chooseChatOpen(false); chatToggle.focus(); });
+    let stickerList = [];
+    function renderStickers() {
+        stickerResults.replaceChildren();
+        stickerStatus.textContent = stickerList.length ? '' : 'No stickers uploaded.';
+        for (const sticker of stickerList) {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'sticker-result';
+            button.title = sticker.name;
+            button.setAttribute('role', 'option');
+            const image = document.createElement('img');
+            image.src = sticker.url;
+            image.alt = sticker.name;
+            image.loading = 'lazy';
+            image.decoding = 'async';
+            image.referrerPolicy = 'no-referrer';
+            button.append(image);
+            button.addEventListener('click', () => {
+                stickerPicker.hidden = true;
+                stickerButton.setAttribute('aria-expanded', 'false');
+                window.socket.emit('chat-message', { text: sticker.url, mentions: [] });
+            });
+            stickerResults.append(button);
+        }
+    }
+    async function loadStickers() {
+        stickerStatus.textContent = 'Loading…';
+        try {
+            const response = await fetch('/stickers', { headers: { Accept: 'application/json' } });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Stickers could not be loaded.');
+            stickerList = data.stickers || [];
+            renderStickers();
+        } catch (error) {
+            stickerStatus.textContent = error.message || 'Stickers could not be loaded.';
+        }
+    }
+    stickerButton.addEventListener('click', () => {
+        const open = stickerPicker.hidden;
+        stickerPicker.hidden = !open;
+        stickerButton.setAttribute('aria-expanded', String(open));
+        if (open) loadStickers();
+    });
+    stickerUpload.addEventListener('click', () => stickerUploadInput.click());
+    stickerUploadInput.addEventListener('change', async () => {
+        const files = [...stickerUploadInput.files];
+        stickerUploadInput.value = '';
+        if (!files.length) return;
+        stickerUpload.disabled = true;
+        stickerStatus.textContent = 'Uploading…';
+        try {
+            for (const file of files) {
+                const response = await fetch(`/stickers?name=${encodeURIComponent(file.name)}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+                    body: file
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'The sticker could not be uploaded.');
+            }
+            await loadStickers();
+        } catch (error) {
+            stickerStatus.textContent = error.message || 'The sticker could not be uploaded.';
+        } finally {
+            stickerUpload.disabled = false;
+        }
+    });
+    window.socket.on('stickers-update', update => {
+        stickerList = update.stickers || [];
+        if (!stickerPicker.hidden) renderStickers();
+    });
 
     chatDrawer.addEventListener('keydown', (e) => {
         if (!modalChatLayout.matches || e.key !== 'Tab') return;

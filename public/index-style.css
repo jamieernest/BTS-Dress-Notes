@@ -625,6 +625,17 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
 }
 .chat-compose textarea:focus { border-color: var(--accent); }
 .chat-compose-foot { display: flex; align-items: center; justify-content: flex-end; margin-top: 8px; font-size: 12px; }
+.chat-compose-foot #stickerButton { margin-right: auto; }
+.sticker-picker { margin-top: 8px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface-2); }
+.sticker-picker-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.sticker-picker-head .muted { margin-right: auto; }
+.sticker-picker #stickerStatus { min-height: 18px; font-size: 12px; }
+.sticker-results { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; max-height: 240px; overflow-y: auto; }
+.sticker-result { min-width: 0; height: 76px; padding: 6px; overflow: hidden; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); cursor: pointer; }
+.sticker-result:hover, .sticker-result:focus-visible { border-color: var(--accent); outline: none; }
+.sticker-result img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.bubble.sticker-bubble { padding: 6px; background: transparent; border: 0; }
+.chat-sticker { display: block; width: 160px; max-width: 100%; height: 160px; object-fit: contain; }
 
 /* --- Small screens --- */
 @media (max-width: 860px) {

@@ -26,6 +26,8 @@ const recordings = require('./recordings');
 const RECORDINGS_DIR = process.env.RECORDINGS_DIR || path.join(__dirname, 'recordings');
 // One uploaded part at most; a full dress from Vor is a few GB.
 const RECORDING_MAX_BYTES = Number(process.env.RECORDING_MAX_BYTES) || 32 * 1024 ** 3;
+const STICKERS_DIR = process.env.STICKERS_DIR || path.join(__dirname, 'stickers');
+const STICKER_MAX_BYTES = Number(process.env.STICKER_MAX_BYTES) || 5 * 1024 ** 2;
 const { sanitizeAge, insertionIndex } = require('./public/note-order');
 const { toggleAgreement } = require('./note-agreements');
 const { canEditNote } = require('./public/note-author');
@@ -36,6 +38,7 @@ const crypto = require('crypto');
 const helmet = require('helmet');
 const { usernameFromClaims } = require('./profile-photos');
 const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
+const stickers = require('./stickers');
 
 const app = express();
 const server = http.createServer(app);
@@ -406,6 +409,63 @@ app.get('/session', (req, res) => {
     res.set('Cache-Control', 'no-store');
     const user = req.session.user || {};
     res.json({ name: user.name, sub: user.sub, emailPrefix: usernameFromClaims({ preferred_username: user.username ?? user.emailPrefix }) });
+});
+
+const stickersOf = () => stickers.list(STICKERS_DIR).map(sticker => ({
+    id: sticker.id,
+    name: sticker.name,
+    size: sticker.size,
+    uploadedAt: sticker.uploadedAt,
+    uploadedBy: sticker.uploadedBy,
+    url: `/stickers/${sticker.id}`
+}));
+
+app.get('/stickers', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    res.json({ stickers: stickersOf() });
+});
+
+app.get('/stickers/:id', (req, res) => {
+    const file = stickers.stickerFile(STICKERS_DIR, req.params.id);
+    if (!file) return res.status(404).json({ error: 'not found' });
+    res.type(file.type);
+    res.set('Cache-Control', 'private, max-age=31536000, immutable');
+    res.sendFile(file.path, error => {
+        if (error && !res.headersSent) res.status(404).json({ error: 'not found' });
+    });
+});
+
+app.post('/stickers', (req, res) => uploadSticker(req, res).catch(error => {
+    console.log(`Error saving sticker: ${error.message}`);
+    if (!res.headersSent && !req.socket.destroyed) res.status(500).json({ error: 'The sticker couldn\'t be saved.' });
+}));
+
+async function uploadSticker(req, res) {
+    if (!sameOrigin(req)) return res.status(403).json({ error: 'forbidden' });
+    const info = stickers.cleanInfo(req.query.name, req.get('content-type'));
+    if (info.error) return res.status(400).json({ error: info.error });
+    if (Number(req.get('content-length')) > STICKER_MAX_BYTES) {
+        return res.status(413).json({ error: 'The sticker is too large.' });
+    }
+    try {
+        const sticker = await stickers.add(STICKERS_DIR, req, info, {
+            maxBytes: STICKER_MAX_BYTES,
+            uploadedBy: req.session.user.name
+        });
+        io.emit('stickers-update', { stickers: stickersOf() });
+        res.status(201).json(sticker);
+    } catch (error) {
+        if (res.headersSent || req.socket.destroyed) return;
+        if (error.status) return res.status(error.status).json({ error: error.message });
+        throw error;
+    }
+}
+
+app.delete('/stickers/:id', (req, res) => {
+    if (!sameOrigin(req)) return res.status(403).json({ error: 'forbidden' });
+    if (!stickers.remove(STICKERS_DIR, req.params.id)) return res.status(404).json({ error: 'not found' });
+    io.emit('stickers-update', { stickers: stickersOf() });
+    res.status(204).end();
 });
 
 // Saved shows for Past notes (saved from the config page, see saved-shows.js).

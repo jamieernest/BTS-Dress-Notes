@@ -72,6 +72,13 @@ To clear the show, open `/config.html` and use **Reset all notes and chat** (it 
 
 JSON downloads are named `BTS Dress Notes YYYY-MM-DD.json` (the download date in UTC).
 
+## Chat stickers
+
+The Shitposts picker can upload shared PNG, JPEG, GIF or WebP stickers. Files are kept
+on the server in `stickers/` (or `STICKERS_DIR` for tests), up to 5 MB each
+(`STICKER_MAX_BYTES`). SVG is excluded. Selecting a sticker sends its server URL
+as a chat message, and the normal chat restore and reset behavior applies.
+
 ## Show recordings
 
 Under **Video** in Settings, choose **Current notes** or a saved show, then **Add video**. Everyone who opens those notes can watch the shared video; live notes and saved shows use that shared video. Notes opened from a JSON file in Past notes can instead use **Choose video from this device** in playback; those videos stay on the device and are not uploaded. A recording in several parts can be uploaded together or one at a time: the parts play as one timeline in start-time order, with blank time where the recording stopped. Start times come from Vor's dated file names (`Show.2026-10-07 19-30-00.mp4`) and can be adjusted under **Adjust timing**; parts without one play back to back. Playback's **Add video in Settings** link selects the relevant show automatically.
