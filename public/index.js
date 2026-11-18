@@ -122,7 +122,23 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     const actDropdown = filterDropdown(actFilter, actFilterPopover, 'act', updateActFilter);
-    const tagDropdown = filterDropdown(tagFilter, tagFilterPopover, 'tag', updateFilterTags);
+    const tagDropdown = NoteView.createMultiDropdown({
+        button: tagFilter,
+        popover: tagFilterPopover,
+        mode: filters.tagMode,
+        beforeOpen: () => closePopovers(),
+        onChange: (values, mode) => {
+            filters.tag = values;
+            filters.tagMode = mode;
+            updateFilterTags();
+            filterNotes();
+        },
+        onModeChange: (mode) => {
+            filters.tagMode = mode;
+            updateFilterTags();
+            filterNotes();
+        }
+    });
     const authorSearch = NoteView.createAuthorSearch({ input: searchInput, chip: $('authorFilter'), mentionChip: $('mentionedFilter'),
         getCurrentUserId: () => currentUser.sub, getCurrentUserName: () => currentUser.name,
         popover: $('authorSuggestions'), filters, getNotes: () => allNotes.filter(n => !deletedNotes.has(n.id)),
@@ -201,7 +217,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateFilterTags() {
-        tagDropdown.render(NoteView.tagOptions(availableTags), filters.tag);
+        tagDropdown.render(NoteView.tagOptions(availableTags), filters.tag, filters.tagMode);
         tagFilter.hidden = availableTags.length === 0;
     }
 
@@ -293,6 +309,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function clearFilters() {
         filters.tag = 'all';
+        filters.tagMode = 'any';
         filters.act = 'all';
         filters.search = '';
         filters.author = '';
