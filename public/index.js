@@ -672,7 +672,7 @@ document.addEventListener('DOMContentLoaded', function() {
             <div data-chat-id="${esc(msg.id)}" class="chat-msg${mine ? ' mine' : ''}${cont ? ' cont' : ''}">
                 ${face}
                 <div class="chat-msg-main">${head}
-                    <div class="chat-bubble-row"><div class="bubble" title="${esc(fullTime(msg.timestamp))}">${msg.replyTo ? chatQuoteHTML(msg.replyTo) : ''}<div class="chat-msg-text">${Mentions.html(msg.text, msg.mentions)}</div></div><button type="button" class="chat-reply-action" data-chat-reply="${esc(msg.id)}" aria-label="Reply to ${esc(msg.user)}" title="Reply"><i data-icon="reply"></i></button></div>
+                    <div class="chat-bubble-row"><div class="bubble" title="${esc(fullTime(msg.timestamp))}">${msg.replyTo ? chatQuoteHTML(msg.replyTo) : ''}${GifLinks.html(msg.text, msg.mentions, (text, mentions) => Mentions.html(text, mentions))}</div><button type="button" class="chat-reply-action" data-chat-reply="${esc(msg.id)}" aria-label="Reply to ${esc(msg.user)}" title="Reply"><i data-icon="reply"></i></button></div>
                 </div>
             </div>`;
     }

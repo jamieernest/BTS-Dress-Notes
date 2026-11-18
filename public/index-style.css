@@ -740,6 +740,9 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
 .chat-bubble-row .bubble { min-width: 0; }
 .chat-msg.mine .chat-bubble-row { flex-direction: row-reverse; }
 .chat-msg-text { white-space: pre-wrap; }
+.chat-gifs { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.chat-gifs:empty { display: none; }
+.chat-gif { display: block; max-width: min(320px, 100%); max-height: 240px; width: auto; height: auto; border-radius: 8px; object-fit: contain; }
 .chat-reply-action { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 32px; color: var(--text-2); border-radius: 6px; }
 .chat-reply-action:hover, .chat-reply-action:focus-visible { color: var(--text); background: var(--hover); }
 .chat-reply-action .icon { width: 16px; height: 16px; }

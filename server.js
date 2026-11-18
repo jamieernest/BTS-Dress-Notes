@@ -164,7 +164,7 @@ app.use(helmet({
         directives: {
             'script-src': ["'self'"],
             'style-src': ["'self'", "'unsafe-inline'"],
-            'img-src': ["'self'", 'data:', 'https://www.bts-crew.com'],
+            'img-src': ["'self'", 'data:', 'https://*.giphy.com', 'https://*.tenor.com', 'https://www.bts-crew.com'],
             'connect-src': ["'self'"],
             // playback.html plays uploaded videos, or one opened locally through a blob: URL.
             'media-src': ["'self'", 'blob:'],
