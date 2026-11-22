@@ -44,11 +44,20 @@ function withTimeout(promise, ms, message) {
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
 }
 
-// `onStatus(status)` on every change; `onFinished({ path, startedAt, stoppedAt })`
-// when OBS finishes a recording; `onConnected()` each time OBS is (re)connected.
+// A recording OBS says has run longer than this when STARTED arrives is not
+// believed (the event cannot be that late), so the event's own time stands.
+const MAX_LEAD_MS = 30000;
+
+// `onStatus(status)` on every change; `onFinished({ path, startedAt, stoppedAt,
+// stoppingAt, startSource, paused })` when OBS finishes a recording (`startedAt`
+// is when the file's first frame was recorded, in ms; `startSource` says how it
+// was found: 'obs' when OBS's own recorded length was subtracted, 'event' when
+// only the time STARTED arrived is known, 'connect' for a recording already
+// running when this connected); `onConnected()` each time OBS is (re)connected.
 function createRecorder({
     url, password = '', enabled = true, configError = null, createClient = () => new OBSWebSocket(),
     retryMs = 5000, maxRetryMs = Math.max(30000, retryMs), connectTimeoutMs = 8000, requestTimeoutMs = 8000,
+    startLookupMs = Math.min(requestTimeoutMs, 3000),
     now = Date.now, log = console.log, onStatus = () => {}, onFinished = () => {}, onConnected = () => {}
 }) {
     const usable = enabled && !configError;
@@ -58,7 +67,8 @@ function createRecorder({
     let retryTimer = null;
     let attempts = 0;
     let closed = false;
-    let startedAt = null;
+    // The recording in progress: { startedAt, source, stoppingAt, paused, refining }.
+    let recording = null;
     let lastLogged = null;
     let lastSent = '';
 
@@ -110,33 +120,66 @@ function createRecorder({
         if (retryTimer.unref) retryTimer.unref();
     }
 
-    function handleRecordState({ outputState, outputActive, outputPath } = {}) {
+    // OBS says STARTED some time after the file's first frame, so ask how long it
+    // has been recording and count back from the answer. The time the answer was
+    // taken is the middle of the round trip. Never rejects; on any failure the
+    // time STARTED arrived stays as the start.
+    function refineStart(c, rec, eventAt) {
+        const asked = now();
+        rec.refining = withTimeout(c.call('GetRecordStatus'), startLookupMs, 'OBS did not answer').then((record) => {
+            const answered = now();
+            const length = Number(record && record.outputDuration);
+            if (!record || record.outputActive !== true || !Number.isFinite(length) || length < 0) {
+                log('OBS: could not read how long the recording had run when OBS said it started; using that moment as its start');
+                return;
+            }
+            if (length > MAX_LEAD_MS) {
+                log(`OBS: reported ${length} ms recorded when it said it started, which is not believable; using that moment as its start`);
+                return;
+            }
+            const reportedAt = (asked + answered) / 2;
+            // Never after STARTED itself, which the round trip's own timing could otherwise suggest.
+            rec.startedAt = Math.min(reportedAt - length, eventAt);
+            rec.source = 'obs';
+            log(`OBS: recording started; OBS had been recording ${length} ms when it said so (${answered - asked} ms to ask), so the recording began ${Math.round(eventAt - rec.startedAt)} ms before STARTED arrived`);
+        }).catch((error) => {
+            log(`OBS: could not ask how long the recording had run (${error && error.message}); using the moment OBS said it started`);
+        });
+    }
+
+    function handleRecordState({ outputState, outputActive, outputPath } = {}, c = client) {
         const stateName = String(outputState || '').replace('OBS_WEBSOCKET_OUTPUT_', '');
         if (stateName === 'STARTING') {
             setNotice(null);
             setState('starting');
         } else if (stateName === 'STARTED') {
-            startedAt = now();
+            const eventAt = now();
+            const rec = { startedAt: eventAt, source: 'event', stoppingAt: null, paused: false, refining: null };
+            recording = rec;
             status.notice = null;
             setState('recording');
             log('OBS: recording started');
+            if (c) refineStart(c, rec, eventAt);
         } else if (stateName === 'PAUSED') {
+            if (recording) recording.paused = true;
             setState('paused');
         } else if (stateName === 'RESUMED') {
             setState('recording');
         } else if (stateName === 'STOPPING') {
+            if (recording && !recording.stoppingAt) recording.stoppingAt = now();
             setState('stopping');
         } else if (stateName === 'STOPPED') {
-            const began = startedAt;
-            startedAt = null;
+            const rec = recording;
+            const stoppedAt = now();
+            recording = null;
             setState('idle');
             log(`OBS: recording stopped${outputPath ? ` (${outputPath})` : ''}`);
             if (outputPath) {
-                try {
-                    Promise.resolve(onFinished({ path: String(outputPath), startedAt: began, stoppedAt: now() })).catch((error) => log('OBS: could not add the recording:', error.message));
-                } catch (error) {
-                    log('OBS: could not add the recording:', error.message);
-                }
+                // A recording that is over before OBS has answered still waits for its start.
+                Promise.resolve(rec && rec.refining).then(() => onFinished({
+                    path: String(outputPath), startedAt: rec ? rec.startedAt : null, stoppedAt,
+                    stoppingAt: rec ? rec.stoppingAt : null, startSource: rec ? rec.source : null, paused: rec ? rec.paused : false
+                })).catch((error) => log('OBS: could not add the recording:', error.message));
             }
         } else if (outputActive === true || outputActive === false) {
             setState(outputActive ? 'recording' : 'idle');
@@ -146,7 +189,7 @@ function createRecorder({
     function dropClient(c) {
         if (client !== c) return;
         client = null;
-        startedAt = null;
+        recording = null;
     }
 
     function connect() {
@@ -157,7 +200,7 @@ function createRecorder({
         const c = createClient();
         connecting = (async () => {
             try {
-                c.on('RecordStateChanged', handleRecordState);
+                c.on('RecordStateChanged', (data) => handleRecordState(data, c));
                 c.on('ConnectionClosed', (error) => {
                     if (client !== c) return;
                     dropClient(c);
@@ -175,10 +218,10 @@ function createRecorder({
                 lastLogged = null;
                 log(`OBS: connected at ${url}`);
                 if (record.outputActive) {
-                    startedAt = now() - (Number(record.outputDuration) || 0);
+                    recording = { startedAt: now() - (Number(record.outputDuration) || 0), source: 'connect', stoppingAt: null, paused: !!record.outputPaused, refining: null };
                     setState(record.outputPaused ? 'paused' : 'recording');
                 } else {
-                    startedAt = null;
+                    recording = null;
                     setState('idle');
                 }
                 try { onConnected(); } catch (error) { log('OBS: connected handler failed:', error.message); }

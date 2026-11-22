@@ -11,7 +11,11 @@ const sha256 = (text) => crypto.createHash('sha256').update(text).digest('base64
 function createFakeObs({ port, password = '' }) {
     const obs = {
         port, password, active: false, paused: false, startedAt: null, recordTo: null,
-        requests: [], clients: new Set(), hang: false, wss: null
+        requests: [], clients: new Set(), hang: false, wss: null,
+        // Milliseconds of recording OBS already counts when it says STARTED (the
+        // first frame was earlier), and a failing GetRecordStatus for testing the
+        // fallback; `statusLogs` records each GetRecordStatus answer's duration.
+        leadMs: 0, statusError: false, statusLogs: []
     };
 
     function send(ws, op, d) {
@@ -33,7 +37,7 @@ function createFakeObs({ port, password = '' }) {
         if (on === obs.active) return;
         obs.active = on;
         if (on) {
-            obs.startedAt = Date.now();
+            obs.startedAt = Date.now() - obs.leadMs;
             outputEvent('STARTING');
             outputEvent('STARTED');
         } else {
@@ -55,6 +59,8 @@ function createFakeObs({ port, password = '' }) {
             requestType, requestId, requestStatus: { result, code, ...(comment ? { comment } : {}) }, ...(responseData ? { responseData } : {})
         });
         if (requestType === 'GetRecordStatus') {
+            if (obs.statusError) return respond(false, 207, null, 'OBS is not ready.');
+            obs.statusLogs.push(obs.active ? Date.now() - obs.startedAt : 0);
             return respond(true, 100, {
                 outputActive: obs.active, outputPaused: obs.paused, outputTimecode: '00:00:00.000',
                 outputDuration: obs.active ? Date.now() - obs.startedAt : 0, outputBytes: 0

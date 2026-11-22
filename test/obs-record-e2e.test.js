@@ -14,13 +14,14 @@ const { until, freePort, startOidc, createApp, login } = require('./e2e-harness'
 const { createFakeObs } = require('./fake-obs');
 const { makeMp4 } = require('./video-fixtures');
 
-async function setup(t, { obs: withObs = true, password = '', secret, clientPassword = password, beforeStart, fakeListening = true } = {}) {
+async function setup(t, { obs: withObs = true, password = '', secret, clientPassword = password, beforeStart, fakeListening = true, extraEnv = {}, leadMs = 0 } = {}) {
     const oidc = await startOidc();
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'obs-record-e2e-'));
     const videos = path.join(dir, 'Movies');
     fs.mkdirSync(videos);
     const obsPort = await freePort();
     const fake = createFakeObs({ port: obsPort, password });
+    fake.leadMs = leadMs;
     if (fakeListening) await fake.start();
     const oscPort = await freePort();
     const env = { OSC_PORT: String(oscPort), VIDEOS_DIR: videos, OBS_SCAN_MS: '200', OBS_RETRY_MS: '100' };
@@ -32,6 +33,7 @@ async function setup(t, { obs: withObs = true, password = '', secret, clientPass
         env.OBS_WEBSOCKET_PASSWORD = '';
     }
     env.OBS_OSC_SECRET = secret || '';
+    Object.assign(env, extraEnv);
     const app = createApp({ issuer: oidc.issuer, sessionsFile: path.join(dir, 'sessions.json'), port: await freePort(), env });
     if (beforeStart) await beforeStart({ app, videos, dir });
     await app.start();
@@ -200,6 +202,48 @@ test('a recording OBS finishes appears in the live recording, ready to play', as
     // Recording again to the same name is not added twice, and the scan does not re-add it.
     await new Promise((resolve) => setTimeout(resolve, 600));
     assert.strictEqual((await (await get('/recordings/live')).json()).recordings.length, 1);
+});
+
+// How a recording's start is set: OBS's own recorded length at STARTED is
+// counted back from, then VIDEO_OFFSET_S moves it, and both show on the page.
+async function recordedStart(t, options) {
+    const { fake, videos, watch, send } = await setup(t, options);
+    const seen = watch('config.html');
+    await until(() => seen.last()?.state === 'idle', 'idle');
+    const file = path.join(videos, NAME);
+    fs.writeFileSync(file, makeMp4({ durationS: 5 }));
+    fake.recordTo = file;
+    await send('/bts/record/start');
+    await until(() => seen.last().state === 'recording', 'recording');
+    const heard = Date.now();
+    await send('/bts/record/stop');
+    await until(() => seen.recordings.some((r) => r.collection === 'live' && r.recordings.length === 1), 'the recording update');
+    return { seen, heard, startAt: Date.parse(seen.recordings.at(-1).recordings[0].startAt), fake };
+}
+
+test('the recording starts when OBS says it began, not when it said STARTED', async (t) => {
+    const { seen, heard, startAt } = await recordedStart(t, { leadMs: 3000 });
+    // Three seconds before the start cue was acted on, give or take the cue's own delay.
+    assert.ok(startAt < heard - 3000 + 50 && startAt > heard - 3000 - 1500, `start ${startAt - heard}`);
+    assert.strictEqual(seen.last().videoOffsetS, 0);
+    assert.strictEqual(seen.last().videoOffsetError, null);
+});
+
+test('VIDEO_OFFSET_S moves the start of recordings added, and shows on the page', async (t) => {
+    const base = await recordedStart(t, { leadMs: 3000 });
+    const shifted = await recordedStart(t, { leadMs: 3000, extraEnv: { VIDEO_OFFSET_S: '2.5' } });
+    assert.strictEqual(shifted.seen.last().videoOffsetS, 2.5);
+    assert.ok(Math.abs((shifted.heard - shifted.startAt) - (base.heard - base.startAt) - 2500) < 1000,
+        `${shifted.heard - shifted.startAt} vs ${base.heard - base.startAt}`);
+});
+
+test('a bad VIDEO_OFFSET_S is ignored, logged and shown, and recordings still start where OBS says', async (t) => {
+    const { app, watch } = await setup(t, { extraEnv: { VIDEO_OFFSET_S: 'soon' } });
+    const seen = watch('config.html');
+    await until(() => seen.last()?.state === 'idle', 'idle');
+    assert.strictEqual(seen.last().videoOffsetS, 0);
+    assert.match(seen.last().videoOffsetError, /VIDEO_OFFSET_S must be a number/);
+    assert.match(app.output(), /VIDEO_OFFSET_S must be a number of seconds from -60 to 60; using none/);
 });
 
 test('a recording OBS saved as MKV is reported as unplayable, not added', async (t) => {
