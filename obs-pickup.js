@@ -30,6 +30,28 @@ const UNPLAYABLE = { mkv: 'Matroska (.mkv)', flv: 'Flash video (.flv)', ts: 'MPE
 const SETTLE_MS = 10000;
 const UNREADABLE_AFTER_MS = 60000;
 
+// Says how the start time the recorder found compares with the file itself, so
+// the person calibrating VIDEO_OFFSET_S can see which end is out. Only a real
+// file length counts (not one worked out from the file's age), and a recording
+// that was paused is shorter than the time it ran. `gap` is how much later than
+// "when OBS stopped it, less the file's length" the recorded start is: about 0
+// when the two agree, positive when the start was found late (notes then fall
+// before the start of the video).
+function logTiming(name, hint, durationS, fragmented, startAt, offsetS, log) {
+    const stopped = hint.stoppingAt || hint.stoppedAt;
+    const parts = [`"${name}": start found from ${hint.startSource || 'the recorder'}`];
+    if (!fragmented && stopped && !hint.paused) {
+        const wallS = (stopped - hint.startedAt) / 1000;
+        parts.push(`recorded for ${wallS.toFixed(2)} s by the clock, the file is ${durationS.toFixed(2)} s: start is ${(durationS - wallS).toFixed(2)} s later than the file's length implies (negative: earlier)`);
+    } else if (hint.paused) {
+        parts.push('was paused, so its length is not compared with the clock');
+    } else if (fragmented) {
+        parts.push('is a fragmented MP4, so its length is not compared with the clock');
+    }
+    if (offsetS) parts.push(`video offset ${offsetS > 0 ? '+' : ''}${offsetS} s applied, start moved to ${new Date(startAt).toISOString()}`);
+    log(`OBS: ${parts.join('; ')}`);
+}
+
 // The OS user's own videos folder: Movies on macOS, Videos elsewhere.
 function defaultVideosDir(platform = process.platform, home = os.homedir()) {
     return path.join(home, platform === 'darwin' ? 'Movies' : 'Videos');
@@ -44,8 +66,10 @@ function unplayableMessage(name, ext) {
 }
 
 // `videosDir`: the folder everything must stay inside. `recordingsDir`: the
-// app's recordings folder (RECORDINGS_DIR). `now`: for tests.
-function createPickup({ videosDir, recordingsDir, collection = 'live', now = Date.now, settleMs = SETTLE_MS }) {
+// app's recordings folder (RECORDINGS_DIR). `offsetS`: the install's video
+// offset (video-offset.js), applied to the start of every recording added.
+// `now`, `log`: for tests.
+function createPickup({ videosDir, recordingsDir, collection = 'live', now = Date.now, settleMs = SETTLE_MS, offsetS = 0, log = console.log }) {
     const ledgerPath = path.join(recordingsDir, LEDGER);
 
     function readLedger() {
@@ -66,7 +90,9 @@ function createPickup({ videosDir, recordingsDir, collection = 'live', now = Dat
     const handled = (key) => readLedger().some(f => f.key === key);
 
     // Adds the recording at `file` (a path OBS reported, or one the scan found).
-    // `hint`: { startedAt } in ms when the server saw the recording begin.
+    // `hint`: { startedAt, stoppingAt, stoppedAt, startSource, paused } from the
+    // recorder: when the recording began (ms), when OBS began and finished
+    // stopping it, how the start was found, and whether it was ever paused.
     // Resolves synchronously to { result, ... }; result is 'added', 'duplicate',
     // 'unplayable', 'outside', 'missing', 'unfinished', 'unreadable' or 'error'.
     function importFile(file, hint = {}) {
@@ -125,7 +151,9 @@ function createPickup({ videosDir, recordingsDir, collection = 'live', now = Dat
         }
         if (!duration) return { result: 'unfinished', name, message: `"${name}" is not finished yet.` };
 
-        const startAt = hint.startedAt || mtimeMs - duration * 1000;
+        const base = hint.startedAt || mtimeMs - duration * 1000;
+        const startAt = base - offsetS * 1000;
+        if (hint.startedAt) logTiming(name, hint, duration, fragmented, startAt, offsetS, log);
         const info = recordings.cleanPartInfo({ name, startAt, duration });
         if (info.error) return { result: 'error', name, message: info.error };
         let part;

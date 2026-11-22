@@ -34,5 +34,19 @@
         };
     }
 
-    return { describe };
+    // The Config page's Video offset row (VIDEO_OFFSET_S on the server): { show,
+    // tone, text }. Shown with the OBS row; 'bad' when the value was refused.
+    function describeOffset(status) {
+        if (!status || !status.enabled || status.state === 'off') return { show: false, tone: '', text: '' };
+        if (status.videoOffsetError) return { show: true, tone: 'bad', text: status.videoOffsetError };
+        const seconds = Number(status.videoOffsetS) || 0;
+        if (!seconds) return { show: true, tone: 'ok', text: 'None' };
+        const size = `${Math.abs(seconds)} s`;
+        return {
+            show: true, tone: 'ok',
+            text: `${seconds > 0 ? '+' : '-'}${size}: new recordings start ${size} ${seconds > 0 ? 'earlier' : 'later'} against the notes`
+        };
+    }
+
+    return { describe, describeOffset };
 }));

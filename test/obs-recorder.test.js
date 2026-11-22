@@ -188,3 +188,77 @@ test('a listener or finished-handler that throws does not break the recorder', a
     fake.setRecording(false, '/videos/x.mp4');
     await until(() => recorder.status().state === 'idle', 'idle');
 });
+
+// The start time of a recording: OBS says STARTED after the first frame, so the
+// recorder asks how long it has been recording and counts back from there.
+test('the start counts back from how long OBS says it had been recording', async (t) => {
+    const { fake, recorder, finished, logs } = await setup(t);
+    await recorder.connect();
+    fake.leadMs = 3000;
+    const before = Date.now();
+    await recorder.startRecording();
+    await until(() => recorder.status().state === 'recording', 'recording');
+    fake.recordTo = '/videos/2026-11-22 19-30-00.mp4';
+    await recorder.stopRecording();
+    await until(() => finished.length === 1, 'the finished recording');
+    const { startedAt, startSource, stoppedAt, stoppingAt } = finished[0];
+    assert.strictEqual(startSource, 'obs');
+    // About three seconds before STARTED was heard, never later than it.
+    assert.ok(startedAt <= before + 50 - 3000 + 400, `start ${startedAt - before}`);
+    assert.ok(startedAt >= before - 3000 - 50, `start ${startedAt - before}`);
+    assert.ok(stoppingAt && stoppingAt <= stoppedAt);
+    assert.ok(logs.some((l) => /had been recording 3\d{3} ms when it said so/.test(l)), logs.join('\n'));
+});
+
+test('with no recorded length to count back from the start is when STARTED arrived', async (t) => {
+    const { fake, recorder, finished, logs } = await setup(t);
+    await recorder.connect();
+    fake.leadMs = 3000;
+    fake.statusError = true;
+    const before = Date.now();
+    await recorder.startRecording();
+    await until(() => recorder.status().state === 'recording', 'recording');
+    await until(() => logs.some((l) => /could not ask how long/.test(l)), 'the fallback line');
+    fake.recordTo = '/videos/2026-11-22 19-30-00.mp4';
+    await recorder.stopRecording();
+    await until(() => finished.length === 1, 'the finished recording');
+    assert.strictEqual(finished[0].startSource, 'event');
+    assert.ok(finished[0].startedAt >= before && finished[0].startedAt <= before + 1000);
+});
+
+test('an answer that is not believable leaves the start where STARTED put it', async (t) => {
+    const { fake, recorder, finished, logs } = await setup(t);
+    await recorder.connect();
+    fake.leadMs = 10 * 60 * 1000;
+    await recorder.startRecording();
+    await until(() => logs.some((l) => /not believable/.test(l)), 'the refusal line');
+    fake.recordTo = '/videos/a.mp4';
+    await recorder.stopRecording();
+    await until(() => finished.length === 1, 'the finished recording');
+    assert.strictEqual(finished[0].startSource, 'event');
+});
+
+test('a recording that is over before OBS answers is still reported, with the time STARTED arrived', async (t) => {
+    const { fake, recorder, finished, logs } = await setup(t);
+    await recorder.connect();
+    fake.leadMs = 2000;
+    fake.setRecording(true);
+    fake.setRecording(false, '/videos/quick.mp4');
+    await until(() => finished.length === 1, 'the finished recording');
+    // OBS no longer reports the output active, so there is no length to count back from.
+    assert.strictEqual(finished[0].startSource, 'event');
+    assert.ok(logs.some((l) => /could not read how long/.test(l)), logs.join('\n'));
+});
+
+test('a recording already running when the recorder connects counts back from its length', async (t) => {
+    const { fake, recorder, finished } = await setup(t);
+    fake.setRecording(true);
+    fake.startedAt = Date.now() - 60000;
+    await recorder.connect();
+    const before = Date.now();
+    fake.recordTo = '/videos/running.mp4';
+    fake.setRecording(false);
+    await until(() => finished.length === 1, 'the finished recording');
+    assert.strictEqual(finished[0].startSource, 'connect');
+    assert.ok(Math.abs(finished[0].startedAt - (before - 60000)) < 1500);
+});

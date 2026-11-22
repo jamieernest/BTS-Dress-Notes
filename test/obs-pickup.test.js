@@ -85,6 +85,60 @@ test('the start time is when OBS says the recording began, when it says', (t) =>
     assert.strictEqual(Date.parse(recordings.listParts(recordingsDir, 'live')[0].startAt), began);
 });
 
+test('a video offset moves the start earlier (positive) or later (negative) and 0 changes nothing', (t) => {
+    const began = NOW - 3600000;
+    const startOf = (offsetS) => {
+        const { videos, recordingsDir, pickup, write } = setup(t, { offsetS });
+        assert.strictEqual(pickup.importFile(write(videos, '2026-11-22 19-00-00.mp4', makeMp4({ durationS: 100 })), { startedAt: began }).result, 'added');
+        return Date.parse(recordings.listParts(recordingsDir, 'live')[0].startAt);
+    };
+    assert.strictEqual(startOf(0), began);
+    assert.strictEqual(startOf(undefined), began);
+    assert.strictEqual(startOf(2.5), began - 2500);
+    assert.strictEqual(startOf(-1.25), began + 1250);
+});
+
+test('the offset also applies to a recording the folder scan finds', (t) => {
+    const { videos, recordingsDir, pickup, write } = setup(t, { offsetS: 3 });
+    pickup.importFile(write(videos, '2026-11-22 19-00-00.mp4', makeMp4({ durationS: 100 }), 120));
+    // Without a start from OBS: the file's last write less its length, then the offset.
+    assert.strictEqual(Date.parse(recordings.listParts(recordingsDir, 'live')[0].startAt), NOW - 120000 - 100000 - 3000);
+});
+
+test('the offset only applies to recordings added after it, not to ones already stored', (t) => {
+    const { videos, recordingsDir, write } = setup(t);
+    const began = NOW - 3600000;
+    const first = createPickup({ videosDir: videos, recordingsDir, now: () => NOW, offsetS: 0 });
+    first.importFile(write(videos, '2026-11-22 18-00-00.mp4', makeMp4({ durationS: 10 })), { startedAt: began });
+    const second = createPickup({ videosDir: videos, recordingsDir, now: () => NOW, offsetS: 5 });
+    second.importFile(write(videos, '2026-11-22 19-00-00.mp4', makeMp4({ durationS: 10 })), { startedAt: began });
+    const starts = recordings.listParts(recordingsDir, 'live').map((p) => Date.parse(p.startAt)).sort();
+    assert.deepStrictEqual(starts, [began - 5000, began]);
+});
+
+test('the log says how the recorded start compares with the file and the offset', (t) => {
+    const logs = [];
+    const { videos, pickup, write } = setup(t, { offsetS: 1.5, log: (line) => logs.push(line) });
+    // Ran 97 s by the clock but the file holds 100 s: the start was found 3 s late.
+    pickup.importFile(write(videos, '2026-11-22 19-00-00.mp4', makeMp4({ durationS: 100 })), {
+        startedAt: NOW - 97000, stoppingAt: NOW, stoppedAt: NOW + 800, startSource: 'event'
+    });
+    assert.strictEqual(logs.length, 1);
+    assert.match(logs[0], /start found from event/);
+    assert.match(logs[0], /recorded for 97\.00 s by the clock, the file is 100\.00 s: start is 3\.00 s later/);
+    assert.match(logs[0], /video offset \+1\.5 s applied/);
+});
+
+test('a paused or fragmented recording is not compared with the clock', (t) => {
+    const logs = [];
+    const { videos, pickup, write } = setup(t, { log: (line) => logs.push(line) });
+    pickup.importFile(write(videos, '2026-11-22 19-00-00.mp4', makeMp4({ durationS: 50 })), { startedAt: NOW - 97000, stoppingAt: NOW, paused: true });
+    pickup.importFile(write(videos, '2026-11-22 19-10-00.mp4', makeMp4({ fragmented: true }), 60), { startedAt: NOW - 600000, stoppingAt: NOW - 60000 });
+    assert.match(logs[0], /was paused/);
+    assert.match(logs[1], /fragmented MP4/);
+    assert.ok(!logs.some((l) => /video offset/.test(l)));
+});
+
 test('a fragmented MP4 takes its length from when OBS began and the file was last written', (t) => {
     const { videos, recordingsDir, pickup, write } = setup(t);
     const file = write(videos, '2026-11-22 19-00-00.mp4', makeMp4({ fragmented: true }), 60);

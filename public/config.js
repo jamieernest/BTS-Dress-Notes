@@ -329,7 +329,11 @@ document.addEventListener('DOMContentLoaded', function() {
     // OBS recording (set up with OBS_WEBSOCKET_* on the server); the row is
     // hidden when it is not. The notice says why a recording was not added.
     const obsRow = byId('obsStatus');
+    const videoOffsetRow = byId('videoOffsetStatus');
     socket.on('obs-status', (status) => {
+        const offset = ObsStatus.describeOffset(status);
+        videoOffsetRow.hidden = !offset.show;
+        if (offset.show) setStatus(videoOffsetRow, offset.text, offset.tone === 'bad' ? 'bad' : 'ok');
         const view = ObsStatus.describe(status);
         obsRow.hidden = !view.show;
         if (!view.show) return;

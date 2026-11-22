@@ -33,6 +33,7 @@ const RECORDING_MAX_BYTES = Number(process.env.RECORDING_MAX_BYTES) || 32 * 1024
 const recordCommand = require('./record-command');
 const obsRecorder = require('./obs-recorder');
 const obsPickup = require('./obs-pickup');
+const videoOffsetConfig = require('./video-offset');
 const lumensCamera = require('./lumens-camera');
 const OBS_OSC_SECRET = process.env.OBS_OSC_SECRET || '';
 const VIDEOS_DIR = process.env.VIDEOS_DIR || obsPickup.defaultVideosDir();
@@ -760,11 +761,15 @@ function handleOscMessage(address, value, args = value === undefined ? [] : [val
 // None of it may stop scene labels, the Eos feed or anything else working.
 const obsConfig = obsRecorder.configFromEnv(process.env);
 const obsPickupStartedAt = Date.now();
-const videoPickup = obsPickup.createPickup({ videosDir: VIDEOS_DIR, recordingsDir: RECORDINGS_DIR });
+// VIDEO_OFFSET_S (video-offset.js) moves the start of each recording as it is added.
+const videoOffset = videoOffsetConfig.configFromEnv(process.env);
+if (videoOffset.error) console.log(`OBS: ${videoOffset.error}`);
+else if (videoOffset.seconds) console.log(`OBS: video offset ${videoOffset.seconds > 0 ? '+' : ''}${videoOffset.seconds} s applies to recordings added from now on`);
+const videoPickup = obsPickup.createPickup({ videosDir: VIDEOS_DIR, recordingsDir: RECORDINGS_DIR, offsetS: videoOffset.seconds });
 
 function obsClientStatus(status) {
     const { enabled, state, error, notice } = status;
-    return { enabled, state, error, notice };
+    return { enabled, state, error, notice, videoOffsetS: videoOffset.seconds, videoOffsetError: videoOffset.error };
 }
 
 const obs = obsRecorder.createRecorder({
@@ -827,8 +832,8 @@ function reportPickup(outcome) {
     obs.setNotice(outcome.message);
 }
 
-async function addObsRecording({ path: file, startedAt }) {
-    reportPickup(await videoPickup.importFinished(file, { startedAt }));
+async function addObsRecording({ path: file, ...timing }) {
+    reportPickup(await videoPickup.importFinished(file, timing));
 }
 
 // The earliest moment the live notes cover, in ms, or null when there are none.
