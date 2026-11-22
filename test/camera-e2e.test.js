@@ -31,7 +31,7 @@ async function setup(t, { secret = '', camera = 'up', env: extraEnv = {} } = {})
         OSC_PORT: String(await freePort()), VIDEOS_DIR: videos, OBS_RETRY_MS: '100', OBS_OSC_SECRET: secret,
         OBS_WEBSOCKET_URL: `ws://127.0.0.1:${obsPort}`, OBS_WEBSOCKET_PASSWORD: '',
         CAMERA_HOST: camera === 'off' ? '' : `127.0.0.1:${camPort}`, CAMERA_USERNAME: USER, CAMERA_PASSWORD: PASS,
-        CAMERA_TIMEOUT_MS: '600', CAMERA_SCENE_PRESET: '', CAMERA_RECALL_ON_SCENE: '', ...extraEnv
+        CAMERA_TIMEOUT_MS: '600', CAMERA_PRESET: '', CAMERA_RECALL_ON_SCENE: '', ...extraEnv
     };
     const app = createApp({ issuer: oidc.issuer, sessionsFile: path.join(dir, 'sessions.json'), port: await freePort(), env });
     await app.start();
@@ -83,6 +83,32 @@ test('a start cue with a preset recalls it first, then records; without one only
     assert.deepStrictEqual(cam.recalls, ['9']);
 });
 
+test('a plain start recalls the .env preset, and a number on the cue overrides it once', async (t) => {
+    const { obs, cam, send } = await setup(t, { env: { CAMERA_PRESET: '6' } });
+    await send('/bts/record/start');
+    await until(() => obs.active, 'recording');
+    assert.deepStrictEqual(cam.recalls, ['6']);
+    await send('/bts/record/start');
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.deepStrictEqual(cam.recalls, ['6'], 'not recalled while OBS is already recording');
+    await send('/bts/record/stop');
+    await until(() => !obs.active, 'stopped');
+    await send('/bts/record/start', 9);
+    await until(() => obs.active, 'recording again');
+    assert.deepStrictEqual(cam.recalls, ['6', '9']);
+    await send('/bts/record/stop');
+    await until(() => !obs.active, 'stopped again');
+    await send('/bts/record/start');
+    await until(() => obs.active, 'recording a third time');
+    assert.deepStrictEqual(cam.recalls, ['6', '9', '6']);
+});
+
+test('a plain start with the camera down still records with the .env preset configured', async (t) => {
+    const { app, obs } = await setup(t, { camera: 'down', env: { CAMERA_PRESET: '6' } }).then(async (x) => { await x.send('/bts/record/start'); return x; });
+    await until(() => obs.active, 'recording despite the camera', 3000);
+    assert.match(app.output(), /starting the recording anyway, preset 6/);
+});
+
 test('the secret is checked first, and a preset may follow it', async (t) => {
     const { app, obs, cam, send } = await setup(t, { secret: 'open-sesame' });
     await send('/bts/record/start', 4);
@@ -119,7 +145,7 @@ test('a preset that cannot be one is ignored with a log line, and recording stil
 });
 
 test('scene recall happens only on a real change, and only when switched on', async (t) => {
-    const on = await setup(t, { env: { CAMERA_SCENE_PRESET: '6', CAMERA_RECALL_ON_SCENE: 'on' } });
+    const on = await setup(t, { env: { CAMERA_PRESET: '6', CAMERA_RECALL_ON_SCENE: 'on' } });
     await on.send('/bts/scene', 'Act One');
     await until(() => on.cam.recalls.length === 1, 'first recall');
     await on.send('/bts/scene', 'Act One');
@@ -128,12 +154,13 @@ test('scene recall happens only on a real change, and only when switched on', as
     await new Promise((resolve) => setTimeout(resolve, 300));
     assert.deepStrictEqual(on.cam.recalls, ['6', '6']);
     assert.deepStrictEqual(on.seen.acts.slice(-2), ['Act One', 'Act Two']);
-    // A record cue is not a scene.
+    // A record cue is not a scene: it recalls once, for the start itself.
     await on.send('/bts/record/start');
     await until(() => on.obs.active, 'recording');
-    assert.strictEqual(on.cam.recalls.length, 2);
+    assert.deepStrictEqual(on.cam.recalls, ['6', '6', '6']);
+    assert.deepStrictEqual(on.seen.acts.slice(-2), ['Act One', 'Act Two']);
 
-    const off = await setup(t, { env: { CAMERA_SCENE_PRESET: '6' } });
+    const off = await setup(t, { env: { CAMERA_PRESET: '6' } });
     await off.send('/bts/scene', 'Act One');
     await until(() => off.seen.acts.includes('Act One'), 'scene');
     await new Promise((resolve) => setTimeout(resolve, 300));
@@ -141,7 +168,7 @@ test('scene recall happens only on a real change, and only when switched on', as
 });
 
 test('a dead camera never delays or breaks a scene update', async (t) => {
-    const { seen, send } = await setup(t, { camera: 'down', env: { CAMERA_SCENE_PRESET: '6', CAMERA_RECALL_ON_SCENE: 'on' } });
+    const { seen, send } = await setup(t, { camera: 'down', env: { CAMERA_PRESET: '6', CAMERA_RECALL_ON_SCENE: 'on' } });
     await send('/bts/scene', 'Act One');
     await until(() => seen.acts.includes('Act One'), 'scene label');
     await send('/bts/scene', 'Act Two');

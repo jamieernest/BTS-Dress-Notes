@@ -104,7 +104,7 @@ QLab can start and stop an OBS Studio recording with the same kind of OSC cue th
 
 - `/bts/record/start` starts recording, `/bts/record/stop` stops it. No value is needed.
 - With `OBS_OSC_SECRET` set, put the secret after the address: `/bts/record/start my-secret`.
-- To move the camera first, add a preset number to the start cue: `/bts/record/start 9`, or with a secret `/bts/record/start my-secret 9`. See **Camera preset** below. The secret is checked first and used up first, so a numeric secret is never taken for a preset.
+- With `CAMERA_PRESET` set, a plain `/bts/record/start` (or `/bts/record/start my-secret`) first moves the camera to that preset. To use a different preset for one start, add its number to the cue: `/bts/record/start 9`, or with a secret `/bts/record/start my-secret 9`. See **Camera preset** below. The secret is checked first and used up first, so a numeric secret is never taken for a preset.
 
 Starting while OBS is already recording, or stopping while it is not, does nothing. Any other address under `/bts/record` is ignored; these addresses are never used as scene labels.
 
@@ -119,11 +119,11 @@ The app can recall a position preset on a Lumens VC-A61PN camera before OBS star
 | `CAMERA_HOST` | _(none)_ | The camera's address, e.g. `192.168.1.50`. Setting it switches the feature on |
 | `CAMERA_USERNAME` | _(none)_ | The camera web interface's user name |
 | `CAMERA_PASSWORD` | _(none)_ | Its password |
-| `CAMERA_SCENE_PRESET` | _(none)_ | A preset number (1 to 255, as people count them: the ninth is `9`) to recall on scene changes |
-| `CAMERA_RECALL_ON_SCENE` | off | `on` recalls `CAMERA_SCENE_PRESET` every time the scene label really changes (a repeated label does nothing). Needs the preset |
+| `CAMERA_PRESET` | _(none)_ | The fixed preset (1 to 255, as people count them: the ninth is `9`) a plain start cue recalls before recording, and scene changes recall when enabled. Replaces `CAMERA_SCENE_PRESET`, which is no longer read |
+| `CAMERA_RECALL_ON_SCENE` | off | `on` recalls `CAMERA_PRESET` every time the scene label really changes (a repeated label does nothing). Needs the preset |
 | `CAMERA_TIMEOUT_MS` | `2000` | The longest one recall, including a new login, may take |
 
-A start cue with a preset number recalls it, then starts OBS. A cue without one only records. If the recall fails or the camera is down, recording still starts and the server log says so; a preset on a cue is not recalled if OBS is already recording. Scene-change recalls never delay the scene update; changes that arrive while one is still running collapse into one more recall. The server logs in once and reuses the login, and logs in again once if the camera restarts or rejects it. The **Camera preset** row on the Config & Status page shows the last recall (recalled, or failed with a short reason, or not configured).
+A plain start cue recalls `CAMERA_PRESET`, then starts OBS; a start cue with a preset number recalls that one instead, for that start only. With no `CAMERA_PRESET` and no number, a start only records. If the recall fails or the camera is down, recording still starts and the server log says so; a preset is not recalled if OBS is already recording. Scene-change recalls never delay the scene update; changes that arrive while one is still running collapse into one more recall. The server logs in once and reuses the login, and logs in again once if the camera restarts or rejects it. The **Camera preset** row on the Config & Status page shows the last recall (recalled, or failed with a short reason, or not configured).
 
 **Recordings in playback.** When OBS stops recording, it says where it saved the file, and that file is added to the live notes' video (under Video in Settings, uploaded by "OBS") with the start time and length it was recorded at. A hard link is used where the disk allows, so a long recording is not copied; on another disk the part refers to the file where it is, and keeps working only while that file stays in `VIDEOS_DIR`. Removing it from the notes, or **Reset all notes and chat**, never deletes OBS's file, and saving the show links it into the saved show. A file is added once, even after it is removed.
 

@@ -38,11 +38,15 @@ test('the feature is off without CAMERA_HOST, and the scene recall needs a prese
     assert.strictEqual(on.host, '192.168.1.50');
     assert.strictEqual(on.onScene, false);
     // On needs both the switch and a valid preset; off is the default.
-    assert.strictEqual(configFromEnv({ CAMERA_HOST: 'cam', CAMERA_SCENE_PRESET: '4' }).onScene, false);
+    assert.strictEqual(configFromEnv({ CAMERA_HOST: 'cam', CAMERA_PRESET: '4' }).onScene, false);
     assert.strictEqual(configFromEnv({ CAMERA_HOST: 'cam', CAMERA_RECALL_ON_SCENE: 'on' }).onScene, false);
-    const scene = configFromEnv({ CAMERA_HOST: 'cam', CAMERA_SCENE_PRESET: '4', CAMERA_RECALL_ON_SCENE: 'true' });
-    assert.deepStrictEqual([scene.onScene, scene.scenePreset], [true, 4]);
-    assert.ok(configFromEnv({ CAMERA_HOST: 'cam', CAMERA_SCENE_PRESET: 'zero', CAMERA_RECALL_ON_SCENE: '1' }).error);
+    const scene = configFromEnv({ CAMERA_HOST: 'cam', CAMERA_PRESET: '4', CAMERA_RECALL_ON_SCENE: 'true' });
+    assert.deepStrictEqual([scene.onScene, scene.preset], [true, 4]);
+    // The old name is gone, with no alias.
+    assert.strictEqual(configFromEnv({ CAMERA_HOST: 'cam', CAMERA_SCENE_PRESET: '4' }).preset, null);
+    assert.strictEqual(configFromEnv({ CAMERA_HOST: 'cam', CAMERA_PRESET: '4' }).preset, 4);
+    assert.strictEqual(configFromEnv({ CAMERA_PRESET: '4' }).preset, null);
+    assert.ok(configFromEnv({ CAMERA_HOST: 'cam', CAMERA_PRESET: 'zero', CAMERA_RECALL_ON_SCENE: '1' }).error);
     assert.strictEqual(parseHost('bad host/path'), null);
     assert.strictEqual(configFromEnv({ CAMERA_HOST: 'bad host/path' }).enabled, false);
 });
@@ -127,7 +131,7 @@ test('the password never reaches the log or the status, and the login reply is l
 });
 
 test('recalls run one at a time, and rapid scene changes collapse into one more recall', async (t) => {
-    const { fake, camera } = await setup(t, { CAMERA_SCENE_PRESET: '7', CAMERA_RECALL_ON_SCENE: 'on' });
+    const { fake, camera } = await setup(t, { CAMERA_PRESET: '7', CAMERA_RECALL_ON_SCENE: 'on' });
     fake.delayMs = 150;
     for (let i = 0; i < 10; i++) camera.sceneChanged();
     await new Promise((resolve) => setTimeout(resolve, 1200));
@@ -137,12 +141,12 @@ test('recalls run one at a time, and rapid scene changes collapse into one more 
 });
 
 test('scene recall does nothing unless switched on, and never throws when the camera is down', async (t) => {
-    const off = await setup(t, { CAMERA_SCENE_PRESET: '7' });
+    const off = await setup(t, { CAMERA_PRESET: '7' });
     off.camera.sceneChanged();
     await new Promise((resolve) => setTimeout(resolve, 100));
     assert.strictEqual(off.fake.requests.length, 0);
 
-    const down = await setup(t, { listening: false, CAMERA_SCENE_PRESET: '7', CAMERA_RECALL_ON_SCENE: 'on' });
+    const down = await setup(t, { listening: false, CAMERA_PRESET: '7', CAMERA_RECALL_ON_SCENE: 'on' });
     down.camera.sceneChanged();
     await new Promise((resolve) => setTimeout(resolve, 300));
     assert.strictEqual(down.statuses.at(-1).state, 'failed');

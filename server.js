@@ -786,11 +786,13 @@ const camera = lumensCamera.createCamera({
 
 async function recallBeforeRecording(command) {
     if (command.invalidPreset) console.log('Camera: ignored the preset on the start cue: it is not a whole number from 1 to 255');
-    if (!command.preset) return;
-    if (!camera.enabled()) return console.log(`Camera: ignored preset ${command.preset} on the start cue: the camera is not set up`);
-    if (obs.recording()) return console.log(`Camera: not recalling preset ${command.preset}: OBS is already recording`);
-    const outcome = await camera.recall(command.preset);
-    if (!outcome.ok) console.log(`Camera: starting the recording anyway, preset ${command.preset} was not recalled`);
+    // A number on the cue overrides CAMERA_PRESET for this start only.
+    const preset = command.preset || cameraConfig.preset;
+    if (!preset) return;
+    if (!camera.enabled()) return command.preset ? console.log(`Camera: ignored preset ${preset} on the start cue: the camera is not set up`) : undefined;
+    if (obs.recording()) return console.log(`Camera: not recalling preset ${preset}: OBS is already recording`);
+    const outcome = await camera.recall(preset);
+    if (!outcome.ok) console.log(`Camera: starting the recording anyway, preset ${preset} was not recalled`);
 }
 
 function handleRecordCommand(address, args) {
@@ -2200,7 +2202,7 @@ initKeycloak().finally(() => {
         startNetworkTimecode();
         if (cameraConfig.error) console.log(`Camera: ${cameraConfig.error}`);
         if (cameraConfig.enabled) {
-            console.log(`Camera preset recall is on: ${cameraConfig.host}${cameraConfig.onScene ? `, preset ${cameraConfig.scenePreset} on every scene change` : ''}`);
+            console.log(`Camera preset recall is on: ${cameraConfig.host}${cameraConfig.onScene ? `, preset ${cameraConfig.preset} on every scene change` : ''}`);
         }
         if (obsConfig.enabled) {
             console.log(`OBS recording is on: ${obsConfig.url}, videos in ${VIDEOS_DIR}`);
