@@ -103,6 +103,9 @@
                     <span class="state-dot"></span><span class="row-label">Eos console</span><span class="row-value">-</span>
                     <button type="button" id="eosReconnectButton" class="btn outline">Reconnect</button>
                 </div>
+                <div class="row" id="obsStatus" data-state="" hidden>
+                    <span class="state-dot"></span><span class="row-label">OBS recording</span><span class="row-value">-</span>
+                </div>
                 <div class="row" id="oscStatus">
                     <span class="state-dot"></span><span class="row-label">Scene labels</span><span class="row-value">Typed in by hand</span>
                 </div>
@@ -212,6 +215,7 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="keepalive.js"></script>
+    <script src="obs-status.js"></script>
     <script src="timecode-format.js"></script>
     <script src="playback-timeline.js"></script>
     <script src="video-file.js"></script>

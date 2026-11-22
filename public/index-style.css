@@ -44,6 +44,31 @@
 
 .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 4px; }
 
+/* OBS recording state, for everyone; it follows OBS itself. */
+.obs-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 24px;
+    margin-right: 6px;
+    padding: 0 9px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font-size: 12px;
+    color: var(--text-2);
+    white-space: nowrap;
+}
+.obs-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--text-3); }
+.obs-indicator[data-tone="ok"] .obs-dot { background: var(--ok); }
+.obs-indicator[data-tone="live"] { color: var(--text); border-color: var(--danger); }
+.obs-indicator[data-tone="live"] .obs-dot { background: var(--danger); }
+.obs-indicator[data-tone="bad"] { color: var(--warn); border-color: var(--warn); }
+.obs-indicator[data-tone="bad"] .obs-dot { background: var(--warn); }
+@media (prefers-reduced-motion: no-preference) {
+    .obs-indicator[data-tone="live"] .obs-dot { animation: obs-pulse 1.6s ease-in-out infinite; }
+    @keyframes obs-pulse { 50% { opacity: 0.35; } }
+}
+
 .avatars {
     display: inline-flex;
     align-items: center;
@@ -632,6 +657,8 @@ button.chip:hover { color: var(--text); border-color: var(--text-3); }
     .live { gap: 12px; }
     .header-context { gap: 12px; }
     .avatars-count { display: none; }
+    .obs-indicator { padding: 0 7px; }
+    .obs-indicator[data-tone="ok"] #obsLabel { display: none; }
     .page { padding: 12px 12px 80px; }
     /* A draft must scroll away, even in a phone's short landscape viewport. */
     .composer { position: relative; top: auto !important; box-shadow: none; }

@@ -95,6 +95,7 @@ async function startOidc({ claims = {} } = {}) {
 // The app, started as `node server.js` the way it runs for real.
 function createApp({ issuer, sessionsFile, port, env = {} }) {
     let child = null;
+    let out = '';
     const backupsDir = path.join(path.dirname(sessionsFile), 'backups');
     const savedShowsDir = path.join(path.dirname(sessionsFile), 'saved-shows');
     const recordingsDir = path.join(path.dirname(sessionsFile), 'recordings');
@@ -116,6 +117,8 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
         savedShowsDir,
         recordingsDir,
         resetsDir,
+        // Everything the running server has printed.
+        output: () => out,
         // Kills the process without the shutdown backup, as a crash or power cut would.
         async kill() {
             await ended('SIGKILL');
@@ -132,7 +135,7 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
                 },
                 stdio: ['ignore', 'pipe', 'pipe']
             });
-            let out = '';
+            out = '';
             child.stdout.on('data', (d) => { out += d; });
             child.stderr.on('data', (d) => { out += d; });
             // A server that dies starting (a port taken meanwhile, say) fails here, with what it said.

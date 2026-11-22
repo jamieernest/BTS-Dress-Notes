@@ -27,6 +27,15 @@ const recordings = require('./recordings');
 const RECORDINGS_DIR = process.env.RECORDINGS_DIR || path.join(__dirname, 'recordings');
 // One uploaded part at most; a full dress from Vor is a few GB.
 const RECORDING_MAX_BYTES = Number(process.env.RECORDING_MAX_BYTES) || 32 * 1024 ** 3;
+// Recording in OBS from QLab's OSC cues (record-command.js, obs-recorder.js) and
+// picking up what OBS saves in the videos folder (obs-pickup.js). Off unless
+// OBS_WEBSOCKET_URL or OBS_WEBSOCKET_PASSWORD is set.
+const recordCommand = require('./record-command');
+const obsRecorder = require('./obs-recorder');
+const obsPickup = require('./obs-pickup');
+const OBS_OSC_SECRET = process.env.OBS_OSC_SECRET || '';
+const VIDEOS_DIR = process.env.VIDEOS_DIR || obsPickup.defaultVideosDir();
+const OBS_SCAN_MS = Number(process.env.OBS_SCAN_MS) || 30000;
 const { sanitizeAge, insertionIndex } = require('./public/note-order');
 const { toggleAgreement } = require('./note-agreements');
 const { canEditNote } = require('./public/note-author');
@@ -452,11 +461,11 @@ app.get('/recordings/:collection', (req, res) => {
 });
 
 app.get('/recordings/:collection/:id', (req, res) => {
-    const file = isCollection(req.params.collection) && recordings.partFile(RECORDINGS_DIR, req.params.collection, req.params.id);
+    const file = isCollection(req.params.collection) && recordings.partFile(RECORDINGS_DIR, req.params.collection, req.params.id, { externalRoot: VIDEOS_DIR });
     if (!file) return res.status(404).json({ error: 'not found' });
     // A part's file never changes under its id. sendFile answers Range requests.
     res.type(file.type);
-    res.sendFile(file.path, { headers: { 'Cache-Control': 'private, max-age=31536000, immutable' } }, (error) => {
+    res.sendFile(file.path, { dotfiles: 'allow', headers: { 'Cache-Control': 'private, max-age=31536000, immutable' } }, (error) => {
         if (error && !res.headersSent) res.status(404).json({ error: 'not found' });
     });
 });
@@ -696,7 +705,12 @@ if (settings.midiInput !== undefined && (settings.midiInput === null || startupM
 // Messages we're interested in:
 // /eos/out/active/cue/text,1/199 B/O 1.0 2%
 // /eos/out/pending/cue/text,1/201 Start 1.0
-function handleOscMessage(address, value) {
+function handleOscMessage(address, value, args = value === undefined ? [] : [value]) {
+    // Recording cues share the /bts/ prefix with scene labels, so they are taken first.
+    if (recordCommand.isRecordAddress(address)) {
+        handleRecordCommand(address, args);
+        return;
+    }
     if (address === '/eos/out/active/cue/text' && value) {
         // Extract cue name from value like "1/199 B/O 1.0 2%"
         const cueName = extractCueLabel(value);
@@ -734,6 +748,83 @@ function handleOscMessage(address, value) {
             console.log(`Updated current act to: ${act}`);
             io.emit('act-update', act);
         }
+    }
+}
+
+// OBS recording. QLab's `/bts/record/start` and `/bts/record/stop` (record-command.js)
+// start and stop OBS (obs-recorder.js); the recorder follows OBS's own state, and
+// what OBS saves in VIDEOS_DIR is added to the live notes' recording (obs-pickup.js).
+// None of it may stop scene labels, the Eos feed or anything else working.
+const obsConfig = obsRecorder.configFromEnv(process.env);
+const obsPickupStartedAt = Date.now();
+const videoPickup = obsPickup.createPickup({ videosDir: VIDEOS_DIR, recordingsDir: RECORDINGS_DIR });
+
+function obsClientStatus(status) {
+    const { enabled, state, error, notice } = status;
+    return { enabled, state, error, notice };
+}
+
+const obs = obsRecorder.createRecorder({
+    url: obsConfig.url, password: obsConfig.password, enabled: obsConfig.enabled, configError: obsConfig.error,
+    retryMs: Number(process.env.OBS_RETRY_MS) || undefined,
+    onStatus: (status) => io.emit('obs-status', obsClientStatus(status)),
+    onFinished: (finished) => addObsRecording(finished),
+    onConnected: () => scanVideosFolder()
+});
+
+function handleRecordCommand(address, args) {
+    try {
+        const command = recordCommand.parseRecordCommand(address, args, OBS_OSC_SECRET);
+        if (command.ignored === 'unknown') return console.log(`OBS: ignored OSC ${address}: not a recording command`);
+        if (command.ignored === 'secret') return console.log(`OBS: ignored OSC ${address}: the secret is missing or wrong`);
+        if (!obsConfig.enabled) return console.log(`OBS: ignored OSC ${address}: OBS recording is not set up`);
+        console.log(`OBS: OSC ${address} received`);
+        const verb = command.action === 'start' ? 'start' : 'stop';
+        const run = command.action === 'start' ? obs.startRecording() : obs.stopRecording();
+        run.then((outcome) => {
+            if (!outcome.ok) console.log(`OBS: could not ${verb} recording: ${outcome.error}`);
+            else if (outcome.result === 'noop') console.log(`OBS: ${verb === 'start' ? 'already recording' : 'not recording'}, nothing to do`);
+            else console.log(`OBS: asked to ${verb} recording`);
+        }).catch((error) => console.log(`OBS: could not ${verb} recording:`, error.message));
+    } catch (error) {
+        console.log(`OBS: could not handle OSC ${address}:`, error.message);
+    }
+}
+
+// Says what became of a recording found in the videos folder.
+function reportPickup(outcome) {
+    if (outcome.result === 'duplicate') return;
+    if (outcome.result === 'added') {
+        console.log(`OBS: added recording "${outcome.name}" to the live notes`);
+        obs.setNotice(null);
+        recordingsChanged('live');
+        return;
+    }
+    console.log(`OBS: ${outcome.message}`);
+    obs.setNotice(outcome.message);
+}
+
+async function addObsRecording({ path: file, startedAt }) {
+    reportPickup(await videoPickup.importFinished(file, { startedAt }));
+}
+
+// The earliest moment the live notes cover, in ms, or null when there are none.
+function liveNotesStart() {
+    const times = globalState.notes.map(n => Date.parse(n.startedAt || n.timestamp))
+        .concat(globalState.showLog.map(e => Date.parse(e.at))).filter(Number.isFinite);
+    return times.length ? Math.min(...times) : null;
+}
+
+// Recordings OBS finished while this server was down or not connected: only
+// files finished since the live notes began (or since this server started when
+// there are none), and never while OBS is recording.
+function scanVideosFolder() {
+    if (!obsConfig.enabled || obs.recording()) return;
+    try {
+        const start = liveNotesStart();
+        videoPickup.scan({ since: start === null ? obsPickupStartedAt : start - 10 * 60 * 1000 }).forEach(reportPickup);
+    } catch (error) {
+        console.log('OBS: could not check the videos folder:', error.message);
     }
 }
 
@@ -822,7 +913,7 @@ try {
     });
 
     oscServer.on('message', function (msg) {
-        handleOscMessage(msg[0], msg[1]);
+        handleOscMessage(msg[0], msg[1], msg.slice(1));
     });
 
     oscServer.on('error', (err) => {
@@ -1363,6 +1454,7 @@ io.on('connection', (socket) => {
     socket.emit('system-status', systemStatus());
     socket.emit('network-timecode-status', networkStatus);
     socket.emit('eos-status', eosStatus);
+    socket.emit('obs-status', obsClientStatus(obs.status()));
     socket.emit('eos-config', eosConfig());
     socket.emit('settings-options', settingsOptions());
 
@@ -1863,7 +1955,7 @@ io.on('connection', (socket) => {
             return respond({ error: "The notes couldn't be saved. Nothing was reset." });
         }
         // The live videos go with it; the reset (which removes them) waits for that.
-        recordings.copyCollection(RECORDINGS_DIR, 'live', show.id).then((parts) => {
+        recordings.copyCollection(RECORDINGS_DIR, 'live', show.id, { externalRoot: VIDEOS_DIR }).then((parts) => {
             if (parts) recordingsChanged(show.id);
             // Notes can arrive while the videos copy; write the show again (same
             // id) straight before the reset so none of them are lost. If another
@@ -2082,6 +2174,11 @@ initKeycloak().finally(() => {
 
         connectToEOS();
         startNetworkTimecode();
+        if (obsConfig.enabled) {
+            console.log(`OBS recording is on: ${obsConfig.url}, videos in ${VIDEOS_DIR}`);
+            obs.connect().catch(() => {});
+            setInterval(scanVideosFolder, OBS_SCAN_MS).unref();
+        }
     });
 });
 
