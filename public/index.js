@@ -217,8 +217,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateFilterTags() {
+        const before = JSON.stringify(filters.tag);
+        const valid = NoteView.reconcileTagFilter(filters.tag, availableTags);
+        filters.tag = valid.length ? valid : 'all';
+        const changed = before !== JSON.stringify(filters.tag);
         tagDropdown.render(NoteView.tagOptions(availableTags), filters.tag, filters.tagMode);
         tagFilter.hidden = availableTags.length === 0;
+        return changed;
     }
 
     // --- Filtering ---
@@ -1353,6 +1358,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // A page kept in the back/forward cache (e.g. after visiting the recall
     // page) must not keep its socket, or the server would count it as open.
     window.addEventListener('pagehide', (e) => {
+        // Leaving does not undo a delete. Flush it before a bfcache disconnect
+        // can discard the final Socket.IO packet.
+        for (const key of [...pendingDeletes.keys()]) finishDelete(key);
         if (!loggingOut) {
             saveDraft();
             saveNotesSnapshot();
@@ -1457,8 +1465,9 @@ document.addEventListener('DOMContentLoaded', function() {
         saveTagsToStorage();
         if (selectedTags.length) updateTagsDisplay();
         else applyRememberedTags();
-        updateFilterTags();
+        const filterChanged = updateFilterTags();
         rebuildFullNotesList();
+        if (filterChanged) filterNotes();
     });
 
     window.socket.on('system-status', (data) => {
@@ -2043,11 +2052,6 @@ document.addEventListener('DOMContentLoaded', function() {
             unhide();
         });
     }
-
-    // Leaving the page doesn't undo a delete.
-    window.addEventListener('pagehide', () => {
-        for (const key of [...pendingDeletes.keys()]) finishDelete(key);
-    });
 
     function deleteNote(note) {
         const showNote = (hidden) => {

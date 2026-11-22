@@ -159,6 +159,8 @@ test('search and filters match the same way on both notes pages', () => {
     assert.strictEqual(NoteView.filtersActive(all), false);
     assert.strictEqual(NoteView.filtersActive({ ...all, search: 'x' }), true);
     assert.deepStrictEqual(NoteView.tagOptions([{ id: 'lx', name: 'Lighting', color: '#fff' }])[0], { value: 'all', label: 'All tags', color: '' });
+    assert.deepStrictEqual(NoteView.reconcileTagFilter(['lx', 'gone'], [{ id: 'lx', name: 'Lighting', color: '#fff' }]), ['lx']);
+    assert.deepStrictEqual(NoteView.reconcileTagFilter(['gone'], [{ id: 'lx', name: 'Lighting', color: '#fff' }]), []);
 });
 
 test('author filtering uses exact stable accounts, composed with every other filter', () => {

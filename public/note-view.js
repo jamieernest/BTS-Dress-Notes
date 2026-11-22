@@ -597,6 +597,13 @@
         return value && value !== 'all' ? [value] : [];
     }
 
+    function reconcileTagFilter(value, tags) {
+        const available = new Set((Array.isArray(tags) ? tags : [])
+            .filter(tag => tag && typeof tag.id === 'string')
+            .map(tag => tag.id));
+        return tagFilterValues(value).filter(id => available.has(id));
+    }
+
     // --- Popovers ---
     function mobilePopoverViewport() {
         if (!window.matchMedia('(max-width: 860px), (pointer: coarse)').matches) return null;
@@ -748,7 +755,8 @@
 
         function render(nextOptions, value, nextMode) {
             options = nextOptions;
-            selected = tagFilterValues(value);
+            const available = new Set(options.filter(o => o.value !== 'all').map(o => o.value));
+            selected = tagFilterValues(value).filter(id => available.has(id));
             if (nextMode === 'any' || nextMode === 'all') tagMode = nextMode;
             if (selected.length) {
                 const names = selected.map(id => options.find(o => o.value === id)?.label || id);
@@ -826,7 +834,7 @@
         unknownTag, tagChipHTML, tagChipsHTML, dotHTML,
         noteHeadHTML, noteHTML, commentHTML, groupHeadHTML, visitStartRow, groupNotes, groupStartTimes, sceneStartTimes, updateGroupTime,
         noteMatches, filtersActive, sceneOptions, MY_SCENES, tagOptions,
-        authorOptions, storedAuthorId, readFilters, writeFilters, watchNavigation, createAuthorSearch,
+        authorOptions, storedAuthorId, reconcileTagFilter, readFilters, writeFilters, watchNavigation, createAuthorSearch,
         placePopover, fitPopoverInViewport, watchPopoverResize, createDropdown, createMultiDropdown
     };
 }));
