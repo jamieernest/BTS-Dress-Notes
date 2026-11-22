@@ -80,6 +80,40 @@ Under **Video** in Settings, choose **Current notes** or a saved show, then **Ad
 Uploads are kept in `recordings/` (`RECORDINGS_DIR`), up to 32 GiB a file (`RECORDING_MAX_BYTES`, in bytes). The live notes' recording goes with them when the show is saved on `/config.html`, and is removed by **Reset all notes and chat** (the saved show keeps its copy). Anyone logged in can upload or remove a part. Leave room on the disk: a full-length HD recording is several gigabytes.
 
 
+## OBS recording from QLab
+
+QLab can start and stop an OBS Studio recording with the same kind of OSC cue that sends scene labels, and the recording is added to the live notes' video on its own. OBS must run on the same computer as the server (`npm start`); OBS 28 or newer, which has a built-in WebSocket server.
+
+**In OBS**
+
+1. Tools > WebSocket Server Settings: tick **Enable WebSocket server**, keep port `4455`, and tick **Enable Authentication** and set a password (or leave authentication off on a computer nobody else can reach).
+2. Settings > Output > Recording: set **Recording Path** to this computer's videos folder (`Movies` on macOS, `Videos` on Windows and Linux; OBS's default) and **Recording Format** to **MP4** (or Fragmented MP4). Leave **Filename Formatting** at its default (`%CCYY-%MM-%DD %hh-%mm-%ss`).
+
+   OBS's own default is **MKV**, which browsers cannot play. The app does not add an MKV: the Config & Status page and the server log say which file was skipped and why. Change the format and record again, or use File > Remux Recordings in OBS to make an MP4 of that file; the MP4 is picked up on the next check of the folder.
+
+**On the server** (environment variables, or `.env`; with neither of the first two set the feature is off and nothing changes)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `OBS_WEBSOCKET_URL` | `ws://127.0.0.1:4455` | OBS's WebSocket address. Setting this or the password switches the feature on |
+| `OBS_WEBSOCKET_PASSWORD` | _(none)_ | The password set in OBS, if any |
+| `OBS_OSC_SECRET` | _(none)_ | If set, a recording cue must carry it as an OSC argument, else it is ignored and logged. If unset, no secret is needed |
+| `VIDEOS_DIR` | `~/Movies` on macOS, `~/Videos` elsewhere | The folder OBS records to; see below |
+
+**QLab cues.** Add a Network cue with the same destination as the scene labels (this computer, port `8001` or `OSC_PORT`), message type **OSC Message**, and a custom message:
+
+- `/bts/record/start` starts recording, `/bts/record/stop` stops it. No value is needed.
+- With `OBS_OSC_SECRET` set, put the secret after the address: `/bts/record/start my-secret`.
+
+Starting while OBS is already recording, or stopping while it is not, does nothing. Any other address under `/bts/record` is ignored; these addresses are never used as scene labels.
+
+**Status.** The Config & Status page has an **OBS recording** row (not recording, recording, or an error such as OBS not reachable, or the password being wrong), and the notes page shows a small indicator to everyone. Both follow OBS itself, so they stay right when someone presses Record in OBS by hand. The server connects when it starts and reconnects by itself after OBS is restarted; OBS being off or the password wrong never stops scene labels, Eos or anything else, and each trigger and failure is written to the server log.
+
+**Recordings in playback.** When OBS stops recording, it says where it saved the file, and that file is added to the live notes' video (under Video in Settings, uploaded by "OBS") with the start time and length it was recorded at. A hard link is used where the disk allows, so a long recording is not copied; on another disk the part refers to the file where it is, and keeps working only while that file stays in `VIDEOS_DIR`. Removing it from the notes, or **Reset all notes and chat**, never deletes OBS's file, and saving the show links it into the saved show. A file is added once, even after it is removed.
+
+The server also checks `VIDEOS_DIR` when it connects to OBS and every 30 seconds (`OBS_SCAN_MS`) while OBS is not recording, to find recordings OBS finished while the server was down or not connected. That check is deliberately narrow, since the folder holds everything else you record: only files directly in the folder, named like OBS's default (`2026-11-22 19-30-00.mp4`), finished since the live notes began (10 minutes before their first note or scene, or since the server started if there are none). A recording saved under a custom name is added when OBS reports it stopping, not by this check. Nothing outside `VIDEOS_DIR` is ever read or served; a recording OBS saves elsewhere is reported and skipped (set `VIDEOS_DIR` to the folder OBS records to).
+
+
 Show tags can be added, renamed, recoloured and deleted in Settings; the new-tag colour starts on one no tag
 uses yet. For example, add Crew when the current show needs it. Tags used by current notes cannot be
 deleted. Reset and Save and reset restore the six tags in `default-tags.json`;

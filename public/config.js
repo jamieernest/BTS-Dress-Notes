@@ -326,6 +326,18 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     eosReconnectButton.addEventListener('click', () => socket.emit('eos-reconnect'));
 
+    // OBS recording (set up with OBS_WEBSOCKET_* on the server); the row is
+    // hidden when it is not. The notice says why a recording was not added.
+    const obsRow = byId('obsStatus');
+    socket.on('obs-status', (status) => {
+        const view = ObsStatus.describe(status);
+        obsRow.hidden = !view.show;
+        if (!view.show) return;
+        const notice = status.notice && status.notice.text;
+        setStatus(obsRow, notice ? `${view.text}. ${notice}` : view.text,
+            view.tone === 'ok' || view.tone === 'live' ? 'ok' : view.tone === 'bad' || notice ? 'bad' : '');
+    });
+
     // Eos console address: venue list and choice. The server validates; the
     // page only sends changes and redraws from `eos-config`.
     const eosSelect = byId('eosAddressSelect');

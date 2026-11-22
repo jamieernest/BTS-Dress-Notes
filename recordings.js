@@ -11,6 +11,12 @@
 // only where links are not possible), so a reset afterwards, which removes
 // the live folder, leaves the show's copy alone. Collection and part ids are
 // checked against patterns before they are joined into a path.
+//
+// A recording OBS saved in the videos folder is added without copying it
+// (addLinkedPart): hard-linked into the collection when the disk allows, else
+// kept as a reference, a part with `file: null` and the video's real path in
+// `source`. A reference is only ever served from inside the folder the caller
+// names (`externalRoot`), checked again on every request (resolveInside).
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -54,6 +60,22 @@ function cleanStart(startAt) {
     return Number.isFinite(at.getTime()) && at.getFullYear() > 2000 && at.getFullYear() < 2200 ? at.toISOString() : undefined;
 }
 
+// The real path of `candidate` when it is a regular file inside `root`, else
+// null. Both are resolved first, so a link that leads out of `root` (or a `..`)
+// fails, and a link as the file itself is refused outright.
+function resolveInside(root, candidate) {
+    try {
+        const realRoot = fs.realpathSync.native(root);
+        const real = fs.realpathSync.native(candidate);
+        const relative = path.relative(realRoot, real);
+        if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) return null;
+        if (fs.lstatSync(candidate).isSymbolicLink() || !fs.statSync(real).isFile()) return null;
+        return real;
+    } catch (error) {
+        return null;
+    }
+}
+
 function folder(dir, collection) {
     return path.join(dir, collection);
 }
@@ -79,11 +101,15 @@ function listParts(dir, collection) {
         .sort((a, b) => at(a) - at(b) || (a.uploadedAt < b.uploadedAt ? -1 : 1));
 }
 
-// The file to send for a part, or null.
-function partFile(dir, collection, id) {
+// The file to send for a part, or null. A referenced part is found only while
+// its file is still inside `externalRoot`.
+function partFile(dir, collection, id, { externalRoot } = {}) {
     if (!PART_ID.test(String(id))) return null;
     const part = readManifest(dir, collection).find(p => p.id === id);
-    return part ? { path: path.join(folder(dir, collection), part.file), type: part.type } : null;
+    if (!part) return null;
+    if (part.file) return { path: path.join(folder(dir, collection), part.file), type: part.type };
+    const real = externalRoot && typeof part.source === 'string' ? resolveInside(externalRoot, part.source) : null;
+    return real ? { path: real, type: part.type } : null;
 }
 
 // Streams `body` (the request) into a new part. Rejects with an error whose
@@ -123,6 +149,31 @@ async function addPart(dir, collection, body, info, { maxBytes, uploadedBy } = {
     return part;
 }
 
+const LINK_UNSUPPORTED = new Set(['EXDEV', 'EPERM', 'EACCES', 'ENOTSUP', 'EOPNOTSUPP', 'EMLINK', 'ENOSYS']);
+
+// Adds the video at `source` (a real path the caller has already checked is
+// inside the folder it trusts) without copying it: a hard link when the disk
+// allows, else a reference to where it is. `info` is cleanPartInfo()'s result
+// with the file's `size`.
+function addLinkedPart(dir, collection, source, info, { uploadedBy } = {}) {
+    const id = partId();
+    const file = `${id}.${info.ext}`;
+    fs.mkdirSync(folder(dir, collection), { recursive: true });
+    let linked = false;
+    try {
+        fs.linkSync(source, path.join(folder(dir, collection), file));
+        linked = true;
+    } catch (error) {
+        if (!LINK_UNSUPPORTED.has(error.code)) throw error;
+    }
+    const part = {
+        id, file: linked ? file : null, source, name: info.name, type: info.type, size: info.size,
+        startAt: info.startAt, duration: info.duration, uploadedAt: new Date().toISOString(), uploadedBy: uploadedBy || null
+    };
+    writeManifest(dir, collection, [...readManifest(dir, collection), part]);
+    return part;
+}
+
 // Changes a part's start time (matched by hand on playback.html). Returns the
 // part, null if there is no such part, or undefined if startAt is not a time.
 function setPartStart(dir, collection, id, startAt) {
@@ -141,29 +192,50 @@ function removePart(dir, collection, id) {
     const part = parts.find(p => p.id === id);
     if (!part) return false;
     writeManifest(dir, collection, parts.filter(p => p !== part));
-    fs.rmSync(path.join(folder(dir, collection), part.file), { force: true });
+    // Only the collection's own file (an upload or a link); a reference's video is never touched.
+    if (part.file) fs.rmSync(path.join(folder(dir, collection), part.file), { force: true });
     return true;
 }
 
 // Every part of `from` into `to` (a new saved show), hard-linked where the
-// disk allows it. Resolves to the number of parts.
-async function copyCollection(dir, from, to) {
+// disk allows it. A referenced part is linked from where its video is (inside
+// `externalRoot`), or stays a reference when that cannot be done. Resolves to
+// the number of parts.
+async function copyCollection(dir, from, to, { externalRoot } = {}) {
     const parts = readManifest(dir, from);
     if (!parts.length) return 0;
     fs.mkdirSync(folder(dir, to), { recursive: true });
+    const copied = [];
     for (const part of parts) {
+        if (!part.file) {
+            const real = externalRoot && typeof part.source === 'string' ? resolveInside(externalRoot, part.source) : null;
+            const file = real && `${part.id}${path.extname(part.name || '').toLowerCase()}`;
+            try {
+                if (!real) throw Object.assign(new Error('not available'), { code: 'EXDEV' });
+                await fs.promises.link(real, path.join(folder(dir, to), file));
+                copied.push({ ...part, file });
+            } catch (error) {
+                if (error.code === 'EEXIST') copied.push({ ...part, file });
+                else copied.push(part);
+            }
+            continue;
+        }
         const source = path.join(folder(dir, from), part.file);
         const target = path.join(folder(dir, to), part.file);
         try {
             await fs.promises.link(source, target);
         } catch (error) {
-            if (error.code === 'EEXIST') continue;
+            if (error.code === 'EEXIST') {
+                copied.push(part);
+                continue;
+            }
             await fs.promises.copyFile(source, target);
         }
+        copied.push(part);
     }
     const kept = readManifest(dir, to);
     const have = new Set(kept.map(p => p.id));
-    writeManifest(dir, to, [...kept, ...parts.filter(p => !have.has(p.id))]);
+    writeManifest(dir, to, [...kept, ...copied.filter(p => !have.has(p.id))]);
     return parts.length;
 }
 
@@ -184,6 +256,6 @@ function partCounts(dir) {
 }
 
 module.exports = {
-    PART_ID, cleanPartInfo, listParts, partFile, addPart, setPartStart, removePart,
+    PART_ID, TYPES, cleanPartInfo, listParts, partFile, addPart, addLinkedPart, resolveInside, setPartStart, removePart,
     copyCollection, removeCollection, partCounts
 };
