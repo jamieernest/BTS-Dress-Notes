@@ -338,6 +338,14 @@ document.addEventListener('DOMContentLoaded', function() {
             view.tone === 'ok' || view.tone === 'live' ? 'ok' : view.tone === 'bad' || notice ? 'bad' : '');
     });
 
+    // The camera's last preset recall (CAMERA_* on the server). Never shows
+    // the camera's address or login.
+    const cameraRow = byId('cameraStatus');
+    socket.on('camera-status', (status) => {
+        const view = CameraStatus.describe(status, TimecodeFormat.formatClockMinute);
+        setStatus(cameraRow, view.text, view.tone);
+    });
+
     // Eos console address: venue list and choice. The server validates; the
     // page only sends changes and redraws from `eos-config`.
     const eosSelect = byId('eosAddressSelect');

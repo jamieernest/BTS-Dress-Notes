@@ -45,3 +45,24 @@ test('a numeric secret matches whether QLab sends a number or text', () => {
 test('an unknown address is ignored whatever the secret says', () => {
     assert.deepStrictEqual(parseRecordCommand('/bts/record/nope', ['s3cret'], 's3cret'), { ignored: 'unknown' });
 });
+
+test('a start cue may carry a camera preset, after the secret check', () => {
+    assert.deepStrictEqual(parseRecordCommand('/bts/record/start', [9], ''), { action: 'start', preset: 9 });
+    assert.deepStrictEqual(parseRecordCommand('/bts/record/start', ['12'], ''), { action: 'start', preset: 12 });
+    assert.deepStrictEqual(parseRecordCommand('/bts/record/start', [9.0], ''), { action: 'start', preset: 9 });
+    // With a secret: either order, the secret is used up first.
+    assert.deepStrictEqual(parseRecordCommand('/bts/record/start', ['s3cret', 9], 's3cret'), { action: 'start', preset: 9 });
+    assert.deepStrictEqual(parseRecordCommand('/bts/record/start', [9, 's3cret'], 's3cret'), { action: 'start', preset: 9 });
+    // A numeric secret is never a preset, and a preset is not a secret.
+    assert.deepStrictEqual(parseRecordCommand('/bts/record/start', [1234], '1234'), { action: 'start' });
+    assert.deepStrictEqual(parseRecordCommand('/bts/record/start', [1234, 9], '1234'), { action: 'start', preset: 9 });
+    assert.deepStrictEqual(parseRecordCommand('/bts/record/start', [9], '1234'), { ignored: 'secret' });
+    assert.deepStrictEqual(parseRecordCommand('/bts/record/start', ['wrong', 9], 's3cret'), { ignored: 'secret' });
+    // Not numbers, or numbers that cannot be presets.
+    assert.deepStrictEqual(parseRecordCommand('/bts/record/start', ['go'], ''), { action: 'start' });
+    for (const bad of [0, -1, 300, 2.5, '0']) {
+        assert.deepStrictEqual(parseRecordCommand('/bts/record/start', [bad], ''), { action: 'start', invalidPreset: true }, String(bad));
+    }
+    // A stop never carries one.
+    assert.deepStrictEqual(parseRecordCommand('/bts/record/stop', [9], ''), { action: 'stop' });
+});
