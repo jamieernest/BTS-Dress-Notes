@@ -14,6 +14,7 @@ const loopbackOverlay = require('./loopback-overlay');
 const { listIpv4Interfaces, resolveInterface } = require('./net-iface');
 const { createGatewayLock } = require('./gateway-lock');
 const { loadSettings, saveSettings } = require('./settings');
+const eosVenues = require('./eos-venues');
 const { FileSessionStore } = require('./session-store');
 const { authorsOf, applyAuthors, backupFilename, backupTime, checkBackup, findRestorableBackup, writeBackupFile } = require('./notes-backup');
 const savedShows = require('./saved-shows');
@@ -62,7 +63,7 @@ const io = socketIo(server, {
     allowRequest: (req, callback) => callback(null, sameOrigin(req))
 });
 
-const eosHost = process.env.EOS_HOST || '10.10.160.143';
+const defaultEosHost = process.env.EOS_HOST || '10.10.160.143';
 const eosPort = process.env.EOS_PORT || 3037;
 const oscPort = process.env.OSC_PORT || 8001;
 
@@ -81,11 +82,18 @@ const NETWORK_LOST_MS = 10000;
 
 // MIDI input and network interface chosen on the config page. Env vars
 // (GATEWAY_IFACE) are only the defaults until something is saved here.
-const SETTINGS_FILE = path.join(__dirname, 'local-settings.json');
+const SETTINGS_FILE = process.env.SETTINGS_FILE || path.join(__dirname, 'local-settings.json');
 const settings = loadSettings(SETTINGS_FILE);
 if (settings.networkInterface === undefined) {
     settings.networkInterface = process.env.GATEWAY_IFACE || 'auto';
 }
+
+// Eos venues and the chosen address; EOS_HOST is the default until one is chosen.
+settings.eosVenues = eosVenues.cleanVenues(settings.eosVenues);
+settings.eosChoice = eosVenues.cleanChoice(settings.eosChoice, settings.eosVenues);
+const currentEosHost = () => eosVenues.resolveHost(settings.eosChoice, settings.eosVenues, defaultEosHost);
+
+const eosConfig = () => ({ venues: settings.eosVenues, choice: settings.eosChoice, defaultHost: defaultEosHost, host: currentEosHost() });
 
 function persistSettings() {
     try {
@@ -736,7 +744,7 @@ const buffer = encode(connectMessage);
 // page's reconnect button; there is never more than one socket, and each one
 // gets its own stream decoder. No automatic retry.
 const EOS_CONNECT_TIMEOUT_MS = Number(process.env.EOS_CONNECT_TIMEOUT_MS) || 10000;
-const eosStatus = { state: 'disconnected', error: null, host: eosHost, port: Number(eosPort) };
+const eosStatus = { state: 'disconnected', error: null, host: currentEosHost(), port: Number(eosPort) };
 let eosSocket = null;
 
 function setEosStatus(state, error = null) {
@@ -745,9 +753,12 @@ function setEosStatus(state, error = null) {
     io.emit('eos-status', eosStatus);
 }
 
-function connectToEOS() {
-    // A press while an attempt is in progress does not stack another.
-    if (eosStatus.state === 'connecting') return;
+function connectToEOS({ force = false } = {}) {
+    // A press while an attempt is in progress does not stack another, unless
+    // the address has just changed (the old attempt is dropped below).
+    if (eosStatus.state === 'connecting' && !force) return;
+    const eosHost = currentEosHost();
+    eosStatus.host = eosHost;
 
     if (eosSocket) {
         const old = eosSocket;
@@ -1352,6 +1363,7 @@ io.on('connection', (socket) => {
     socket.emit('system-status', systemStatus());
     socket.emit('network-timecode-status', networkStatus);
     socket.emit('eos-status', eosStatus);
+    socket.emit('eos-config', eosConfig());
     socket.emit('settings-options', settingsOptions());
 
     // Only send user-related updates if this is NOT an overlay
@@ -1725,6 +1737,52 @@ io.on('connection', (socket) => {
     });
 
     // Reconnect to the Eos console from the config page; same rule as the other controls.
+    // Eos venues and address. Same rule as the other config page controls: any
+    // non-overlay user. Changing the address reconnects at once.
+    const eosFail = (ack, error) => { if (typeof ack === 'function') ack({ error }); };
+    const eosDone = (ack, extra = {}) => {
+        persistSettings();
+        io.emit('eos-config', eosConfig());
+        if (typeof ack === 'function') ack(extra);
+    };
+    const applyEosAddress = (before) => {
+        if (currentEosHost() !== before) {
+            console.log(`Eos address changed to ${currentEosHost()} by ${user.name}`);
+            connectToEOS({ force: true });
+        }
+    };
+
+    on('eos-venue-save', (data, ack) => {
+        if (user.isOverlay) return eosFail(ack, 'Not allowed.');
+        const result = eosVenues.saveVenue(settings.eosVenues, data);
+        if (result.error) return eosFail(ack, result.error);
+        const before = currentEosHost();
+        settings.eosVenues = result.venues;
+        eosDone(ack, { venue: result.venue });
+        applyEosAddress(before);
+    });
+
+    on('eos-venue-delete', (id, ack) => {
+        if (user.isOverlay) return eosFail(ack, 'Not allowed.');
+        if (!settings.eosVenues.some((v) => v.id === id)) return eosFail(ack, 'That venue no longer exists.');
+        if (settings.eosChoice?.venue === id) return eosFail(ack, 'That venue is in use. Choose another address first.');
+        settings.eosVenues = settings.eosVenues.filter((v) => v.id !== id);
+        eosDone(ack);
+    });
+
+    // choice: { venue: id }, { host: '1.2.3.4' }, or null for the EOS_HOST default.
+    on('eos-select', (choice, ack) => {
+        if (user.isOverlay) return eosFail(ack, 'Not allowed.');
+        const clean = choice === null ? null : eosVenues.cleanChoice(choice, settings.eosVenues);
+        if (choice !== null && !clean) {
+            return eosFail(ack, choice && choice.venue !== undefined ? 'That venue no longer exists.' : 'Enter an IPv4 address such as 10.10.160.143.');
+        }
+        const before = currentEosHost();
+        settings.eosChoice = clean;
+        eosDone(ack);
+        applyEosAddress(before);
+    });
+
     on('eos-reconnect', () => {
         if (user.isOverlay) return;
         console.log(`Eos TCP reconnect requested by ${user.name}`);

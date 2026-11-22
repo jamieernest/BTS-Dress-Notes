@@ -42,6 +42,8 @@ The Config & Status page also chooses the MIDI input and the network interface f
 
 The server connects to the Eos console over TCP (`EOS_HOST`, `EOS_PORT`) at start and does not retry on its own. If the console was off or the link dropped, press **Reconnect to Eos** on the Config & Status page; the connection state is shown next to the button.
 
+The **Eos console** section of the Config page keeps a list of venues (a name and an IPv4 address each) and chooses the address to use: a saved venue, a custom address, or the default (`EOS_HOST`, used until something is chosen). Changing the choice, or editing the address of the venue in use, reconnects at once without a restart. The venue list and choice are saved per install in `local-settings.json` (`eosVenues`, `eosChoice`; `SETTINGS_FILE` overrides the path) and use the same permissions as the other Config page controls. `EOS_PORT` is unchanged.
+
 ## Network timecode
 
 The gateway sends each MIDI message it receives (including QLab's MTC) as ACN (ANSI E1.17) multicast on UDP port 5568. The app joins that multicast group and listens; it doesn't take part in the Eos session. The Config & Status page shows which group it is listening on and which gateway it is receiving from, and the server log prints the group at startup and the gateway's IP and CID on the first packet. When no quarter-frame arrives for 250 ms the stream is treated as stopped.

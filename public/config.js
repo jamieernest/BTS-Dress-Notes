@@ -326,6 +326,95 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     eosReconnectButton.addEventListener('click', () => socket.emit('eos-reconnect'));
 
+    // Eos console address: venue list and choice. The server validates; the
+    // page only sends changes and redraws from `eos-config`.
+    const eosSelect = byId('eosAddressSelect');
+    const eosCustomForm = byId('eosCustomForm');
+    const eosCustomInput = byId('eosCustomInput');
+    const eosVenueRows = byId('eosVenueRows');
+    const eosResult = byId('eosResult');
+    const CUSTOM = '@custom';
+    const DEFAULT = '@default';
+    let eosConfig = null;
+    let eosCustomOpen = false;
+
+    function eosAction(event, data, done) {
+        socket.timeout(10000).emit(event, data, (err, reply) => {
+            const message = err || !reply ? 'Could not change the Eos address. Try again.' : reply.error;
+            eosResult.textContent = message || '';
+            eosResult.hidden = !message;
+            if (!message && done) done(reply);
+        });
+    }
+
+    function drawEosSelect() {
+        const { venues, choice, defaultHost } = eosConfig;
+        const options = [[DEFAULT, `Default - ${defaultHost}`], ...venues.map(v => [v.id, `${v.name} - ${v.host}`]), [CUSTOM, 'Custom address']];
+        const value = eosCustomOpen || choice?.host ? CUSTOM : choice?.venue || DEFAULT;
+        fillSelect(eosSelect, options, value);
+        eosCustomForm.hidden = value !== CUSTOM;
+        if (choice?.host && document.activeElement !== eosCustomInput) eosCustomInput.value = choice.host;
+    }
+
+    function createVenueRow(venue) {
+        const form = document.createElement('form');
+        form.className = 'row row-wrap';
+        const name = document.createElement('input');
+        name.type = 'text'; name.className = 'input'; name.maxLength = 60; name.required = true;
+        name.setAttribute('aria-label', 'Venue name'); name.value = venue.name;
+        const host = document.createElement('input');
+        host.type = 'text'; host.className = 'input'; host.maxLength = 15; host.required = true;
+        host.setAttribute('aria-label', 'Venue IP address'); host.value = venue.host;
+        const save = document.createElement('button');
+        save.type = 'submit'; save.className = 'btn outline'; save.textContent = 'Save';
+        const remove = document.createElement('button');
+        remove.type = 'button'; remove.className = 'btn danger-outline'; remove.textContent = 'Delete';
+        form.append(name, host, save, remove);
+        form.addEventListener('submit', (event) => {
+            event.preventDefault();
+            eosAction('eos-venue-save', { id: venue.id, name: name.value, host: host.value });
+        });
+        remove.addEventListener('click', () => eosAction('eos-venue-delete', venue.id));
+        return form;
+    }
+
+    socket.on('eos-config', (config) => {
+        eosConfig = config;
+        drawEosSelect();
+        // Keep a row being edited; redraw only when the venue list itself changed.
+        const key = JSON.stringify(config.venues);
+        if (eosVenueRows.dataset.key !== key) {
+            eosVenueRows.dataset.key = key;
+            eosVenueRows.replaceChildren(...config.venues.map(createVenueRow));
+            if (!config.venues.length) {
+                const empty = document.createElement('div');
+                empty.className = 'row'; empty.textContent = 'No venues saved yet.';
+                eosVenueRows.append(empty);
+            }
+        }
+    });
+
+    eosSelect.addEventListener('change', () => {
+        if (eosSelect.value === CUSTOM) {
+            eosCustomOpen = true;
+            eosCustomForm.hidden = false;
+            eosCustomInput.focus();
+            return;
+        }
+        eosCustomOpen = false;
+        eosAction('eos-select', eosSelect.value === DEFAULT ? null : { venue: eosSelect.value });
+    });
+    eosCustomForm.addEventListener('submit', (event) => {
+        event.preventDefault();
+        eosAction('eos-select', { host: eosCustomInput.value });
+    });
+    byId('eosAddVenueForm').addEventListener('submit', (event) => {
+        event.preventDefault();
+        eosAction('eos-venue-save', { name: byId('eosVenueName').value, host: byId('eosVenueHost').value }, () => {
+            byId('eosVenueName').value = ''; byId('eosVenueHost').value = '';
+        });
+    });
+
     // Two steps: the first click only asks, the second deletes.
     const resetButton = byId('resetButton');
     const resetConfirm = byId('resetConfirm');

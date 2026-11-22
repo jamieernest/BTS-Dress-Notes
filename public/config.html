@@ -67,6 +67,32 @@
             <p id="recordingResult" class="section-note result" role="alert" hidden></p>
         </section>
 
+        <section class="section" id="eos" aria-labelledby="eosTitle">
+            <h2 id="eosTitle">Eos console</h2>
+            <p class="section-note">Choose a saved venue or enter an address. Changing it reconnects to the console straight away.</p>
+            <div class="rows">
+                <div class="row row-wrap">
+                    <label class="row-label" for="eosAddressSelect">Address</label>
+                    <select id="eosAddressSelect" class="select"></select>
+                </div>
+                <form id="eosCustomForm" class="row row-wrap" hidden>
+                    <label class="row-label" for="eosCustomInput">IP address</label>
+                    <input type="text" id="eosCustomInput" class="input" maxlength="15" inputmode="decimal" placeholder="e.g. 10.10.160.143" autocomplete="off" required>
+                    <button type="submit" class="btn outline">Use</button>
+                </form>
+            </div>
+            <h3 class="subhead" id="eosVenuesTitle">Venues</h3>
+            <div class="rows" id="eosVenueRows" aria-labelledby="eosVenuesTitle"></div>
+            <form id="eosAddVenueForm" class="rows" aria-label="New venue">
+                <div class="row row-wrap">
+                    <input type="text" id="eosVenueName" class="input" maxlength="60" placeholder="Venue name" aria-label="New venue name" autocomplete="off" required>
+                    <input type="text" id="eosVenueHost" class="input" maxlength="15" inputmode="decimal" placeholder="IP address" aria-label="New venue IP address" autocomplete="off" required>
+                    <button type="submit" class="btn outline">Add venue</button>
+                </div>
+            </form>
+            <p id="eosResult" class="section-note result" role="status" hidden></p>
+        </section>
+
         <section class="section" aria-labelledby="statusTitle">
             <h2 id="statusTitle">Status</h2>
             <div class="rows">
