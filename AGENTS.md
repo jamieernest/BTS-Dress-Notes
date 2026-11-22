@@ -99,7 +99,7 @@ A recording is one or more parts, laid on one timeline by start time with gaps b
 
 ## Camera preset recall
 
-`lumens-camera.js` (CAMERA_* in `.env`, see README) recalls a Lumens VC-A61PN preset over its two JSON endpoints: login once and reuse the uuid, re-login once on a rejected session. Recalls are serialised and each is bounded by `CAMERA_TIMEOUT_MS`; they run before `obs.startRecording()` for a `/bts/record/start` carrying a preset (`record-command.js` takes the secret out of the arguments first), and on a real scene change when `CAMERA_RECALL_ON_SCENE` is on (fire and forget, coalesced). A failure never blocks OBS, scene labels or Eos. The username and password never go to logs, pages or tests' fixtures beyond the fake camera (`test/fake-camera.js`); `camera-status` carries only state, preset, time and a short reason.
+`lumens-camera.js` (CAMERA_* in `.env`, see README) recalls a Lumens VC-A61PN preset over its two JSON endpoints: login once and reuse the uuid, re-login once on a rejected session. Recalls are serialised and each is bounded by `CAMERA_TIMEOUT_MS`; they run before `obs.startRecording()` for a `/bts/record/start` (the cue's preset number, else `CAMERA_PRESET`; `record-command.js` takes the secret out of the arguments first), and with `CAMERA_PRESET` on a real scene change when `CAMERA_RECALL_ON_SCENE` is on (fire and forget, coalesced). A failure never blocks OBS, scene labels or Eos. The username and password never go to logs, pages or tests' fixtures beyond the fake camera (`test/fake-camera.js`); `camera-status` carries only state, preset, time and a short reason.
 
 ## Maintaining this file
 
