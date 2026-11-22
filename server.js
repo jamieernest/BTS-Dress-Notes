@@ -2201,6 +2201,7 @@ initKeycloak().finally(() => {
         connectToEOS();
         startNetworkTimecode();
         if (cameraConfig.error) console.log(`Camera: ${cameraConfig.error}`);
+        if (cameraConfig.warning) console.log(`Camera: ${cameraConfig.warning}`);
         if (cameraConfig.enabled) {
             console.log(`Camera preset recall is on: ${cameraConfig.host}${cameraConfig.onScene ? `, preset ${cameraConfig.preset} on every scene change` : ''}`);
         }

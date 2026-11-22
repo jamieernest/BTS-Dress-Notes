@@ -34,10 +34,10 @@ function flag(value) {
     return /^(1|true|yes|on)$/i.test(String(value || '').trim());
 }
 
-// { enabled, host, username, password, preset, onScene, timeoutMs, error }.
+// { enabled, host, username, password, preset, onScene, timeoutMs, error, warning }.
 function configFromEnv(env) {
     const raw = String(env.CAMERA_HOST || '').trim();
-    const config = { enabled: false, host: '', username: '', password: '', preset: null, onScene: false, timeoutMs: DEFAULT_TIMEOUT_MS, error: null };
+    const config = { enabled: false, host: '', username: '', password: '', preset: null, onScene: false, timeoutMs: DEFAULT_TIMEOUT_MS, error: null, warning: null };
     if (!raw) return config;
     config.host = parseHost(raw);
     if (!config.host) return { ...config, host: '', error: 'CAMERA_HOST is not a host name or address' };
@@ -46,7 +46,12 @@ function configFromEnv(env) {
     config.password = String(env.CAMERA_PASSWORD || '');
     const timeout = Number(env.CAMERA_TIMEOUT_MS);
     if (Number.isFinite(timeout) && timeout >= 200) config.timeoutMs = Math.min(timeout, 10000);
-    const presetText = String(env.CAMERA_PRESET || '').trim();
+    let presetText = String(env.CAMERA_PRESET || '').trim();
+    const oldText = String(env.CAMERA_SCENE_PRESET || '').trim();
+    if (!presetText && oldText) {
+        presetText = oldText;
+        config.warning = 'CAMERA_SCENE_PRESET is deprecated; rename it to CAMERA_PRESET';
+    }
     if (presetText) {
         config.preset = parsePreset(presetText);
         if (config.preset === null) config.error = `CAMERA_PRESET must be a whole number from 1 to ${MAX_PRESET}`;

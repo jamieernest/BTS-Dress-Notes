@@ -42,8 +42,11 @@ test('the feature is off without CAMERA_HOST, and the scene recall needs a prese
     assert.strictEqual(configFromEnv({ CAMERA_HOST: 'cam', CAMERA_RECALL_ON_SCENE: 'on' }).onScene, false);
     const scene = configFromEnv({ CAMERA_HOST: 'cam', CAMERA_PRESET: '4', CAMERA_RECALL_ON_SCENE: 'true' });
     assert.deepStrictEqual([scene.onScene, scene.preset], [true, 4]);
-    // The old name is gone, with no alias.
-    assert.strictEqual(configFromEnv({ CAMERA_HOST: 'cam', CAMERA_SCENE_PRESET: '4' }).preset, null);
+    const old = configFromEnv({ CAMERA_HOST: 'cam', CAMERA_SCENE_PRESET: '4', CAMERA_RECALL_ON_SCENE: 'on' });
+    assert.deepStrictEqual([old.preset, old.onScene], [4, true]);
+    assert.match(old.warning, /CAMERA_SCENE_PRESET.*CAMERA_PRESET/);
+    const both = configFromEnv({ CAMERA_HOST: 'cam', CAMERA_SCENE_PRESET: '4', CAMERA_PRESET: '5' });
+    assert.deepStrictEqual([both.preset, both.warning], [5, null]);
     assert.strictEqual(configFromEnv({ CAMERA_HOST: 'cam', CAMERA_PRESET: '4' }).preset, 4);
     assert.strictEqual(configFromEnv({ CAMERA_PRESET: '4' }).preset, null);
     assert.ok(configFromEnv({ CAMERA_HOST: 'cam', CAMERA_PRESET: 'zero', CAMERA_RECALL_ON_SCENE: '1' }).error);

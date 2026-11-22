@@ -119,7 +119,7 @@ The app can recall a position preset on a Lumens VC-A61PN camera before OBS star
 | `CAMERA_HOST` | _(none)_ | The camera's address, e.g. `192.168.1.50`. Setting it switches the feature on |
 | `CAMERA_USERNAME` | _(none)_ | The camera web interface's user name |
 | `CAMERA_PASSWORD` | _(none)_ | Its password |
-| `CAMERA_PRESET` | _(none)_ | The fixed preset (1 to 255, as people count them: the ninth is `9`) a plain start cue recalls before recording, and scene changes recall when enabled. Replaces `CAMERA_SCENE_PRESET`, which is no longer read |
+| `CAMERA_PRESET` | _(none)_ | The fixed preset (1 to 255, as people count them: the ninth is `9`) a plain start cue recalls before recording, and scene changes recall when enabled. Replaces `CAMERA_SCENE_PRESET`, which is deprecated: it is read only when `CAMERA_PRESET` is unset, and the server logs a warning at startup |
 | `CAMERA_RECALL_ON_SCENE` | off | `on` recalls `CAMERA_PRESET` every time the scene label really changes (a repeated label does nothing). Needs the preset |
 | `CAMERA_TIMEOUT_MS` | `2000` | The longest one recall, including a new login, may take |
 
