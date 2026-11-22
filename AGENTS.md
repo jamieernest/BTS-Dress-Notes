@@ -97,6 +97,10 @@ A recording is one or more parts, laid on one timeline by start time with gaps b
 
 `npm run dev:playback` starts the sample instance on 3030 (`PLAYBACK_PORT` overrides), using `.env` login settings and separate git-ignored `.playback-dev/` notes, tags, backups and saved shows. `PLAYBACK_DEMO=1` seeds invented live notes only when empty and adds a sample saved show without overwriting existing ones. `/playback.html?demo=1` remains a standalone sample; assets live in `public/playback-demo/` (`scene.svg` is the recording's source).
 
+## Camera preset recall
+
+`lumens-camera.js` (CAMERA_* in `.env`, see README) recalls a Lumens VC-A61PN preset over its two JSON endpoints: login once and reuse the uuid, re-login once on a rejected session. Recalls are serialised and each is bounded by `CAMERA_TIMEOUT_MS`; they run before `obs.startRecording()` for a `/bts/record/start` carrying a preset (`record-command.js` takes the secret out of the arguments first), and on a real scene change when `CAMERA_RECALL_ON_SCENE` is on (fire and forget, coalesced). A failure never blocks OBS, scene labels or Eos. The username and password never go to logs, pages or tests' fixtures beyond the fake camera (`test/fake-camera.js`); `camera-status` carries only state, preset, time and a short reason.
+
 ## Maintaining this file
 
 Keep this file for knowledge useful to almost every future agent session in this project.

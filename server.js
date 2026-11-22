@@ -33,6 +33,7 @@ const RECORDING_MAX_BYTES = Number(process.env.RECORDING_MAX_BYTES) || 32 * 1024
 const recordCommand = require('./record-command');
 const obsRecorder = require('./obs-recorder');
 const obsPickup = require('./obs-pickup');
+const lumensCamera = require('./lumens-camera');
 const OBS_OSC_SECRET = process.env.OBS_OSC_SECRET || '';
 const VIDEOS_DIR = process.env.VIDEOS_DIR || obsPickup.defaultVideosDir();
 const OBS_SCAN_MS = Number(process.env.OBS_SCAN_MS) || 30000;
@@ -741,6 +742,8 @@ function handleOscMessage(address, value, args = value === undefined ? [] : [val
         const act = input.cleanCue(value);
         if (act && act !== globalState.currentAct) {
             globalState.currentAct = act;
+            // Fire and forget: the camera can never delay or break the scene update.
+            try { camera.sceneChanged(); } catch (error) { console.log('Camera: scene recall failed:', error.message); }
             if (showLog.record(globalState.showLog, 'scene', act)) {
                 scheduleBackup();
                 io.emit('show-log-update', globalState.showLog);
@@ -772,6 +775,24 @@ const obs = obsRecorder.createRecorder({
     onConnected: () => scanVideosFolder()
 });
 
+// The camera (lumens-camera.js, CAMERA_* in .env) recalls a position preset
+// before a start cue with a preset number starts OBS, and optionally on every
+// scene change. It is off without CAMERA_HOST, and never blocks anything.
+const cameraConfig = lumensCamera.configFromEnv(process.env);
+const camera = lumensCamera.createCamera({
+    config: cameraConfig,
+    onStatus: () => io.emit('camera-status', camera.status())
+});
+
+async function recallBeforeRecording(command) {
+    if (command.invalidPreset) console.log('Camera: ignored the preset on the start cue: it is not a whole number from 1 to 255');
+    if (!command.preset) return;
+    if (!camera.enabled()) return console.log(`Camera: ignored preset ${command.preset} on the start cue: the camera is not set up`);
+    if (obs.recording()) return console.log(`Camera: not recalling preset ${command.preset}: OBS is already recording`);
+    const outcome = await camera.recall(command.preset);
+    if (!outcome.ok) console.log(`Camera: starting the recording anyway, preset ${command.preset} was not recalled`);
+}
+
 function handleRecordCommand(address, args) {
     try {
         const command = recordCommand.parseRecordCommand(address, args, OBS_OSC_SECRET);
@@ -780,7 +801,9 @@ function handleRecordCommand(address, args) {
         if (!obsConfig.enabled) return console.log(`OBS: ignored OSC ${address}: OBS recording is not set up`);
         console.log(`OBS: OSC ${address} received`);
         const verb = command.action === 'start' ? 'start' : 'stop';
-        const run = command.action === 'start' ? obs.startRecording() : obs.stopRecording();
+        const run = command.action === 'start'
+            ? recallBeforeRecording(command).catch((error) => console.log('Camera: could not recall:', error.message)).then(() => obs.startRecording())
+            : obs.stopRecording();
         run.then((outcome) => {
             if (!outcome.ok) console.log(`OBS: could not ${verb} recording: ${outcome.error}`);
             else if (outcome.result === 'noop') console.log(`OBS: ${verb === 'start' ? 'already recording' : 'not recording'}, nothing to do`);
@@ -1455,6 +1478,7 @@ io.on('connection', (socket) => {
     socket.emit('network-timecode-status', networkStatus);
     socket.emit('eos-status', eosStatus);
     socket.emit('obs-status', obsClientStatus(obs.status()));
+    socket.emit('camera-status', camera.status());
     socket.emit('eos-config', eosConfig());
     socket.emit('settings-options', settingsOptions());
 
@@ -2174,6 +2198,10 @@ initKeycloak().finally(() => {
 
         connectToEOS();
         startNetworkTimecode();
+        if (cameraConfig.error) console.log(`Camera: ${cameraConfig.error}`);
+        if (cameraConfig.enabled) {
+            console.log(`Camera preset recall is on: ${cameraConfig.host}${cameraConfig.onScene ? `, preset ${cameraConfig.scenePreset} on every scene change` : ''}`);
+        }
         if (obsConfig.enabled) {
             console.log(`OBS recording is on: ${obsConfig.url}, videos in ${VIDEOS_DIR}`);
             obs.connect().catch(() => {});

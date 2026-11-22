@@ -104,10 +104,26 @@ QLab can start and stop an OBS Studio recording with the same kind of OSC cue th
 
 - `/bts/record/start` starts recording, `/bts/record/stop` stops it. No value is needed.
 - With `OBS_OSC_SECRET` set, put the secret after the address: `/bts/record/start my-secret`.
+- To move the camera first, add a preset number to the start cue: `/bts/record/start 9`, or with a secret `/bts/record/start my-secret 9`. See **Camera preset** below. The secret is checked first and used up first, so a numeric secret is never taken for a preset.
 
 Starting while OBS is already recording, or stopping while it is not, does nothing. Any other address under `/bts/record` is ignored; these addresses are never used as scene labels.
 
 **Status.** The Config & Status page has an **OBS recording** row (not recording, recording, or an error such as OBS not reachable, or the password being wrong), and the notes page shows a small indicator to everyone. Both follow OBS itself, so they stay right when someone presses Record in OBS by hand. The server connects when it starts and reconnects by itself after OBS is restarted; OBS being off or the password wrong never stops scene labels, Eos or anything else, and each trigger and failure is written to the server log.
+
+### Camera preset
+
+The app can recall a position preset on a Lumens VC-A61PN camera before OBS starts recording, and optionally on every scene change (VISCA over RS-422 sometimes changes the preset by itself). It uses the camera's web interface, so the server must reach the camera over HTTP. With no `CAMERA_HOST` the feature is off and nothing changes. Set these in `.env` only (the credentials are never shown in the app, logged, or saved elsewhere):
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `CAMERA_HOST` | _(none)_ | The camera's address, e.g. `192.168.1.50`. Setting it switches the feature on |
+| `CAMERA_USERNAME` | _(none)_ | The camera web interface's user name |
+| `CAMERA_PASSWORD` | _(none)_ | Its password |
+| `CAMERA_SCENE_PRESET` | _(none)_ | A preset number (1 to 255, as people count them: the ninth is `9`) to recall on scene changes |
+| `CAMERA_RECALL_ON_SCENE` | off | `on` recalls `CAMERA_SCENE_PRESET` every time the scene label really changes (a repeated label does nothing). Needs the preset |
+| `CAMERA_TIMEOUT_MS` | `2000` | The longest one recall, including a new login, may take |
+
+A start cue with a preset number recalls it, then starts OBS. A cue without one only records. If the recall fails or the camera is down, recording still starts and the server log says so; a preset on a cue is not recalled if OBS is already recording. Scene-change recalls never delay the scene update; changes that arrive while one is still running collapse into one more recall. The server logs in once and reuses the login, and logs in again once if the camera restarts or rejects it. The **Camera preset** row on the Config & Status page shows the last recall (recalled, or failed with a short reason, or not configured).
 
 **Recordings in playback.** When OBS stops recording, it says where it saved the file, and that file is added to the live notes' video (under Video in Settings, uploaded by "OBS") with the start time and length it was recorded at. A hard link is used where the disk allows, so a long recording is not copied; on another disk the part refers to the file where it is, and keeps working only while that file stays in `VIDEOS_DIR`. Removing it from the notes, or **Reset all notes and chat**, never deletes OBS's file, and saving the show links it into the saved show. A file is added once, even after it is removed.
 
