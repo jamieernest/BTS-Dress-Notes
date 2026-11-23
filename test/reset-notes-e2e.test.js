@@ -52,3 +52,35 @@ test('reset notes can be listed and restored from the config page, and restoring
     assert.deepStrictEqual(await config.timeout(5000).emitWithAck('restore-reset', { id: '../backups' }), { error: 'Those notes are no longer kept.' });
     assert.strictEqual((await list()).length, 1, 'still kept after restoring');
 });
+
+test('clear-chat empties chat without clearing notes', async (t) => {
+    const oidc = await startOidc();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'clear-chat-e2e-'));
+    const app = createApp({ issuer: oidc.issuer, sessionsFile: path.join(dir, 'sessions.json'), port: await freePort() });
+    await app.start();
+    const alice = new Browser(app, await login(app, oidc, 'alice'));
+    const bob = new Browser(app, await login(app, oidc, 'bob'));
+    const config = Browser.configSocket(app, alice.cookie);
+    t.after(async () => {
+        alice.close();
+        bob.close();
+        config.close();
+        await app.stop().catch(() => {});
+        oidc.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+    });
+    alice.load();
+    bob.load();
+    await until(() => alice.page.socket.connected && bob.page.socket.connected && config.connected, 'browsers to connect');
+
+    alice.note('note survives chat clear');
+    await until(() => alice.noteTexts().length === 1, 'note to arrive');
+    alice.say('one shitpost');
+    bob.say('another shitpost');
+    await until(() => alice.texts().length === 2 && bob.texts().length === 2, 'chat to arrive');
+
+    assert.deepStrictEqual(await config.timeout(5000).emitWithAck('clear-chat'), {});
+    await until(() => alice.texts().length === 0 && bob.texts().length === 0, 'chat to clear');
+    assert.deepStrictEqual(alice.noteTexts(), ['note survives chat clear']);
+    assert.deepStrictEqual(alice.savedTexts(), []);
+});

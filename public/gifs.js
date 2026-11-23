@@ -25,10 +25,70 @@
         if (/\.gif$/i.test(url.pathname)) return true;
         const host = url.hostname.toLowerCase();
         if ((host === 'giphy.com' || host.endsWith('.giphy.com')) &&
-            (/^\/media(?:\/|$)/i.test(url.pathname) || /\/giphy\.gif$/i.test(url.pathname))) return true;
+            (/^\/media(?:\/|$)/i.test(url.pathname) || /\/giphy\.gif$/i.test(url.pathname) ||
+             /^\/(?:gifs|embed)(?:\/|$)/i.test(url.pathname))) return true;
         if ((host === 'tenor.com' || host.endsWith('.tenor.com')) &&
-            /\.gif$/i.test(url.pathname)) return true;
+            (/\.gif$/i.test(url.pathname) || /^\/(?:[^/]+\/)?view\/.+-([0-9]+)\/?$/i.test(url.pathname))) return true;
         return false;
+    }
+
+    function tenorEmbedUrl(value) {
+        const url = validUrl(value);
+        if (!url) return null;
+        const host = url.hostname.toLowerCase();
+        if (host !== 'tenor.com' && !host.endsWith('.tenor.com')) return null;
+        const match = /^\/(?:[^/]+\/)?view\/.+-([0-9]+)\/?$/i.exec(url.pathname);
+        return match ? `https://tenor.com/embed/${match[1]}` : null;
+    }
+
+    function extractTenorGifUrl(html) {
+        let text = String(html || '');
+        text = text
+            .replace(/\\u002[fF]/g, '/')
+            .replace(/\\u003[aA]/g, ':')
+            .replace(/\\\//g, '/')
+            .replace(/&amp;/gi, '&');
+        const candidates = [];
+        const patterns = [
+            /<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image)["'][^>]+content=["']([^"']+)["']/gi,
+            /<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:og:image|twitter:image)["']/gi,
+            /https?:\/\/(?:media(?:[0-9]+)?\.tenor\.com|media\.tenor\.co)\/[^"'\\\s<>]+\.gif(?:\?[^"'\\\s<>]*)?/gi
+        ];
+        for (const pattern of patterns) {
+            for (const match of text.matchAll(pattern)) {
+                const value = (match[1] || match[0]).replace(/&#0*34;|&quot;/gi, '"');
+                try {
+                    const url = new URL(value);
+                    if ((url.hostname === 'media.tenor.com' || url.hostname === 'media.tenor.co' ||
+                        /^media[0-9]+\.tenor\.com$/.test(url.hostname)) &&
+                        /\.gif$/i.test(url.pathname)) candidates.push(url.toString());
+                } catch (_) {}
+            }
+        }
+        return candidates[0] || null;
+    }
+
+    function isImageUrl(value) {
+        const url = validUrl(value);
+        return !!url && /\.(png|jpe?g|gif|webp)$/i.test(url.pathname);
+    }
+
+    function mediaUrl(value) {
+        const url = validUrl(value);
+        if (!url) return null;
+        const host = url.hostname.toLowerCase();
+        if (host === 'giphy.com' || host === 'www.giphy.com') {
+            const pageId = /^\/(?:gifs|embed)\/(?:[^/]+-)?([a-zA-Z0-9]+)(?:\/)?$/i.exec(url.pathname)?.[1];
+            if (pageId) return `https://media.giphy.com/media/${pageId}/giphy.gif`;
+            const embedId = /^\/embed\/([a-zA-Z0-9]+)(?:\/)?$/i.exec(url.pathname)?.[1];
+            if (embedId) return `https://media.giphy.com/media/${embedId}/giphy.gif`;
+        }
+        const tenorEmbed = tenorEmbedUrl(value);
+        if (tenorEmbed) return null;
+        if (host === 'giphy.com' || host.endsWith('.giphy.com')) {
+            return `${url.protocol}//${url.host}${url.pathname}`;
+        }
+        return url.toString();
     }
 
     function ranges(text) {
@@ -38,6 +98,24 @@
             let value = match[0];
             while (/[.,!?;:\)\]\}]+$/.test(value)) value = value.slice(0, -1);
             if (!isGifUrl(value)) continue;
+            if (found.some(item => item.start < match.index + value.length && item.end > match.index)) continue;
+            found.push({
+                start: match.index,
+                end: match.index + value.length,
+                url: mediaUrl(value) || value,
+                embedUrl: tenorEmbedUrl(value)
+            });
+        }
+        return found;
+    }
+
+    function imageRanges(text) {
+        const found = [];
+        const pattern = /https?:\/\/[^\s<>"']+/gi;
+        for (const match of String(text || '').matchAll(pattern)) {
+            let value = match[0];
+            while (/[.,!?;:\)\]\}]+$/.test(value)) value = value.slice(0, -1);
+            if (!isImageUrl(value) || isGifUrl(value)) continue;
             if (found.some(item => item.start < match.index + value.length && item.end > match.index)) continue;
             found.push({ start: match.index, end: match.index + value.length, url: value });
         }
@@ -59,14 +137,14 @@
 
     function html(text, mentions = [], mentionRenderer = null) {
         text = String(text || '');
-        const gifRanges = ranges(text);
-        if (!gifRanges.length) {
+        const mediaRanges = [...ranges(text), ...imageRanges(text)].sort((a, b) => a.start - b.start);
+        if (!mediaRanges.length) {
             return mentionRenderer ? `<div class="chat-msg-text">${mentionRenderer(text, mentions)}</div>` : `<div class="chat-msg-text">${escapeHtml(text)}</div>`;
         }
 
         let at = 0;
         let textHtml = '';
-        for (const range of gifRanges) {
+        for (const range of mediaRanges) {
             const segment = text.slice(at, range.start);
             if (segment.trim()) {
                 const shifted = shiftedMentions(mentions, at, range.start);
@@ -80,11 +158,27 @@
             textHtml += mentionRenderer ? mentionRenderer(tail, shifted) : escapeHtml(tail);
         }
 
-        const mediaHtml = gifRanges.map(range =>
-            `<img class="chat-gif" src="${escapeHtml(range.url)}" alt="GIF" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
-        ).join('');
+        const mediaHtml = mediaRanges.map(range => {
+            if (range.embedUrl) {
+                const resolvedUrl = `/gif/resolve?url=${encodeURIComponent(range.url)}`;
+                return `<img class="chat-gif" src="${escapeHtml(resolvedUrl)}" alt="GIF" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
+            }
+            return `<img class="${isGifUrl(range.url) ? 'chat-gif' : 'chat-image'}" src="${escapeHtml(range.url)}" alt="${isGifUrl(range.url) ? 'GIF' : 'Image'}" loading="lazy" decoding="async" referrerpolicy="no-referrer">`;
+        }).join('');
         return `${textHtml.trim() ? `<div class="chat-msg-text">${textHtml}</div>` : ''}<div class="chat-gifs">${mediaHtml}</div>`;
     }
 
-    return { validUrl, isGifUrl, ranges, html };
+    function isMediaOnly(text) {
+        text = String(text || '');
+        const mediaRanges = [...ranges(text), ...imageRanges(text)].sort((a, b) => a.start - b.start);
+        if (!mediaRanges.length) return false;
+        let at = 0;
+        for (const range of mediaRanges) {
+            if (text.slice(at, range.start).trim()) return false;
+            at = range.end;
+        }
+        return !text.slice(at).trim();
+    }
+
+    return { validUrl, isGifUrl, isImageUrl, tenorEmbedUrl, extractTenorGifUrl, mediaUrl, ranges, imageRanges, isMediaOnly, html };
 }));

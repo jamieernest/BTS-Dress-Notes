@@ -157,6 +157,10 @@ saved-shows/
 
 # Videos uploaded for playback
 recordings/
+
+# Shared chat stickers
+stickers/
+
 .playback-dev/
 .claude/worktrees/
 

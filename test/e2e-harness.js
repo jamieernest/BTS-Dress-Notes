@@ -99,6 +99,7 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
     const savedShowsDir = path.join(path.dirname(sessionsFile), 'saved-shows');
     const recordingsDir = path.join(path.dirname(sessionsFile), 'recordings');
     const resetsDir = path.join(path.dirname(sessionsFile), 'reset-notes');
+    const stickersDir = path.join(path.dirname(sessionsFile), 'stickers');
     // A copy of the tags, so a test that changes them leaves the tracked tags.json alone.
     const tagsFile = path.join(path.dirname(sessionsFile), 'tags.json');
     if (!fs.existsSync(tagsFile)) fs.copyFileSync(path.join(ROOT, 'tags.json'), tagsFile);
@@ -126,7 +127,7 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
                 cwd: ROOT,
                 env: {
                     ...process.env, PORT: String(port), OSC_PORT: String(oscPort), SESSIONS_FILE: sessionsFile,
-                    BACKUPS_DIR: backupsDir, SAVED_SHOWS_DIR: savedShowsDir, RECORDINGS_DIR: recordingsDir, RESETS_DIR: resetsDir, TAGS_FILE: tagsFile,
+                    BACKUPS_DIR: backupsDir, SAVED_SHOWS_DIR: savedShowsDir, RECORDINGS_DIR: recordingsDir, RESETS_DIR: resetsDir, STICKERS_DIR: stickersDir, TAGS_FILE: tagsFile,
                     SESSION_SECRET: 'test', KEYCLOAK_ISSUER: issuer, KEYCLOAK_CLIENT_ID: 'bts',
                     KEYCLOAK_CLIENT_SECRET: 'x', EOS_HOST: '127.0.0.1', EOS_PORT: String(await freePort()), ...env
                 },
@@ -205,6 +206,7 @@ class Browser {
         page.socket.on('note-added', (note) => { page.notes.push(note); });
         // The page forgets its saved chat copy when the server is reset.
         page.socket.on('all-reset', () => chatCopy.onReset());
+        page.socket.on('chat-cleared', () => chatCopy.onReset());
         this.page = page;
         return page;
     }

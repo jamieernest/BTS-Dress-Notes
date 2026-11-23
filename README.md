@@ -74,10 +74,21 @@ JSON downloads are named `BTS Dress Notes YYYY-MM-DD.json` (the download date in
 
 ## Chat stickers
 
-The Shitposts picker can upload shared PNG, JPEG, GIF or WebP stickers. Files are kept
+The Shitposts picker can upload personal PNG, JPEG, GIF or WebP stickers. Files are kept
 on the server in `stickers/` (or `STICKERS_DIR` for tests), up to 5 MB each
-(`STICKER_MAX_BYTES`). SVG is excluded. Selecting a sticker sends its server URL
-as a chat message, and the normal chat restore and reset behavior applies.
+(`STICKER_MAX_BYTES`). SVG is excluded. Each account has its own sticker collection;
+selecting a sticker sends its server URL as a chat message, and the normal chat restore
+and reset behavior applies. The picker keeps that account's most recently used stickers
+first, and selected files upload concurrently. Sticker messages have an Add action beside
+Reply for adding them to the current account's library. Identical uploaded files are
+stored once and linked to each account that uploaded or added them.
+
+Pasting a PNG, JPEG, GIF or WebP file into the Shitposts composer uploads it as a personal
+sticker and sends it in chat. Direct GIF links embed in chat and have an Add action for
+downloading them into the current account's sticker library; direct PNG, JPEG and WebP links
+also embed. GIF downloads are stored like uploaded stickers and cannot be added twice to the
+same account. Other image sources and SVG links are not embedded or uploaded as stickers.
+Replying to a message and then choosing a sticker sends that sticker as the reply.
 
 ## Show recordings
 

@@ -175,14 +175,14 @@
             <section id="stickerPicker" class="sticker-picker" aria-label="Sticker picker" hidden>
                 <div class="sticker-picker-head">
                     <span class="muted">Stickers</span>
-                    <button type="button" id="stickerUpload" class="btn outline">Add sticker</button>
+                    <button type="button" id="stickerUpload" class="btn outline" title="Supports PNG, JPEG, GIF and WebP files" aria-label="Add sticker; supports PNG, JPEG, GIF and WebP files">Add sticker</button>
                     <input id="stickerUploadInput" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden>
                 </div>
                 <div id="stickerStatus" class="muted" role="status" aria-live="polite"></div>
                 <div id="stickerResults" class="sticker-results" role="listbox" aria-label="Server stickers"></div>
             </section>
             <div class="chat-compose-foot">
-                <button type="button" id="stickerButton" class="btn ghost" aria-expanded="false">Stickers</button>
+                <button type="button" id="stickerButton" class="btn ghost" aria-expanded="false" title="Add stickers with Giphy, Tenor, upload or copy/paste" aria-label="Stickers: add from Giphy, Tenor, upload or copy/paste">Stickers</button>
                 <button type="button" id="sendChat" class="btn primary" disabled>Send</button>
             </div>
         </div>
@@ -210,6 +210,7 @@
     <script src="note-view.js"></script>
     <script src="loading-state.js"></script>
     <script src="playback-context.js"></script>
+    <script src="url-image-cache.js"></script>
     <script src="index.js"></script>
 </body>
 </html>

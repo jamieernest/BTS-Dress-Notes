@@ -39,6 +39,7 @@ const helmet = require('helmet');
 const { usernameFromClaims } = require('./profile-photos');
 const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
 const stickers = require('./stickers');
+const GifLinks = require('./public/gifs');
 
 const app = express();
 const server = http.createServer(app);
@@ -60,6 +61,22 @@ function sameOrigin(req) {
         return false;
     }
 }
+
+async function resolveTenorGifUrl(rawUrl) {
+    if (!GifLinks.tenorEmbedUrl(rawUrl)) return null;
+    try {
+        const response = await stickers.fetchSafe(rawUrl, {
+            accept: 'text/html,application/xhtml+xml',
+            maxBytes: 2 * 1024 ** 2,
+            timeoutMs: 15000,
+            maxRedirects: 5
+        });
+        return GifLinks.extractTenorGifUrl(response.body.toString('utf8'));
+    } catch (_) {
+        return null;
+    }
+}
+
 const io = socketIo(server, {
     maxHttpBufferSize: 16e6,
     allowRequest: (req, callback) => callback(null, sameOrigin(req))
@@ -167,7 +184,8 @@ app.use(helmet({
         directives: {
             'script-src': ["'self'"],
             'style-src': ["'self'", "'unsafe-inline'"],
-            'img-src': ["'self'", 'data:', 'https://*.giphy.com', 'https://*.tenor.com', 'https://www.bts-crew.com'],
+            'img-src': ["'self'", 'data:', 'blob:', 'http:', 'https:'],
+            'frame-src': ["'self'", 'https://tenor.com', 'https://*.tenor.com'],
             'connect-src': ["'self'"],
             // playback.html plays uploaded videos, or one opened locally through a blob: URL.
             'media-src': ["'self'", 'blob:'],
@@ -411,34 +429,94 @@ app.get('/session', (req, res) => {
     res.json({ name: user.name, sub: user.sub, emailPrefix: usernameFromClaims({ preferred_username: user.username ?? user.emailPrefix }) });
 });
 
-const stickersOf = () => stickers.list(STICKERS_DIR).map(sticker => ({
+const stickersOf = (userId) => stickers.list(STICKERS_DIR, userId).map(sticker => ({
     id: sticker.id,
     name: sticker.name,
     size: sticker.size,
     uploadedAt: sticker.uploadedAt,
+    lastUsedAt: sticker.lastUsedBy && sticker.lastUsedBy[userId],
     uploadedBy: sticker.uploadedBy,
+    sourceUrl: typeof sticker.sourceUrl === 'string' ? sticker.sourceUrl : undefined,
     url: `/stickers/${sticker.id}`
 }));
 
+const stickersChangedForUser = (userId) => {
+    for (const socket of io.sockets.sockets.values()) {
+        const sessionUser = socket.request.session && socket.request.session.user;
+        if (sessionUser && sessionUser.sub === userId) {
+            socket.emit('stickers-update', { stickers: stickersOf(userId) });
+        }
+    }
+};
+
 app.get('/stickers', (req, res) => {
     res.set('Cache-Control', 'no-store');
-    res.json({ stickers: stickersOf() });
+    res.json({ stickers: stickersOf(req.session.user.sub) });
 });
 
 app.get('/stickers/:id', (req, res) => {
     const file = stickers.stickerFile(STICKERS_DIR, req.params.id);
     if (!file) return res.status(404).json({ error: 'not found' });
     res.type(file.type);
+    if (file.redirect) return res.redirect(302, file.redirect);
     res.set('Cache-Control', 'private, max-age=31536000, immutable');
     res.sendFile(file.path, error => {
         if (error && !res.headersSent) res.status(404).json({ error: 'not found' });
     });
 });
 
+app.get('/gif/resolve', async (req, res) => {
+    const rawUrl = typeof req.query.url === 'string' ? req.query.url : '';
+    if (!GifLinks.tenorEmbedUrl(rawUrl)) return res.status(400).end();
+    const url = await resolveTenorGifUrl(rawUrl);
+    if (!url) return res.status(404).end();
+    res.redirect(302, url);
+});
+
+app.post('/stickers/from-url', express.json({ limit: '2kb' }), async (req, res) => {
+    if (!sameOrigin(req)) return res.status(403).json({ error: 'forbidden' });
+    const rawUrl = typeof req.body?.url === 'string' ? req.body.url : '';
+    let url = GifLinks.mediaUrl(rawUrl);
+    if (!GifLinks.isGifUrl(rawUrl) && !GifLinks.isImageUrl(rawUrl)) {
+        return res.status(400).json({ error: 'Only PNG, JPEG, WebP and GIF links can be added.' });
+    }
+    if (!url && !GifLinks.tenorEmbedUrl(rawUrl)) {
+        url = rawUrl;
+    }
+    if (!url) url = await resolveTenorGifUrl(rawUrl);
+    if (!url) return res.status(502).json({ error: 'The GIF could not be resolved.' });
+    try {
+        const sticker = await stickers.addUrl(STICKERS_DIR, url, {
+            name: null,
+            uploadedBy: req.session.user.name,
+            uploadedById: req.session.user.sub,
+            maxBytes: STICKER_MAX_BYTES,
+            sourcePageUrl: GifLinks.tenorEmbedUrl(rawUrl) ? rawUrl : null
+        });
+        if (!sticker) return res.status(400).json({ error: 'That GIF link is invalid.' });
+        stickersChangedForUser(req.session.user.sub);
+        const result = stickersOf(req.session.user.sub).find(item => item.id === sticker.id) || null;
+        if (sticker.alreadyLinked) return res.status(200).json(result);
+        res.status(201).json(result);
+    } catch (error) {
+        if (error.status) return res.status(error.status).json({ error: error.message });
+        console.log(`Error downloading sticker GIF: ${error.message}`);
+        res.status(502).json({ error: 'The GIF could not be downloaded.' });
+    }
+});
+
 app.post('/stickers', (req, res) => uploadSticker(req, res).catch(error => {
     console.log(`Error saving sticker: ${error.message}`);
     if (!res.headersSent && !req.socket.destroyed) res.status(500).json({ error: 'The sticker couldn\'t be saved.' });
 }));
+
+app.post('/stickers/:id/library', (req, res) => {
+    if (!sameOrigin(req)) return res.status(403).json({ error: 'forbidden' });
+    const sticker = stickers.link(STICKERS_DIR, req.params.id, req.session.user.sub);
+    if (!sticker) return res.status(410).json({ error: 'This sticker has been deleted.' });
+    stickersChangedForUser(req.session.user.sub);
+    res.status(200).json(stickersOf(req.session.user.sub).find(item => item.id === sticker.id) || null);
+});
 
 async function uploadSticker(req, res) {
     if (!sameOrigin(req)) return res.status(403).json({ error: 'forbidden' });
@@ -450,9 +528,10 @@ async function uploadSticker(req, res) {
     try {
         const sticker = await stickers.add(STICKERS_DIR, req, info, {
             maxBytes: STICKER_MAX_BYTES,
-            uploadedBy: req.session.user.name
+            uploadedBy: req.session.user.name,
+            uploadedById: req.session.user.sub
         });
-        io.emit('stickers-update', { stickers: stickersOf() });
+        stickersChangedForUser(req.session.user.sub);
         res.status(201).json(sticker);
     } catch (error) {
         if (res.headersSent || req.socket.destroyed) return;
@@ -463,9 +542,11 @@ async function uploadSticker(req, res) {
 
 app.delete('/stickers/:id', (req, res) => {
     if (!sameOrigin(req)) return res.status(403).json({ error: 'forbidden' });
-    if (!stickers.remove(STICKERS_DIR, req.params.id)) return res.status(404).json({ error: 'not found' });
-    io.emit('stickers-update', { stickers: stickersOf() });
-    res.status(204).end();
+    const removed = stickers.remove(STICKERS_DIR, req.params.id, req.session.user.sub);
+    if (!removed) return res.status(404).json({ error: 'not found' });
+    stickersChangedForUser(req.session.user.sub);
+    if (!removed.retained) io.emit('sticker-deleted', { id: req.params.id });
+    res.status(200).json(removed);
 });
 
 // Saved shows for Past notes (saved from the config page, see saved-shows.js).
@@ -1690,7 +1771,12 @@ io.on('connection', (socket) => {
             if (typeof ack === 'function') ack({ error: 'Invalid message' });
             return;
         }
-
+        const stickerId = /^\/stickers\/([a-f0-9]{32})$/.exec(bounded.text);
+        if (stickerId) {
+            if (stickers.touch(STICKERS_DIR, stickerId[1], user.id)) {
+                stickersChangedForUser(user.id);
+            }
+        }
         const chatMessage = {
             id: newId(),
             ...bounded,
@@ -1798,6 +1884,17 @@ io.on('connection', (socket) => {
         if (user.isOverlay) return;
         console.log(`Reset of all notes and chat requested by ${user.name}`);
         respond(resetNotesAndChat(user.name) ? {} : { error: "The notes or default tags could not be saved. Nothing was reset." });
+    });
+
+    on('clear-chat', (ack) => {
+        const respond = typeof ack === 'function' ? ack : () => {};
+        if (user.isOverlay) return;
+        globalState.chatMessages = [];
+        chatRestore.close();
+        emitToChatClients('chat-cleared');
+        emitToChatClients('chat-messages-update', globalState.chatMessages);
+        console.log(`Chat cleared by ${user.name}`);
+        respond({});
     });
 
     // Notes kept from recent resets, for the config page to restore.
