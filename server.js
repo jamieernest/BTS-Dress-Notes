@@ -201,6 +201,9 @@ app.use(helmet({
             'upgrade-insecure-requests': null
         }
     },
+    // helmet's default no-referrer makes browsers send `Origin: null` on a same-origin form POST,
+    // which sameOrigin() rightly refuses; same-origin still sends the real Origin, cross-site sends no referrer.
+    referrerPolicy: { policy: 'same-origin' },
     strictTransportSecurity: false
 }));
 
@@ -294,7 +297,7 @@ const escapeAttr = (s) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 app.post('/login', express.urlencoded({ extended: false, limit: '2kb' }), async (req, res, next) => {
     try {
         if (KEYCLOAK_ENABLED) return res.redirect('/login');
-        if (!sameOrigin(req)) return res.status(403).send('Forbidden');
+        if (!sameOrigin(req)) return res.status(403).send('Forbidden: cross-site login blocked');
         const name = String(req.body.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 60);
         if (!name) return res.redirect(`/login?returnTo=${encodeURIComponent(safeReturnTo(req.body.returnTo))}`);
         await new Promise((resolve, reject) => req.session.regenerate((err) => (err ? reject(err) : resolve())));
