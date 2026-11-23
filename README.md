@@ -47,14 +47,23 @@ _Disclaimer: this was mostly AI generated (Deepseek V3-4 and Claude Sonnet 5). I
 
 Settings are environment variables, read from `.env` by `npm start` (a git-ignored file). Only `SESSION_SECRET` is required. Copy `.env.example` to `.env` to start, it lists every setting.
 
-### Login (Keycloak)
+### Login
 
-Every page requires login through Keycloak SSO, except `/overlay.html` and `/overlay-cast.html` (with their assets and socket) when requested from the server's own machine (loopback). The same pages from any other address still need a login.
+Every page requires login, either through Keycloak SSO or, when Keycloak is off, a name form. Keycloak is **off unless `KEYCLOAK_ENABLED` is set**. Overlay pages are the exception: `/overlay.html` and `/overlay-cast.html` (with their assets and socket) when requested from the server's own machine (loopback). The same pages from any other address still need a login.
 
 | Variable | Purpose |
 |---|---|
 | `SESSION_SECRET` | **Required.** The server won't start without it |
-| `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET` | Enable login. One shared client covers every venue. Without them the server starts, but every page returns 503 at `/login` until they are set and the server is restarted. An `http://` issuer is accepted for a venue-LAN Keycloak without TLS |
+| `KEYCLOAK_ENABLED` | `1`, `true`, `on` or `yes` turns Keycloak login on; `0`, `false`, `off`, `no` or unset leaves it off. `0` ignores any `KEYCLOAK_*` settings below |
+| `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET` | Required when `KEYCLOAK_ENABLED` is on. One shared client covers every venue. If the issuer can't be reached, every page returns 503 at `/login` until it can and the server is restarted. An `http://` issuer is accepted for a venue-LAN Keycloak without TLS |
+
+The server refuses to start, with a message saying what to set, if any `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID` or `KEYCLOAK_CLIENT_SECRET` is set without `KEYCLOAK_ENABLED`, if it is on with one of the three missing, or if it is neither on nor off. See `.env.example`.
+
+**Upgrading an install that already uses Keycloak:** add `KEYCLOAK_ENABLED=1` to its `.env` before pulling, or it won't start. `npm run dev:playback` reads the same file.
+
+**With Keycloak off**, `/login` asks for a name, and that name is who you are: `guest:<name>`, so the same name on two devices is one person, and anyone can type anyone else's name. Anyone who can reach the server can then use every page, including settings, reset, import and video upload, so only run it this way on a network you trust. Profile photos and "My scenes" need Keycloak; guests get initials.
+
+Notes written in one mode can't be edited or deleted in the other, because the author ids differ. Switch between shows (save notes, then reset), not during one.
 
 In the Keycloak client, "Valid redirect URIs" must cover `http://<host>:<port>/callback`, and "Valid post logout redirect URIs" must cover `http://<host>:<port>/logged-out` (or be `+` with a redirect URI pattern that covers it). Otherwise logging out stops at a Keycloak error page.
 

@@ -47,6 +47,7 @@ const showLog = require('./show-log');
 const crypto = require('crypto');
 const helmet = require('helmet');
 const { usernameFromClaims } = require('./profile-photos');
+const { resolveAuthMode } = require('./auth-config');
 const { createChatRestore, boundChatMessage, mergeChatLogs, DEFAULT_WINDOW_MS } = require('./chat-restore');
 
 const app = express();
@@ -125,6 +126,15 @@ if (!SESSION_SECRET) {
     console.error('SESSION_SECRET environment variable is required to start the server.');
     process.exit(1);
 }
+const authMode = resolveAuthMode(process.env);
+if (authMode.error) {
+    console.error(authMode.error);
+    process.exit(1);
+}
+const KEYCLOAK_ENABLED = authMode.enabled;
+if (!KEYCLOAK_ENABLED) {
+    console.warn('Keycloak login is OFF: anyone who can reach this server picks a name and gets in, settings included. Set KEYCLOAK_ENABLED=1 to require a Keycloak login.');
+}
 
 app.set('trust proxy', true);
 io.engine.trustProxy = true;
@@ -187,7 +197,7 @@ app.use(helmet({
             'connect-src': ["'self'"],
             // playback.html plays uploaded videos, or one opened locally through a blob: URL.
             'media-src': ["'self'", 'blob:'],
-            'form-action': ["'self'", ...originOf(KEYCLOAK_ISSUER)],
+            'form-action': ["'self'", ...(KEYCLOAK_ENABLED ? originOf(KEYCLOAK_ISSUER) : [])],
             'upgrade-insecure-requests': null
         }
     },
@@ -201,10 +211,7 @@ let oidc = null;
 let oidcConfig = null;
 
 async function initKeycloak() {
-    if (!KEYCLOAK_ISSUER || !KEYCLOAK_CLIENT_ID || !KEYCLOAK_CLIENT_SECRET) {
-        console.error('Keycloak SSO is not configured: set KEYCLOAK_ISSUER, KEYCLOAK_CLIENT_ID and KEYCLOAK_CLIENT_SECRET. Login will be unavailable until this is set and the server is restarted.');
-        return;
-    }
+    if (!KEYCLOAK_ENABLED) return; // resolveAuthMode() has already checked the three settings when it is on
     try {
         oidc = await import('openid-client');
         const issuerUrl = new URL(KEYCLOAK_ISSUER);
@@ -276,11 +283,38 @@ function prunePendingLogins(now = Date.now()) {
     }
 }
 
+// Without Keycloak, a person picks a name instead (GET shows the form, POST
+// logs in). Everything after this point sees an ordinary session.user, so notes,
+// the online list, edit rights and pending notes work as they do with Keycloak.
+// The name is the identity: the same name on two devices is one person, and two
+// people typing the same name are one too. (Capped after NFKC, which can make a
+// name longer, so the id still fits note-input's 200-character userId.)
+const guestLoginPage = fs.readFileSync(path.join(__dirname, 'views', 'guest-login.html'), 'utf8');
+const escapeAttr = (s) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+app.post('/login', express.urlencoded({ extended: false, limit: '2kb' }), async (req, res, next) => {
+    try {
+        if (KEYCLOAK_ENABLED) return res.redirect('/login');
+        if (!sameOrigin(req)) return res.status(403).send('Forbidden');
+        const name = String(req.body.name ?? '').replace(/\s+/g, ' ').trim().slice(0, 60);
+        if (!name) return res.redirect(`/login?returnTo=${encodeURIComponent(safeReturnTo(req.body.returnTo))}`);
+        await new Promise((resolve, reject) => req.session.regenerate((err) => (err ? reject(err) : resolve())));
+        req.session.user = { sub: `guest:${name.normalize('NFKC').toLowerCase().slice(0, 100)}`, name, email: null, idToken: null };
+        await new Promise((resolve, reject) => req.session.save((err) => (err ? reject(err) : resolve())));
+        res.redirect(safeReturnTo(req.body.returnTo));
+    } catch (error) {
+        next(error);
+    }
+});
+
 // Authorization Code + PKCE redirect to Keycloak.
 app.get('/login', async (req, res, next) => {
     try {
         const returnTo = safeReturnTo(req.query.returnTo);
         if (isLoggedIn(req)) return res.redirect(returnTo);
+        if (!KEYCLOAK_ENABLED) {
+            res.set('Cache-Control', 'no-store');
+            return res.type('html').send(guestLoginPage.replace('{{returnTo}}', escapeAttr(returnTo)));
+        }
         if (!oidcConfig) {
             return res.status(503).send('Keycloak SSO is not configured or unreachable. Set KEYCLOAK_ISSUER, KEYCLOAK_CLIENT_ID, KEYCLOAK_CLIENT_SECRET and SESSION_SECRET, then restart the server.');
         }
@@ -308,6 +342,7 @@ app.get('/login', async (req, res, next) => {
 // Exchanges the authorization code, populates req.session.user from the
 // Keycloak claims (sub is the stable per-account identifier we key notes on).
 app.get('/callback', async (req, res) => {
+    if (!KEYCLOAK_ENABLED) return res.redirect('/login');
     if (!oidcConfig) {
         return res.status(503).send('Keycloak SSO is not configured or unreachable.');
     }
