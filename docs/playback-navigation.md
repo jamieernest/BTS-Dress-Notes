@@ -17,7 +17,7 @@ The timeline can be zoomed so a long show or a busy stretch of notes stays usabl
 
 ## Development examples
 
-From this checkout, with the existing OIDC settings in `.env`:
+From this checkout, with the existing OIDC settings in `.env` (including `KEYCLOAK_ENABLED=1`, or leave Keycloak off for the name form):
 
 ```sh
 npm run dev:playback
