@@ -62,7 +62,7 @@ test('show tags validate, persist, protect used ids, travel with saved/reset not
     fs.rmdirSync(file);
     fs.renameSync(file + '.old', file);
     assert.deepEqual(await config.timeout(5000).emitWithAck('reset-all'), {});
-    await until(() => tags.length === 6 && alice.noteTexts().length === 0, 'reset defaults');
+    await until(() => tags.length === 8 && alice.noteTexts().length === 0, 'reset defaults');
     assert.deepEqual(disk(), defaults);
     const spare = await ack('create-tag', { name: 'Unused' });
     assert.deepEqual(await ack('delete-tag', spare.tag.id), {});

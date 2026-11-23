@@ -29,6 +29,16 @@
       "id": "set",
       "name": "Set",
       "color": "#FF6F91"
+    },
+    {
+      "id": "general",
+      "name": "General",
+      "color": "#F4A261"
+    },
+    {
+      "id": "cast",
+      "name": "Cast/PT",
+      "color": "#9B5DE5"
     }
   ]
 }

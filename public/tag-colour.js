@@ -4,7 +4,7 @@
     else root.TagColour = factory();
 }(typeof self !== 'undefined' ? self : this, function () {
     // Same colours as default-tags.json.
-    const PALETTE = ['#e63946', '#00b4d8', '#06d6a0', '#118ab2', '#8ac926', '#ff6f91'];
+    const PALETTE = ['#e63946', '#00b4d8', '#06d6a0', '#118ab2', '#8ac926', '#ff6f91', '#f4a261', '#9b5de5'];
     const norm = c => {
         const hex = String(c).toLowerCase();
         return /^#[0-9a-f]{3}$/.test(hex) ? '#' + [...hex.slice(1)].map(x => x + x).join('') : hex;
