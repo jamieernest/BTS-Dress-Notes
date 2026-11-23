@@ -172,7 +172,7 @@ To clear the show, use **Reset all notes and chat** on `/config.html` (it asks f
 
 ### Tags
 
-Show tags can be added, renamed, recoloured and deleted in Settings; the new-tag colour starts on one no tag uses yet. For example, add Crew when the current show needs it. Tags used by current notes cannot be deleted, and every note keeps at least one tag. Reset and Save and reset restore the six tags in `default-tags.json`; saved shows and reset snapshots keep the custom definitions with their notes. Restoring reset notes also restores the definitions they need, keeping conflicting definitions separate so existing notes retain their meaning.
+Show tags can be added, renamed, recoloured and deleted in Settings; the new-tag colour starts on one no tag uses yet. For example, add Crew when the current show needs it. Tags used by current notes cannot be deleted, and every note keeps at least one tag. Reset and Save and reset restore the eight tags in `default-tags.json`; saved shows and reset snapshots keep the custom definitions with their notes. Restoring reset notes also restores the definitions they need, keeping conflicting definitions separate so existing notes retain their meaning.
 
 ### Show recordings and playback
 
