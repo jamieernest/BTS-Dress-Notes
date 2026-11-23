@@ -54,7 +54,25 @@ test('a name on a form from another site is refused', async (t) => {
         body: new URLSearchParams({ name: 'mallory' })
     });
     assert.strictEqual(res.status, 403);
+    assert.match(await res.text(), /cross-site login blocked/);
     assert.deepStrictEqual(res.headers.getSetCookie(), []);
+});
+
+test('pages send Referrer-Policy same-origin, so browsers send a real Origin on the login form (not "null")', async (t) => {
+    const { base } = await setup(t);
+    assert.strictEqual((await fetch(`${base}/login`)).headers.get('referrer-policy'), 'same-origin');
+    const res = await fetch(`${base}/login`, {
+        method: 'POST', redirect: 'manual',
+        headers: { 'content-type': 'application/x-www-form-urlencoded', origin: 'null' },
+        body: new URLSearchParams({ name: 'mallory' })
+    });
+    assert.strictEqual(res.status, 403, 'Origin: null is still refused');
+    const ok = await fetch(`${base}/login`, {
+        method: 'POST', redirect: 'manual',
+        headers: { 'content-type': 'application/x-www-form-urlencoded', origin: base },
+        body: new URLSearchParams({ name: 'sam' })
+    });
+    assert.strictEqual(ok.status, 302);
 });
 
 test('the same name is the same person on any device; different names are different people', async (t) => {
