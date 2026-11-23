@@ -130,8 +130,12 @@ function createApp({ issuer, sessionsFile, port, env = {} }) {
                 env: {
                     ...process.env, PORT: String(port), OSC_PORT: String(oscPort), SESSIONS_FILE: sessionsFile,
                     BACKUPS_DIR: backupsDir, SAVED_SHOWS_DIR: savedShowsDir, RECORDINGS_DIR: recordingsDir, RESETS_DIR: resetsDir, TAGS_FILE: tagsFile,
-                    SESSION_SECRET: 'test', KEYCLOAK_ISSUER: issuer, KEYCLOAK_CLIENT_ID: 'bts',
-                    KEYCLOAK_CLIENT_SECRET: 'x', EOS_HOST: '127.0.0.1', EOS_PORT: String(await freePort()), ...env
+                    SESSION_SECRET: 'test', EOS_HOST: '127.0.0.1', EOS_PORT: String(await freePort()),
+                    // No issuer: Keycloak off, whatever the developer's own shell has set.
+                    ...(issuer
+                        ? { KEYCLOAK_ENABLED: '1', KEYCLOAK_ISSUER: issuer, KEYCLOAK_CLIENT_ID: 'bts', KEYCLOAK_CLIENT_SECRET: 'x' }
+                        : { KEYCLOAK_ENABLED: '', KEYCLOAK_ISSUER: '', KEYCLOAK_CLIENT_ID: '', KEYCLOAK_CLIENT_SECRET: '' }),
+                    ...env
                 },
                 stdio: ['ignore', 'pipe', 'pipe']
             });

@@ -12,17 +12,12 @@ _Disclaimer: this was mostly AI generated (Deepseek V3-4 and Claude Sonnet 5). I
 - [Features](#features)
   - [Timecode modes](#timecode-modes)
   - [Eos console](#eos-console)
-  - [Scene labels](#scene-labels)
-  - [Writing notes](#writing-notes)
-  - [Shitposts chat](#shitposts-chat)
-  - [Past notes](#past-notes)
   - [Notes, backup and reset](#notes-backup-and-reset)
   - [Tags](#tags)
   - [Show recordings and playback](#show-recordings-and-playback)
   - [OBS recording from QLab](#obs-recording-from-qlab)
   - [Camera preset](#camera-preset)
   - [Profile photos](#profile-photos)
-  - [OBS overlays](#obs-overlays)
 - [Testing](#testing)
 
 ## Setup
@@ -45,16 +40,25 @@ _Disclaimer: this was mostly AI generated (Deepseek V3-4 and Claude Sonnet 5). I
 
 ## Configuration
 
-Settings are environment variables, read from `.env` by `npm start` (a git-ignored file). Only `SESSION_SECRET` is required. Copy `.env.example` to `.env` to start, it lists every setting.
+Settings are environment variables, read from `.env` by `npm start` (a git-ignored file). Only `SESSION_SECRET` is required.
 
-### Login (Keycloak)
+### Login
 
-Every page requires login through Keycloak SSO, except `/overlay.html` and `/overlay-cast.html` (with their assets and socket) when requested from the server's own machine (loopback). The same pages from any other address still need a login.
+Every page requires login, either through Keycloak SSO or, when Keycloak is off, a name form. Keycloak is **off unless `KEYCLOAK_ENABLED` is set**. Overlay pages are the exception: `/overlay.html` and `/overlay-cast.html` (with their assets and socket) when requested from the server's own machine (loopback). The same pages from any other address still need a login.
 
 | Variable | Purpose |
 |---|---|
 | `SESSION_SECRET` | **Required.** The server won't start without it |
-| `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET` | Enable login. One shared client covers every venue. Without them the server starts, but every page returns 503 at `/login` until they are set and the server is restarted. An `http://` issuer is accepted for a venue-LAN Keycloak without TLS |
+| `KEYCLOAK_ENABLED` | `1`, `true`, `on` or `yes` turns Keycloak login on; `0`, `false`, `off`, `no` or unset leaves it off. `0` ignores any `KEYCLOAK_*` settings below |
+| `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID`, `KEYCLOAK_CLIENT_SECRET` | Required when `KEYCLOAK_ENABLED` is on. One shared client covers every venue. If the issuer can't be reached, every page returns 503 at `/login` until it can and the server is restarted. An `http://` issuer is accepted for a venue-LAN Keycloak without TLS |
+
+The server refuses to start, with a message saying what to set, if any `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID` or `KEYCLOAK_CLIENT_SECRET` is set without `KEYCLOAK_ENABLED`, if it is on with one of the three missing, or if it is neither on nor off. See `.env.example`.
+
+**Upgrading an install that already uses Keycloak:** add `KEYCLOAK_ENABLED=1` to its `.env` before pulling, or it won't start. `npm run dev:playback` reads the same file.
+
+**With Keycloak off**, `/login` asks for a name, and that name is who you are: `guest:<name>`, so the same name on two devices is one person, and anyone can type anyone else's name. Anyone who can reach the server can then use every page, including settings, reset, import and video upload, so only run it this way on a network you trust. Profile photos and "My scenes" need Keycloak; guests get initials.
+
+Notes written in one mode can't be edited or deleted in the other, because the author ids differ. Switch between shows (save notes, then reset), not during one.
 
 In the Keycloak client, "Valid redirect URIs" must cover `http://<host>:<port>/callback`, and "Valid post logout redirect URIs" must cover `http://<host>:<port>/logged-out` (or be `+` with a redirect URI pattern that covers it). Otherwise logging out stops at a Keycloak error page.
 
@@ -123,32 +127,6 @@ The server connects to the Eos console over TCP (`EOS_HOST`, `EOS_PORT`) at star
 
 The **Eos console** section of that page keeps a list of venues (a name and an IPv4 address each) and chooses the address to use: a saved venue, a custom address, or the default (`EOS_HOST`, used until something is chosen). Changing the choice, or editing the address of the venue in use, reconnects at once without a restart. The venue list and choice are saved per install in `local-settings.json` (`eosVenues`, `eosChoice`). `EOS_PORT` is unchanged.
 
-### Scene labels
-
-Each note is stamped with the current LX cue (read from the Eos console) and the current scene. The scene is set from QLab, or anything else that can send OSC, with an OSC message to this computer's UDP port `8001` (`OSC_PORT`). In QLab, add a Network cue with the same destination, message type **OSC Message**, and a custom message such as:
-
-```
-/bts/Scene "Act 1 Scene 2"
-```
-
-The address is any path under `/bts/` (`/bts/Scene` by convention; the last part is not used) and the label is its first argument, quoted when it has spaces. A number is taken as text. A label is cut to 200 characters; an empty one is ignored, as is one equal to the current scene. `/bts/record/...` addresses are not scene labels (see [OBS recording from QLab](#obs-recording-from-qlab)).
-
-The scene starts as `Preshow` each time the server starts and stays until the next label arrives. A new label changes it for everyone at once: it is shown on the Config & Status page and the cast overlay, notes are grouped under it (one heading per visit to a scene, so a scene that returns gets a new group), the scene filter lists it, and, with [Camera preset](#camera-preset) configured, it can recall the camera preset. A note belongs to the scene that was current when its author started typing, so one saved just after a scene change stays in the scene it was written in. Scene changes are also logged with their time, which playback uses to show the scenes on its timeline. An `@username` in a label is highlighted for that person, and the **My scenes** filter keeps only scenes that mention the viewer.
-
-### Writing notes
-
-Start typing anywhere on the main page to begin a note. The note is stamped when you start typing with the timecode, the LX cue and the [scene](#scene-labels) at that moment, and every note takes one or more tags (the composer remembers the ones you last used). Enter sends on a desktop and Shift+Enter adds a line; on a touch device Enter adds a line and the Send button sends. Escape cancels an empty note. A note sent while the connection is down is kept in the browser and sent when it returns.
-
-Notes are numbered in the order the server accepted them. Authors can edit or delete their own notes and reply to any note; replies can be edited or deleted by their author. Anyone can agree (thumbs-up) with a note or reply; hover or focus the count to see who. Typing `@` mentions an online person or an existing author. Notes can be filtered by scene, tag, author, mentioned person and search text, and the filters are kept in the page's URL. The toolbar can show notes newest or oldest first. **Download notes** in the top-bar menu saves them as JSON, and the **Video** button opens [playback](#show-recordings-and-playback).
-
-### Shitposts chat
-
-The chat button opens **Shitposts**, a chat for everyone logged in, kept out of notes, exports and saved shows. Messages can be replies and mentions, and a badge shows unseen mentions. Chat is kept only in server memory; after a restart the browsers offer their copies, and the fullest log that two different people agree on is restored (within 30 minutes of the start, `CHAT_RESTORE_WINDOW_MS`). **Reset all notes and chat** clears it.
-
-### Past notes
-
-**Past notes** (`/recall.html`) opens a saved show, or a notes `.json` file chosen or dropped from your device, with the same search, filters and playback link as live notes. It is read-only; the open show and its filters are in the URL.
-
 ### Notes, backup and reset
 
 Notes are kept in server memory and saved to `backups/` about a second after every change (one file per minute at most), every minute, and when the server stops or crashes. A browser also keeps each note it has sent until the server confirms it, and sends it again after a reload or reconnect.
@@ -179,7 +157,7 @@ The timeline zooms with the **−**, **+** and **Fit** buttons, the `+` `-` `0` 
 
 ### OBS recording from QLab
 
-QLab can start and stop an OBS Studio recording with the same kind of OSC cue that sends [scene labels](#scene-labels), and the recording is added to the live notes' video on its own. OBS must run on the same computer as the server, and be OBS 28 or newer (it has a built-in WebSocket server).
+QLab can start and stop an OBS Studio recording with the same kind of OSC cue that sends scene labels, and the recording is added to the live notes' video on its own. OBS must run on the same computer as the server, and be OBS 28 or newer (it has a built-in WebSocket server).
 
 **In OBS**
 
@@ -242,17 +220,6 @@ Notes, comments, chat and pickers show each person's photo from the BTS website,
 The mapping assumes the website and Keycloak usernames stay aligned: the website can link an existing account by email or allow an administrative username change without evident synchronisation, so this is an integration assumption, not an identity guarantee. An authoritative photo claim or API would remove it. The shared wire field `emailPrefix` carries only that username; full addresses are not added to notes, chat, user broadcasts or exports.
 
 The browser loads the image directly: the URL is a fixed HTTPS path on the website (with `referrerpolicy="no-referrer"`), there is no arbitrary URL input, server-side fetch, proxy or upload endpoint, and the CSP allows only that image origin. DOMPurify sanitizes markup, not image bytes, and the website sees the requesting browser's IP and photo path. This covers our side of the integration, not a security audit of the separate website.
-
-### OBS overlays
-
-Two pages for an OBS browser source, linked from the Config & Status page: `/overlay.html` shows the timecode (in the chosen mode) and LX cue, and `/overlay-cast.html` shows the time of day and [scene](#scene-labels). They open without login when loaded from the server's own computer, and are read-only. Adjust them with URL options, e.g. `/overlay.html?layout=left&size=large&theme=dark`:
-
-| Option | Values (default first) |
-|---|---|
-| `layout` | `center`, `left`, `right`, `spaced` |
-| `size` | `normal`, `small`, `large` |
-| `theme` | `default`, `dark`, `light`, `minimal` |
-| `display` | `/overlay.html`: `all`, `timecode-only`, `lx-only`, `realtime-only`. `/overlay-cast.html`: all, `realtime-only`, `act-only` |
 
 ## Testing
 
