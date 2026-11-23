@@ -27,6 +27,7 @@
         </div>
 
         <div class="topbar-actions">
+            <span id="obsIndicator" class="obs-indicator" role="status" hidden><span class="obs-dot" aria-hidden="true"></span><span id="obsLabel"></span></span>
             <a href="/playback.html?source=live" class="btn ghost video-link" aria-label="Open video" title="Open video"><svg class="icon" aria-hidden="true"><use href="icons.svg#i-video"/></svg><span>Video</span></a>
             <button type="button" id="usersButton" class="avatars awaiting-data" aria-haspopup="true" aria-expanded="false" title="Who's online">
                 <span id="avatarStack" class="avatar-stack"></span>
@@ -190,6 +191,7 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="keepalive.js"></script>
+    <script src="obs-status.js"></script>
     <script src="chat-copy.js"></script>
     <script src="chat-replies.js"></script>
     <script src="chat-scroll.js"></script>

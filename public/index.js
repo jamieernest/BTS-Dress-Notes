@@ -1337,6 +1337,18 @@ document.addEventListener('DOMContentLoaded', function() {
     // --- Socket.io setup ---
     // `page` tells the server which page this is (see pageOf() in server.js).
     window.socket = io({ auth: { page: 'main' } });
+
+    // Whether OBS is recording, for everyone (hidden when OBS is not set up).
+    const obsIndicator = $('obsIndicator');
+    socket.on('obs-status', (status) => {
+        const view = ObsStatus.describe(status);
+        obsIndicator.hidden = !view.show;
+        if (!view.show) return;
+        obsIndicator.dataset.tone = view.tone;
+        $('obsLabel').textContent = view.label;
+        const notice = status.notice && status.notice.text;
+        obsIndicator.title = notice ? `${view.text}. ${notice}` : view.text;
+    });
     let pageInCache = false;
     let connectionBannerTimer = null;
     function showConnectionProblem() {

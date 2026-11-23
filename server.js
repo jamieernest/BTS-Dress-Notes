@@ -14,6 +14,7 @@ const loopbackOverlay = require('./loopback-overlay');
 const { listIpv4Interfaces, resolveInterface } = require('./net-iface');
 const { createGatewayLock } = require('./gateway-lock');
 const { loadSettings, saveSettings } = require('./settings');
+const eosVenues = require('./eos-venues');
 const { FileSessionStore } = require('./session-store');
 const { authorsOf, applyAuthors, backupFilename, backupTime, checkBackup, findRestorableBackup, writeBackupFile } = require('./notes-backup');
 const savedShows = require('./saved-shows');
@@ -82,7 +83,7 @@ const io = socketIo(server, {
     allowRequest: (req, callback) => callback(null, sameOrigin(req))
 });
 
-const eosHost = process.env.EOS_HOST || '10.10.160.143';
+const defaultEosHost = process.env.EOS_HOST || '10.10.160.143';
 const eosPort = process.env.EOS_PORT || 3037;
 const oscPort = process.env.OSC_PORT || 8001;
 
@@ -101,11 +102,18 @@ const NETWORK_LOST_MS = 10000;
 
 // MIDI input and network interface chosen on the config page. Env vars
 // (GATEWAY_IFACE) are only the defaults until something is saved here.
-const SETTINGS_FILE = path.join(__dirname, 'local-settings.json');
+const SETTINGS_FILE = process.env.SETTINGS_FILE || path.join(__dirname, 'local-settings.json');
 const settings = loadSettings(SETTINGS_FILE);
 if (settings.networkInterface === undefined) {
     settings.networkInterface = process.env.GATEWAY_IFACE || 'auto';
 }
+
+// Eos venues and the chosen address; EOS_HOST is the default until one is chosen.
+settings.eosVenues = eosVenues.cleanVenues(settings.eosVenues);
+settings.eosChoice = eosVenues.cleanChoice(settings.eosChoice, settings.eosVenues);
+const currentEosHost = () => eosVenues.resolveHost(settings.eosChoice, settings.eosVenues, defaultEosHost);
+
+const eosConfig = () => ({ venues: settings.eosVenues, choice: settings.eosChoice, defaultHost: defaultEosHost, host: currentEosHost() });
 
 function persistSettings() {
     try {
@@ -585,11 +593,11 @@ app.get('/recordings/:collection', (req, res) => {
 });
 
 app.get('/recordings/:collection/:id', (req, res) => {
-    const file = isCollection(req.params.collection) && recordings.partFile(RECORDINGS_DIR, req.params.collection, req.params.id);
+    const file = isCollection(req.params.collection) && recordings.partFile(RECORDINGS_DIR, req.params.collection, req.params.id, { externalRoot: VIDEOS_DIR });
     if (!file) return res.status(404).json({ error: 'not found' });
     // A part's file never changes under its id. sendFile answers Range requests.
     res.type(file.type);
-    res.sendFile(file.path, { headers: { 'Cache-Control': 'private, max-age=31536000, immutable' } }, (error) => {
+    res.sendFile(file.path, { dotfiles: 'allow', headers: { 'Cache-Control': 'private, max-age=31536000, immutable' } }, (error) => {
         if (error && !res.headersSent) res.status(404).json({ error: 'not found' });
     });
 });
@@ -829,7 +837,12 @@ if (settings.midiInput !== undefined && (settings.midiInput === null || startupM
 // Messages we're interested in:
 // /eos/out/active/cue/text,1/199 B/O 1.0 2%
 // /eos/out/pending/cue/text,1/201 Start 1.0
-function handleOscMessage(address, value) {
+function handleOscMessage(address, value, args = value === undefined ? [] : [value]) {
+    // Recording cues share the /bts/ prefix with scene labels, so they are taken first.
+    if (recordCommand.isRecordAddress(address)) {
+        handleRecordCommand(address, args);
+        return;
+    }
     if (address === '/eos/out/active/cue/text' && value) {
         // Extract cue name from value like "1/199 B/O 1.0 2%"
         const cueName = extractCueLabel(value);
@@ -860,6 +873,8 @@ function handleOscMessage(address, value) {
         const act = input.cleanCue(value);
         if (act && act !== globalState.currentAct) {
             globalState.currentAct = act;
+            // Fire and forget: the camera can never delay or break the scene update.
+            try { camera.sceneChanged(); } catch (error) { console.log('Camera: scene recall failed:', error.message); }
             if (showLog.record(globalState.showLog, 'scene', act)) {
                 scheduleBackup();
                 io.emit('show-log-update', globalState.showLog);
@@ -870,6 +885,109 @@ function handleOscMessage(address, value) {
     }
 }
 
+// OBS recording. QLab's `/bts/record/start` and `/bts/record/stop` (record-command.js)
+// start and stop OBS (obs-recorder.js); the recorder follows OBS's own state, and
+// what OBS saves in VIDEOS_DIR is added to the live notes' recording (obs-pickup.js).
+// None of it may stop scene labels, the Eos feed or anything else working.
+const obsConfig = obsRecorder.configFromEnv(process.env);
+const obsPickupStartedAt = Date.now();
+// VIDEO_OFFSET_S (video-offset.js) moves the start of each recording as it is added.
+const videoOffset = videoOffsetConfig.configFromEnv(process.env);
+if (videoOffset.error) console.log(`OBS: ${videoOffset.error}`);
+else if (videoOffset.seconds) console.log(`OBS: video offset ${videoOffset.seconds > 0 ? '+' : ''}${videoOffset.seconds} s applies to recordings added from now on`);
+const videoPickup = obsPickup.createPickup({ videosDir: VIDEOS_DIR, recordingsDir: RECORDINGS_DIR, offsetS: videoOffset.seconds });
+
+function obsClientStatus(status) {
+    const { enabled, state, error, notice } = status;
+    return { enabled, state, error, notice, videoOffsetS: videoOffset.seconds, videoOffsetError: videoOffset.error };
+}
+
+const obs = obsRecorder.createRecorder({
+    url: obsConfig.url, password: obsConfig.password, enabled: obsConfig.enabled, configError: obsConfig.error,
+    retryMs: Number(process.env.OBS_RETRY_MS) || undefined,
+    onStatus: (status) => io.emit('obs-status', obsClientStatus(status)),
+    onFinished: (finished) => addObsRecording(finished),
+    onConnected: () => scanVideosFolder()
+});
+
+// The camera (lumens-camera.js, CAMERA_* in .env) recalls a position preset
+// before a start cue with a preset number starts OBS, and optionally on every
+// scene change. It is off without CAMERA_HOST, and never blocks anything.
+const cameraConfig = lumensCamera.configFromEnv(process.env);
+const camera = lumensCamera.createCamera({
+    config: cameraConfig,
+    onStatus: () => io.emit('camera-status', camera.status())
+});
+
+async function recallBeforeRecording(command) {
+    if (command.invalidPreset) console.log('Camera: ignored the preset on the start cue: it is not a whole number from 1 to 255');
+    // A number on the cue overrides CAMERA_PRESET for this start only.
+    const preset = command.preset || cameraConfig.preset;
+    if (!preset) return;
+    if (!camera.enabled()) return command.preset ? console.log(`Camera: ignored preset ${preset} on the start cue: the camera is not set up`) : undefined;
+    if (obs.recording()) return console.log(`Camera: not recalling preset ${preset}: OBS is already recording`);
+    const outcome = await camera.recall(preset);
+    if (!outcome.ok) console.log(`Camera: starting the recording anyway, preset ${preset} was not recalled`);
+}
+
+function handleRecordCommand(address, args) {
+    try {
+        const command = recordCommand.parseRecordCommand(address, args, OBS_OSC_SECRET);
+        if (command.ignored === 'unknown') return console.log(`OBS: ignored OSC ${address}: not a recording command`);
+        if (command.ignored === 'secret') return console.log(`OBS: ignored OSC ${address}: the secret is missing or wrong`);
+        if (!obsConfig.enabled) return console.log(`OBS: ignored OSC ${address}: OBS recording is not set up`);
+        console.log(`OBS: OSC ${address} received`);
+        const verb = command.action === 'start' ? 'start' : 'stop';
+        const run = command.action === 'start'
+            ? recallBeforeRecording(command).catch((error) => console.log('Camera: could not recall:', error.message)).then(() => obs.startRecording())
+            : obs.stopRecording();
+        run.then((outcome) => {
+            if (!outcome.ok) console.log(`OBS: could not ${verb} recording: ${outcome.error}`);
+            else if (outcome.result === 'noop') console.log(`OBS: ${verb === 'start' ? 'already recording' : 'not recording'}, nothing to do`);
+            else console.log(`OBS: asked to ${verb} recording`);
+        }).catch((error) => console.log(`OBS: could not ${verb} recording:`, error.message));
+    } catch (error) {
+        console.log(`OBS: could not handle OSC ${address}:`, error.message);
+    }
+}
+
+// Says what became of a recording found in the videos folder.
+function reportPickup(outcome) {
+    if (outcome.result === 'duplicate') return;
+    if (outcome.result === 'added') {
+        console.log(`OBS: added recording "${outcome.name}" to the live notes`);
+        obs.setNotice(null);
+        recordingsChanged('live');
+        return;
+    }
+    console.log(`OBS: ${outcome.message}`);
+    obs.setNotice(outcome.message);
+}
+
+async function addObsRecording({ path: file, ...timing }) {
+    reportPickup(await videoPickup.importFinished(file, timing));
+}
+
+// The earliest moment the live notes cover, in ms, or null when there are none.
+function liveNotesStart() {
+    const times = globalState.notes.map(n => Date.parse(n.startedAt || n.timestamp))
+        .concat(globalState.showLog.map(e => Date.parse(e.at))).filter(Number.isFinite);
+    return times.length ? Math.min(...times) : null;
+}
+
+// Recordings OBS finished while this server was down or not connected: only
+// files finished since the live notes began (or since this server started when
+// there are none), and never while OBS is recording.
+function scanVideosFolder() {
+    if (!obsConfig.enabled || obs.recording()) return;
+    try {
+        const start = liveNotesStart();
+        videoPickup.scan({ since: start === null ? obsPickupStartedAt : start - 10 * 60 * 1000 }).forEach(reportPickup);
+    } catch (error) {
+        console.log('OBS: could not check the videos folder:', error.message);
+    }
+}
+
 const connectMessage = new Message('/eos/subscribe=1');
 const buffer = encode(connectMessage);
 
@@ -877,7 +995,7 @@ const buffer = encode(connectMessage);
 // page's reconnect button; there is never more than one socket, and each one
 // gets its own stream decoder. No automatic retry.
 const EOS_CONNECT_TIMEOUT_MS = Number(process.env.EOS_CONNECT_TIMEOUT_MS) || 10000;
-const eosStatus = { state: 'disconnected', error: null, host: eosHost, port: Number(eosPort) };
+const eosStatus = { state: 'disconnected', error: null, host: currentEosHost(), port: Number(eosPort) };
 let eosSocket = null;
 
 function setEosStatus(state, error = null) {
@@ -886,9 +1004,12 @@ function setEosStatus(state, error = null) {
     io.emit('eos-status', eosStatus);
 }
 
-function connectToEOS() {
-    // A press while an attempt is in progress does not stack another.
-    if (eosStatus.state === 'connecting') return;
+function connectToEOS({ force = false } = {}) {
+    // A press while an attempt is in progress does not stack another, unless
+    // the address has just changed (the old attempt is dropped below).
+    if (eosStatus.state === 'connecting' && !force) return;
+    const eosHost = currentEosHost();
+    eosStatus.host = eosHost;
 
     if (eosSocket) {
         const old = eosSocket;
@@ -952,7 +1073,7 @@ try {
     });
 
     oscServer.on('message', function (msg) {
-        handleOscMessage(msg[0], msg[1]);
+        handleOscMessage(msg[0], msg[1], msg.slice(1));
     });
 
     oscServer.on('error', (err) => {
@@ -1493,6 +1614,9 @@ io.on('connection', (socket) => {
     socket.emit('system-status', systemStatus());
     socket.emit('network-timecode-status', networkStatus);
     socket.emit('eos-status', eosStatus);
+    socket.emit('obs-status', obsClientStatus(obs.status()));
+    socket.emit('camera-status', camera.status());
+    socket.emit('eos-config', eosConfig());
     socket.emit('settings-options', settingsOptions());
 
     // Only send user-related updates if this is NOT an overlay
@@ -1871,6 +1995,52 @@ io.on('connection', (socket) => {
     });
 
     // Reconnect to the Eos console from the config page; same rule as the other controls.
+    // Eos venues and address. Same rule as the other config page controls: any
+    // non-overlay user. Changing the address reconnects at once.
+    const eosFail = (ack, error) => { if (typeof ack === 'function') ack({ error }); };
+    const eosDone = (ack, extra = {}) => {
+        persistSettings();
+        io.emit('eos-config', eosConfig());
+        if (typeof ack === 'function') ack(extra);
+    };
+    const applyEosAddress = (before) => {
+        if (currentEosHost() !== before) {
+            console.log(`Eos address changed to ${currentEosHost()} by ${user.name}`);
+            connectToEOS({ force: true });
+        }
+    };
+
+    on('eos-venue-save', (data, ack) => {
+        if (user.isOverlay) return eosFail(ack, 'Not allowed.');
+        const result = eosVenues.saveVenue(settings.eosVenues, data);
+        if (result.error) return eosFail(ack, result.error);
+        const before = currentEosHost();
+        settings.eosVenues = result.venues;
+        eosDone(ack, { venue: result.venue });
+        applyEosAddress(before);
+    });
+
+    on('eos-venue-delete', (id, ack) => {
+        if (user.isOverlay) return eosFail(ack, 'Not allowed.');
+        if (!settings.eosVenues.some((v) => v.id === id)) return eosFail(ack, 'That venue no longer exists.');
+        if (settings.eosChoice?.venue === id) return eosFail(ack, 'That venue is in use. Choose another address first.');
+        settings.eosVenues = settings.eosVenues.filter((v) => v.id !== id);
+        eosDone(ack);
+    });
+
+    // choice: { venue: id }, { host: '1.2.3.4' }, or null for the EOS_HOST default.
+    on('eos-select', (choice, ack) => {
+        if (user.isOverlay) return eosFail(ack, 'Not allowed.');
+        const clean = choice === null ? null : eosVenues.cleanChoice(choice, settings.eosVenues);
+        if (choice !== null && !clean) {
+            return eosFail(ack, choice && choice.venue !== undefined ? 'That venue no longer exists.' : 'Enter an IPv4 address such as 10.10.160.143.');
+        }
+        const before = currentEosHost();
+        settings.eosChoice = clean;
+        eosDone(ack);
+        applyEosAddress(before);
+    });
+
     on('eos-reconnect', () => {
         if (user.isOverlay) return;
         console.log(`Eos TCP reconnect requested by ${user.name}`);
@@ -1962,7 +2132,7 @@ io.on('connection', (socket) => {
             return respond({ error: "The notes couldn't be saved. Nothing was reset." });
         }
         // The live videos go with it; the reset (which removes them) waits for that.
-        recordings.copyCollection(RECORDINGS_DIR, 'live', show.id).then((parts) => {
+        recordings.copyCollection(RECORDINGS_DIR, 'live', show.id, { externalRoot: VIDEOS_DIR }).then((parts) => {
             if (parts) recordingsChanged(show.id);
             // Notes can arrive while the videos copy; write the show again (same
             // id) straight before the reset so none of them are lost. If another
@@ -2181,6 +2351,16 @@ initKeycloak().finally(() => {
 
         connectToEOS();
         startNetworkTimecode();
+        if (cameraConfig.error) console.log(`Camera: ${cameraConfig.error}`);
+        if (cameraConfig.warning) console.log(`Camera: ${cameraConfig.warning}`);
+        if (cameraConfig.enabled) {
+            console.log(`Camera preset recall is on: ${cameraConfig.host}${cameraConfig.onScene ? `, preset ${cameraConfig.preset} on every scene change` : ''}`);
+        }
+        if (obsConfig.enabled) {
+            console.log(`OBS recording is on: ${obsConfig.url}, videos in ${VIDEOS_DIR}`);
+            obs.connect().catch(() => {});
+            setInterval(scanVideosFolder, OBS_SCAN_MS).unref();
+        }
     });
 });
 

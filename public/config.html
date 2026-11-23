@@ -67,6 +67,32 @@
             <p id="recordingResult" class="section-note result" role="alert" hidden></p>
         </section>
 
+        <section class="section" id="eos" aria-labelledby="eosTitle">
+            <h2 id="eosTitle">Eos console</h2>
+            <p class="section-note">Choose a saved venue or enter an address. Changing it reconnects to the console straight away.</p>
+            <div class="rows">
+                <div class="row row-wrap">
+                    <label class="row-label" for="eosAddressSelect">Address</label>
+                    <select id="eosAddressSelect" class="select"></select>
+                </div>
+                <form id="eosCustomForm" class="row row-wrap" hidden>
+                    <label class="row-label" for="eosCustomInput">IP address</label>
+                    <input type="text" id="eosCustomInput" class="input" maxlength="15" inputmode="decimal" placeholder="e.g. 10.10.160.143" autocomplete="off" required>
+                    <button type="submit" class="btn outline">Use</button>
+                </form>
+            </div>
+            <h3 class="subhead" id="eosVenuesTitle">Venues</h3>
+            <div class="rows" id="eosVenueRows" aria-labelledby="eosVenuesTitle"></div>
+            <form id="eosAddVenueForm" class="rows" aria-label="New venue">
+                <div class="row row-wrap">
+                    <input type="text" id="eosVenueName" class="input" maxlength="60" placeholder="Venue name" aria-label="New venue name" autocomplete="off" required>
+                    <input type="text" id="eosVenueHost" class="input" maxlength="15" inputmode="decimal" placeholder="IP address" aria-label="New venue IP address" autocomplete="off" required>
+                    <button type="submit" class="btn outline">Add venue</button>
+                </div>
+            </form>
+            <p id="eosResult" class="section-note result" role="status" hidden></p>
+        </section>
+
         <section class="section" aria-labelledby="statusTitle">
             <h2 id="statusTitle">Status</h2>
             <div class="rows">
@@ -76,6 +102,15 @@
                 <div class="row" id="eosStatus">
                     <span class="state-dot"></span><span class="row-label">Eos console</span><span class="row-value">-</span>
                     <button type="button" id="eosReconnectButton" class="btn outline">Reconnect</button>
+                </div>
+                <div class="row" id="obsStatus" data-state="" hidden>
+                    <span class="state-dot"></span><span class="row-label">OBS recording</span><span class="row-value">-</span>
+                </div>
+                <div class="row" id="videoOffsetStatus" data-state="" hidden>
+                    <span class="state-dot"></span><span class="row-label">Video offset</span><span class="row-value">-</span>
+                </div>
+                <div class="row" id="cameraStatus" data-state="">
+                    <span class="state-dot"></span><span class="row-label">Camera preset</span><span class="row-value">-</span>
                 </div>
                 <div class="row" id="oscStatus">
                     <span class="state-dot"></span><span class="row-label">Scene labels</span><span class="row-value">Typed in by hand</span>
@@ -202,6 +237,8 @@
 
     <script src="/socket.io/socket.io.js"></script>
     <script src="keepalive.js"></script>
+    <script src="obs-status.js"></script>
+    <script src="camera-status.js"></script>
     <script src="timecode-format.js"></script>
     <script src="playback-timeline.js"></script>
     <script src="video-file.js"></script>
