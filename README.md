@@ -12,6 +12,7 @@ _Disclaimer: this was mostly AI generated (Deepseek V3-4 and Claude Sonnet 5). I
 - [Features](#features)
   - [Timecode modes](#timecode-modes)
   - [Eos console](#eos-console)
+  - [Scene labels](#scene-labels)
   - [Notes, backup and reset](#notes-backup-and-reset)
   - [Tags](#tags)
   - [Show recordings and playback](#show-recordings-and-playback)
@@ -118,6 +119,18 @@ The server connects to the Eos console over TCP (`EOS_HOST`, `EOS_PORT`) at star
 
 The **Eos console** section of that page keeps a list of venues (a name and an IPv4 address each) and chooses the address to use: a saved venue, a custom address, or the default (`EOS_HOST`, used until something is chosen). Changing the choice, or editing the address of the venue in use, reconnects at once without a restart. The venue list and choice are saved per install in `local-settings.json` (`eosVenues`, `eosChoice`). `EOS_PORT` is unchanged.
 
+### Scene labels
+
+Each note is stamped with the current LX cue (read from the Eos console) and the current scene. The scene is set from QLab, or anything else that can send OSC, with an OSC message to this computer's UDP port `8001` (`OSC_PORT`). In QLab, add a Network cue with the same destination, message type **OSC Message**, and a custom message such as:
+
+```
+/bts/Scene "Act 1 Scene 2"
+```
+
+The address is any path under `/bts/` (`/bts/Scene` by convention; the last part is not used) and the label is its first argument, quoted when it has spaces. A number is taken as text. A label is cut to 200 characters; an empty one is ignored, as is one equal to the current scene. `/bts/record/...` addresses are not scene labels (see [OBS recording from QLab](#obs-recording-from-qlab)).
+
+The scene starts as `Preshow` each time the server starts and stays until the next label arrives. A new label changes it for everyone at once: it is shown on the Config & Status page and the cast overlay, notes are grouped under it (one heading per visit to a scene, so a scene that returns gets a new group), the scene filter lists it, and, with [Camera preset](#camera-preset) configured, it can recall the camera preset. A note belongs to the scene that was current when its author started typing, so one saved just after a scene change stays in the scene it was written in. Scene changes are also logged with their time, which playback uses to show the scenes on its timeline. An `@username` in a label is highlighted for that person, and the **My scenes** filter keeps only scenes that mention the viewer.
+
 ### Notes, backup and reset
 
 Notes are kept in server memory and saved to `backups/` about a second after every change (one file per minute at most), every minute, and when the server stops or crashes. A browser also keeps each note it has sent until the server confirms it, and sends it again after a reload or reconnect.
@@ -148,7 +161,7 @@ The timeline zooms with the **−**, **+** and **Fit** buttons, the `+` `-` `0` 
 
 ### OBS recording from QLab
 
-QLab can start and stop an OBS Studio recording with the same kind of OSC cue that sends scene labels, and the recording is added to the live notes' video on its own. OBS must run on the same computer as the server, and be OBS 28 or newer (it has a built-in WebSocket server).
+QLab can start and stop an OBS Studio recording with the same kind of OSC cue that sends [scene labels](#scene-labels), and the recording is added to the live notes' video on its own. OBS must run on the same computer as the server, and be OBS 28 or newer (it has a built-in WebSocket server).
 
 **In OBS**
 
