@@ -13,6 +13,7 @@ const child = spawn(process.execPath, ['--env-file-if-exists=.env', 'server.js']
         SAVED_SHOWS_DIR: path.join(state, 'saved-shows'),
         RESETS_DIR: path.join(state, 'reset-notes'),
         RECORDINGS_DIR: path.join(state, 'recordings'),
+        STICKERS_DIR: path.join(state, 'stickers'),
         TAGS_FILE: path.join(state, 'tags.json')
     }
 });

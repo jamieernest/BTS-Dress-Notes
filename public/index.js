@@ -47,6 +47,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const chatUnread = $('chatUnread');
     const chatInput = $('chatInput');
     const sendChatBtn = $('sendChat');
+    const stickerButton = $('stickerButton');
+    const stickerPicker = $('stickerPicker');
+    const stickerUpload = $('stickerUpload');
+    const stickerUploadInput = $('stickerUploadInput');
+    const stickerStatus = $('stickerStatus');
+    const stickerResults = $('stickerResults');
+    const stickerLibraryIds = new Set();
+    const stickerLibraryGifUrls = new Set();
+    const stickerLibraryGifPageUrls = new Set();
+    const unavailableStickerIds = new Set();
     const chatMessages = $('chatMessages');
     const chatCount = $('chatCount');
     const scrollToTopBtn = $('scrollToTopBtn');
@@ -656,23 +666,62 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function chatQuoteHTML(id) {
         const quote = ChatReplies.quote(id, chatMessageById);
-        return `<button type="button" class="chat-reply-context" data-chat-jump="${esc(id)}" aria-label="${quote.available ? 'Jump to original message' : 'Original message unavailable'}"><span class="chat-quote-author">${esc(quote.author)}</span><span class="chat-quote-text">${esc(quote.text)}</span></button>`;
+        const sticker = Stickers.stickerUrl(quote.text);
+        const stickerId = sticker ? /^\/stickers\/([a-f0-9]{32})$/.exec(sticker)?.[1] : null;
+        const content = sticker
+            ? (unavailableStickerIds.has(stickerId) ? '' : `<img class="chat-quote-sticker" src="${esc(sticker)}" alt="Sticker" loading="lazy" decoding="async" referrerpolicy="no-referrer">`)
+            : `<span class="chat-quote-text">${esc(quote.text)}</span>`;
+        return `<button type="button" class="chat-reply-context" data-chat-jump="${esc(id)}" aria-label="${quote.available ? 'Jump to original message' : 'Original message unavailable'}"><span class="chat-quote-author">${esc(quote.author)}</span>${content}</button>`;
     }
 
     function renderChatMessage(msg, prev) {
         const mine = isMyChat(msg);
         const cont = continuesRun(prev, msg);
+        const stickerUrl = Stickers.stickerUrl(msg.text);
+        const stickerId = stickerUrl ? /^\/stickers\/([a-f0-9]{32})$/.exec(stickerUrl)?.[1] : null;
+        const gifRange = GifLinks.ranges(msg.text)[0];
+        const tenorPageUrl = gifRange?.embedUrl ? gifRange.url : null;
+        const gifUrl = gifRange ? (tenorPageUrl || GifLinks.mediaUrl(gifRange.url)) : null;
+        const imageRange = GifLinks.imageRanges(msg.text)[0];
+        const imageUrl = imageRange?.url || null;
+        const addImageUrl = gifUrl || imageUrl;
+        const gifInLibrary = gifUrl
+            ? (tenorPageUrl ? stickerLibraryGifPageUrls.has(tenorPageUrl) : stickerLibraryGifUrls.has(gifUrl))
+            : false;
+        const imageInLibrary = imageUrl ? stickerLibraryGifUrls.has(imageUrl) : false;
+        const mediaInLibrary = gifUrl ? gifInLibrary : imageInLibrary;
+        const unavailable = stickerId ? unavailableStickerIds.has(stickerId) : false;
+        const stickerAction = stickerId ? `
+            <button type="button" class="chat-add-sticker-action${stickerLibraryIds.has(stickerId) ? ' in-library' : ''}${unavailable ? ' unavailable' : ''}"
+                data-add-sticker="${esc(stickerId)}"
+                aria-label="${unavailable ? 'Sticker deleted' : stickerLibraryIds.has(stickerId) ? 'In your sticker library' : 'Add sticker to your library'}"
+                title="${unavailable ? 'Sticker deleted' : stickerLibraryIds.has(stickerId) ? 'In your library' : 'Add it to my sticker library'}"
+                ${stickerLibraryIds.has(stickerId) || unavailable ? 'disabled' : ''}>
+                <i data-icon="${unavailable ? 'close' : stickerLibraryIds.has(stickerId) ? 'check' : 'plus'}"></i>
+            </button>` : addImageUrl ? `
+            <button type="button" class="chat-add-sticker-action${mediaInLibrary ? ' in-library' : ''}"
+                    data-add-gif="${esc(addImageUrl)}"
+                    aria-label="${mediaInLibrary ? 'In your sticker library' : `Add ${gifUrl ? 'GIF' : 'image'} to your library`}"
+                    title="${mediaInLibrary ? 'In your library' : 'Add it to my sticker library'}"
+                    ${mediaInLibrary ? 'disabled' : ''}>
+                    <i data-icon="${mediaInLibrary ? 'check' : 'plus'}"></i>
+            </button>` : '';
         const head = cont ? '' : `
                 <div class="chat-msg-head">
                     ${mine ? '' : `<span class="chat-msg-user">${esc(msg.user)}</span>`}
                     <span class="chat-msg-time">${esc(clockTime(msg.timestamp))}</span>
                 </div>`;
         const face = mine ? '' : (cont ? '<span class="avatar-gap"></span>' : avatarHTML(msg.userId || msg.user, msg.user, 'sm', msg.emailPrefix));
+        const mediaOnly = !msg.replyTo && (!!Stickers.stickerUrl(msg.text) || GifLinks.isMediaOnly(msg.text));
+        const bubbleClass = mediaOnly ? 'media-bubble' : '';
+        const stickerHtml = stickerUrl && !unavailable
+            ? Stickers.html(msg.text)
+            : '';
         return `
             <div data-chat-id="${esc(msg.id)}" class="chat-msg${mine ? ' mine' : ''}${cont ? ' cont' : ''}">
                 ${face}
                 <div class="chat-msg-main">${head}
-                    <div class="chat-bubble-row"><div class="bubble" title="${esc(fullTime(msg.timestamp))}">${msg.replyTo ? chatQuoteHTML(msg.replyTo) : ''}<div class="chat-msg-text">${Mentions.html(msg.text, msg.mentions)}</div></div><button type="button" class="chat-reply-action" data-chat-reply="${esc(msg.id)}" aria-label="Reply to ${esc(msg.user)}" title="Reply"><i data-icon="reply"></i></button></div>
+                    <div class="chat-bubble-row"><div class="bubble${stickerHtml ? ' sticker-bubble' : ''}${bubbleClass ? ` ${bubbleClass}` : ''}" title="${esc(fullTime(msg.timestamp))}">${msg.replyTo ? chatQuoteHTML(msg.replyTo) : ''}${stickerHtml || (stickerUrl ? '' : GifLinks.html(msg.text, msg.mentions, (text, mentions) => Mentions.html(text, mentions)))}</div><div class="chat-sticker-actions"><button type="button" class="chat-reply-action" data-chat-reply="${esc(msg.id)}" aria-label="Reply to ${esc(msg.user)}" title="Reply"><i data-icon="reply"></i></button>${stickerAction}</div></div>
                 </div>
             </div>`;
     }
@@ -1383,6 +1432,7 @@ document.addEventListener('DOMContentLoaded', function() {
     window.socket.on('connect', () => {
         clearTimeout(connectionBannerTimer);
         connectionBanner.hidden = true;
+        loadStickers();
         updatePendingBadges();
     });
 
@@ -1685,6 +1735,17 @@ document.addEventListener('DOMContentLoaded', function() {
         filterNotes();
     });
 
+    window.socket.on('chat-cleared', () => {
+        chatCopy.onReset();
+        chatReplyTo = null;
+        updateChatReplyPreview();
+        unreadChat = 0;
+        mentionUnread.reset();
+        updateMentionBadge();
+        chatMessagesList = [];
+        updateChatMessages();
+    });
+
     window.socket.on('export-data', (data) => {
         const blob = new Blob([data.data], { type: data.mimeType });
         const url = URL.createObjectURL(blob);
@@ -1715,6 +1776,185 @@ document.addEventListener('DOMContentLoaded', function() {
         if (!chatDrawer.hidden) (modalChatLayout.matches ? chatClose : chatInput).focus();
     });
     chatClose.addEventListener('click', () => { chooseChatOpen(false); chatToggle.focus(); });
+    let stickerList = [];
+    function syncStickerLibrary(stickers, preserveGifUrls = false) {
+        stickerLibraryIds.clear();
+        if (!preserveGifUrls) {
+            stickerLibraryGifUrls.clear();
+            stickerLibraryGifPageUrls.clear();
+        }
+        for (const sticker of stickers || []) {
+            stickerLibraryIds.add(sticker.id);
+            if (typeof sticker.sourceUrl === 'string') stickerLibraryGifUrls.add(sticker.sourceUrl);
+            if (typeof sticker.sourcePageUrl === 'string') stickerLibraryGifPageUrls.add(sticker.sourcePageUrl);
+        }
+        for (const button of chatMessages.querySelectorAll('[data-add-sticker]')) {
+            const inLibrary = stickerLibraryIds.has(button.dataset.addSticker);
+            const unavailable = unavailableStickerIds.has(button.dataset.addSticker);
+            button.disabled = inLibrary || unavailable;
+            button.classList.toggle('in-library', inLibrary);
+            button.classList.toggle('unavailable', unavailable);
+            button.title = unavailable ? 'Sticker deleted' : inLibrary ? 'In your library' : 'Add it to my sticker library';
+            button.setAttribute('aria-label', unavailable ? 'Sticker deleted' : inLibrary ? 'In your sticker library' : 'Add sticker to your library');
+            if (inLibrary || unavailable) {
+                NoteView.setHtml(button, `<i data-icon="${unavailable ? 'close' : 'check'}"></i>`);
+            }
+        }
+        for (const button of chatMessages.querySelectorAll('[data-add-gif]')) {
+            const url = button.dataset.addGif;
+            const inLibrary = stickerLibraryGifUrls.has(url) || stickerLibraryGifPageUrls.has(url);
+            button.disabled = inLibrary;
+            button.classList.toggle('in-library', inLibrary);
+            if (inLibrary) {
+                button.title = 'In your library';
+                button.setAttribute('aria-label', 'In your sticker library');
+                NoteView.setHtml(button, '<i data-icon="check"></i>');
+            }
+        }
+    }
+    function renderStickers() {
+        stickerResults.replaceChildren();
+        stickerStatus.textContent = stickerList.length ? '' : 'No stickers uploaded.';
+        for (const sticker of stickerList) {
+            const wrapper = document.createElement('div');
+            wrapper.className = 'sticker-result-wrap';
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'sticker-result';
+            button.title = sticker.name;
+            button.setAttribute('role', 'option');
+            const image = document.createElement('img');
+            image.src = sticker.url;
+            image.alt = sticker.name;
+            image.loading = 'lazy';
+            image.decoding = 'async';
+            image.referrerPolicy = 'no-referrer';
+            button.append(image);
+            button.addEventListener('click', () => {
+                stickerPicker.hidden = true;
+                stickerButton.setAttribute('aria-expanded', 'false');
+                window.socket.emit('chat-message', {
+                    text: sticker.url,
+                    mentions: [],
+                    ...(chatReplyTo ? { replyTo: chatReplyTo } : {})
+                });
+                chatReplyTo = null;
+                updateChatReplyPreview();
+            });
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'sticker-delete';
+            remove.title = `Delete ${sticker.name}`;
+            remove.setAttribute('aria-label', `Delete ${sticker.name}`);
+            NoteView.setHtml(remove, '<i data-icon="trash"></i>');
+            remove.addEventListener('click', async (event) => {
+                event.stopPropagation();
+                remove.disabled = true;
+                try {
+                    const response = await fetch(`/stickers/${encodeURIComponent(sticker.id)}`, {
+                        method: 'DELETE',
+                        headers: { Accept: 'application/json' }
+                    });
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok) throw new Error(data.error || 'The sticker could not be deleted.');
+                    stickerList = stickerList.filter(item => item.id !== sticker.id);
+                    stickerLibraryIds.delete(sticker.id);
+                    if (!data.retained) unavailableStickerIds.add(sticker.id);
+                    syncStickerLibrary(stickerList);
+                    renderStickers();
+                    stickerStatus.textContent = 'Sticker deleted.';
+                } catch (error) {
+                    remove.disabled = false;
+                    stickerStatus.textContent = error.message || 'The sticker could not be deleted.';
+                }
+            });
+            wrapper.append(button, remove);
+            stickerResults.append(wrapper);
+        }
+    }
+    async function loadStickers() {
+        stickerStatus.textContent = 'Loading…';
+        try {
+            const response = await fetch('/stickers', { headers: { Accept: 'application/json' } });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Stickers could not be loaded.');
+            stickerList = data.stickers || [];
+            syncStickerLibrary(stickerList);
+            renderStickers();
+        } catch (error) {
+            stickerStatus.textContent = error.message || 'Stickers could not be loaded.';
+        }
+    }
+    stickerButton.addEventListener('click', () => {
+        const open = stickerPicker.hidden;
+        stickerPicker.hidden = !open;
+        stickerButton.setAttribute('aria-expanded', String(open));
+        if (open) loadStickers();
+    });
+    stickerUpload.addEventListener('click', () => stickerUploadInput.click());
+    async function uploadChatFiles(files, sendToChat = false) {
+        if (!files.length) return;
+        stickerStatus.textContent = `Uploading ${files.length} image${files.length === 1 ? '' : 's'}…`;
+        try {
+            const results = await Promise.allSettled(files.map(async (file) => {
+                const response = await fetch(`/stickers?name=${encodeURIComponent(file.name || 'pasted-image.png')}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+                    body: file
+                });
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'The image could not be uploaded.');
+                return data;
+            }));
+            await loadStickers();
+            let sent = 0;
+            for (const result of results) {
+                if (!sendToChat || result.status !== 'fulfilled' || !result.value?.id) continue;
+                window.socket.emit('chat-message', {
+                    text: `/stickers/${result.value.id}`,
+                    mentions: [],
+                    ...(chatReplyTo ? { replyTo: chatReplyTo } : {})
+                });
+                sent++;
+            }
+            if (sent) {
+                chatReplyTo = null;
+                updateChatReplyPreview();
+                stickerStatus.textContent = sent === 1 ? 'Image uploaded.' : `${sent} images uploaded.`;
+            }
+            const failed = results.filter(result => result.status === 'rejected');
+            if (failed.length) {
+                stickerStatus.textContent = failed.length === 1
+                    ? (failed[0].reason.message || 'One image could not be uploaded.')
+                    : `${failed.length} images could not be uploaded.`;
+            }
+        } catch (error) {
+            stickerStatus.textContent = error.message || 'The image could not be uploaded.';
+        }
+    }
+    stickerUploadInput.addEventListener('change', async () => {
+        const files = [...stickerUploadInput.files];
+        stickerUploadInput.value = '';
+        if (!files.length) return;
+        stickerUpload.disabled = true;
+        try {
+            await uploadChatFiles(files);
+        } finally {
+            stickerUpload.disabled = false;
+        }
+    });
+    window.socket.on('stickers-update', update => {
+        stickerList = update.stickers || [];
+        syncStickerLibrary(stickerList);
+        if (!stickerPicker.hidden) renderStickers();
+    });
+    window.socket.on('sticker-deleted', ({ id } = {}) => {
+        if (!/^[a-f0-9]{32}$/.test(id)) return;
+        unavailableStickerIds.add(id);
+        const url = `/stickers/${id}`;
+        for (const image of chatMessages.querySelectorAll(`img[src="${url}"]`)) image.remove();
+        syncStickerLibrary(stickerList);
+    });
 
     chatDrawer.addEventListener('keydown', (e) => {
         if (!modalChatLayout.matches || e.key !== 'Tab') return;
@@ -1925,7 +2165,11 @@ document.addEventListener('DOMContentLoaded', function() {
         $('chatReplyPreview').hidden = !chatReplyTo;
         if (!chatReplyTo) { $('chatReplyContext').textContent = ''; return; }
         const quote = ChatReplies.quote(chatReplyTo, chatMessageById);
-        setHtml($('chatReplyContext'), `<span class="chat-quote-author">Replying to ${esc(quote.author)}</span><span class="chat-quote-text">${esc(quote.text)}</span>`);
+        const sticker = Stickers.stickerUrl(quote.text);
+        const content = sticker
+            ? `<img class="chat-quote-sticker" src="${esc(sticker)}" alt="Sticker" loading="lazy" decoding="async" referrerpolicy="no-referrer">`
+            : `<span class="chat-quote-text">${esc(quote.text)}</span>`;
+        setHtml($('chatReplyContext'), `<span class="chat-quote-author">Replying to ${esc(quote.author)}</span>${content}`);
     }
     function cancelChatReply() {
         chatReplyTo = null;
@@ -1934,6 +2178,55 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     $('chatReplyCancel').addEventListener('click', cancelChatReply);
     chatMessages.addEventListener('click', (e) => {
+        const addSticker = e.target.closest('[data-add-sticker]');
+        if (addSticker) {
+            addSticker.disabled = true;
+            fetch(`/stickers/${encodeURIComponent(addSticker.dataset.addSticker)}/library`, {
+                method: 'POST',
+                headers: { Accept: 'application/json' }
+            }).then(async (response) => {
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'The sticker could not be added.');
+                stickerLibraryIds.add(addSticker.dataset.addSticker);
+                syncStickerLibrary([...stickerLibraryIds].map(id => ({ id })), true);
+            }).catch((error) => {
+                const unavailable = /deleted|gone|410/i.test(error.message);
+                if (unavailable) {
+                    unavailableStickerIds.add(addSticker.dataset.addSticker);
+                    syncStickerLibrary([...stickerLibraryIds].map(id => ({ id })), true);
+                } else {
+                    addSticker.disabled = false;
+                }
+                stickerStatus.textContent = unavailable ? 'That sticker has been deleted.' : (error.message || 'The sticker could not be added.');
+            });
+            return;
+        }
+        const addGif = e.target.closest('[data-add-gif]');
+        if (addGif) {
+            if (stickerLibraryGifUrls.has(addGif.dataset.addGif)) return;
+            addGif.disabled = true;
+            fetch('/stickers/from-url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+                body: JSON.stringify({ url: addGif.dataset.addGif })
+            }).then(async (response) => {
+                const data = await response.json();
+                if (!response.ok) throw new Error(data.error || 'The GIF could not be added.');
+                if (data && data.id) {
+                    stickerLibraryIds.add(data.id);
+                    if (typeof data.sourceUrl === 'string') stickerLibraryGifUrls.add(data.sourceUrl);
+                }
+                stickerLibraryGifPageUrls.add(addGif.dataset.addGif);
+                syncStickerLibrary([...stickerLibraryIds].map(id => ({ id })), true);
+                NoteView.setHtml(addGif, '<i data-icon="check"></i>');
+                addGif.title = 'In your library';
+                addGif.setAttribute('aria-label', 'In your sticker library');
+            }).catch((error) => {
+                addGif.disabled = false;
+                stickerStatus.textContent = error.message || 'The GIF could not be added.';
+            });
+            return;
+        }
         const reply = e.target.closest('[data-chat-reply]');
         if (reply) {
             chatReplyTo = reply.dataset.chatReply;
@@ -1966,6 +2259,15 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             sendChatMessage();
         }
+    });
+    chatInput.addEventListener('paste', (e) => {
+        const files = [...(e.clipboardData?.items || [])]
+            .filter(item => /^image\/(?:png|jpeg|gif|webp)$/.test(item.type))
+            .map(item => item.getAsFile())
+            .filter(Boolean);
+        if (!files.length) return;
+        e.preventDefault();
+        uploadChatFiles(files, true);
     });
     sendChatBtn.addEventListener('click', sendChatMessage);
 

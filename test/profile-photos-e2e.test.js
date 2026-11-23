@@ -35,7 +35,9 @@ test('signed-in photo identity cannot be spoofed and survives notes/chat restart
     assert.equal(alice.email, undefined); assert.equal(alice.username, undefined);
     const base = `http://127.0.0.1:${app.port}`;
     const response = await fetch(base, { headers: { cookie: cookies[0] } });
-    assert.match(response.headers.get('content-security-policy'), /img-src 'self' data: https:\/\/www\.bts-crew\.com;/);
+    const csp = response.headers.get('content-security-policy');
+    assert.match(csp, /img-src 'self' data: blob: http: https:/);
+    assert.match(csp, /frame-src 'self' https:\/\/tenor\.com https:\/\/\*\.tenor\.com;/);
     const payload = { text: 'Photo note', tags: ['lx'], email: 'spoof@bath.ac.uk', emailPrefix: 'spoof', username: 'spoof' };
     const note = await new Promise(resolve => a.page.socket.emit('note-submit', payload, resolve));
     assert.equal(note.emailPrefix, 'abc12'); assert.equal(note.email, undefined); assert.equal(note.username, undefined);

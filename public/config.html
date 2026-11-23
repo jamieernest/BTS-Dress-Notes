@@ -159,6 +159,13 @@
             <div class="rows">
                 <div class="row row-wrap">
                     <div class="row-text">
+                        <div class="row-label">Clear Shitposts</div>
+                        <p class="section-note">Clear all chat messages for everyone. Notes, tags and video stay unchanged.</p>
+                    </div>
+                    <button type="button" id="clearChatButton" class="btn danger-outline">Clear Shitposts</button>
+                </div>
+                <div class="row row-wrap">
+                    <div class="row-text">
                         <div class="row-label">Reset current session</div>
                         <p class="section-note">Clear current notes, chat and video for everyone. Restores the six default tags.</p>
                     </div>
@@ -206,6 +213,15 @@
         <div class="dialog-actions">
             <button type="button" id="resetCancelButton" class="btn outline" autofocus>Cancel</button>
             <button type="button" id="resetConfirmButton" class="btn danger">Reset session</button>
+        </div>
+    </dialog>
+
+    <dialog id="clearChatConfirm" class="confirm-dialog" aria-labelledby="clearChatTitle" aria-describedby="clearChatDetail">
+        <h2 id="clearChatTitle">Clear Shitposts?</h2>
+        <p id="clearChatDetail">Clears every chat message for everyone. Notes, tags and video stay unchanged.</p>
+        <div class="dialog-actions">
+            <button type="button" id="clearChatCancelButton" class="btn outline" autofocus>Cancel</button>
+            <button type="button" id="clearChatConfirmButton" class="btn danger">Clear Shitposts</button>
         </div>
     </dialog>
 

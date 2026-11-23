@@ -463,6 +463,27 @@ document.addEventListener('DOMContentLoaded', function() {
         resetResult.hidden = false;
     });
 
+    const clearChatButton = byId('clearChatButton');
+    const clearChatConfirm = byId('clearChatConfirm');
+    clearChatButton.addEventListener('click', () => clearChatConfirm.showModal());
+    byId('clearChatCancelButton').addEventListener('click', () => clearChatConfirm.close());
+    byId('clearChatConfirmButton').addEventListener('click', () => {
+        socket.timeout(10000).emit('clear-chat', (err, reply) => {
+            if (!err && reply && !reply.error) {
+                resetResult.textContent = `Shitposts cleared at ${new Date().toLocaleTimeString()}.`;
+                resetResult.hidden = false;
+            } else {
+                resetResult.textContent = err || !reply ? "Couldn't clear Shitposts. Try again." : reply.error;
+                resetResult.hidden = false;
+            }
+        });
+        clearChatConfirm.close();
+    });
+    socket.on('chat-cleared', () => {
+        resetResult.textContent = `Shitposts cleared at ${new Date().toLocaleTimeString()}.`;
+        resetResult.hidden = false;
+    });
+
     // Notes kept from recent resets (reset-notes.js on the server), each with
     // a button that adds them back to the live notes until it runs out.
     const resetRows = byId('resetRows');
