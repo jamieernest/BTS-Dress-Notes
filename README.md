@@ -45,7 +45,7 @@ _Disclaimer: this was mostly AI generated (Deepseek V3-4 and Claude Sonnet 5). I
 
 ## Configuration
 
-Settings are environment variables, read from `.env` by `npm start` (a git-ignored file). Only `SESSION_SECRET` is required.
+Settings are environment variables, read from `.env` by `npm start` (a git-ignored file). Only `SESSION_SECRET` is required. Copy `.env.example` to `.env` to start, it lists every setting.
 
 ### Login (Keycloak)
 
