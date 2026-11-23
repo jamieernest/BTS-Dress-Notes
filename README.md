@@ -13,12 +13,16 @@ _Disclaimer: this was mostly AI generated (Deepseek V3-4 and Claude Sonnet 5). I
   - [Timecode modes](#timecode-modes)
   - [Eos console](#eos-console)
   - [Scene labels](#scene-labels)
+  - [Writing notes](#writing-notes)
+  - [Shitposts chat](#shitposts-chat)
+  - [Past notes](#past-notes)
   - [Notes, backup and reset](#notes-backup-and-reset)
   - [Tags](#tags)
   - [Show recordings and playback](#show-recordings-and-playback)
   - [OBS recording from QLab](#obs-recording-from-qlab)
   - [Camera preset](#camera-preset)
   - [Profile photos](#profile-photos)
+  - [OBS overlays](#obs-overlays)
 - [Testing](#testing)
 
 ## Setup
@@ -131,6 +135,20 @@ The address is any path under `/bts/` (`/bts/Scene` by convention; the last part
 
 The scene starts as `Preshow` each time the server starts and stays until the next label arrives. A new label changes it for everyone at once: it is shown on the Config & Status page and the cast overlay, notes are grouped under it (one heading per visit to a scene, so a scene that returns gets a new group), the scene filter lists it, and, with [Camera preset](#camera-preset) configured, it can recall the camera preset. A note belongs to the scene that was current when its author started typing, so one saved just after a scene change stays in the scene it was written in. Scene changes are also logged with their time, which playback uses to show the scenes on its timeline. An `@username` in a label is highlighted for that person, and the **My scenes** filter keeps only scenes that mention the viewer.
 
+### Writing notes
+
+Start typing anywhere on the main page to begin a note. The note is stamped when you start typing with the timecode, the LX cue and the [scene](#scene-labels) at that moment, and every note takes one or more tags (the composer remembers the ones you last used). Enter sends on a desktop and Shift+Enter adds a line; on a touch device Enter adds a line and the Send button sends. Escape cancels an empty note. A note sent while the connection is down is kept in the browser and sent when it returns.
+
+Notes are numbered in the order the server accepted them. Authors can edit or delete their own notes and reply to any note; replies can be edited or deleted by their author. Anyone can agree (thumbs-up) with a note or reply; hover or focus the count to see who. Typing `@` mentions an online person or an existing author. Notes can be filtered by scene, tag, author, mentioned person and search text, and the filters are kept in the page's URL. The toolbar can show notes newest or oldest first. **Download notes** in the top-bar menu saves them as JSON, and the **Video** button opens [playback](#show-recordings-and-playback).
+
+### Shitposts chat
+
+The chat button opens **Shitposts**, a chat for everyone logged in, kept out of notes, exports and saved shows. Messages can be replies and mentions, and a badge shows unseen mentions. Chat is kept only in server memory; after a restart the browsers offer their copies, and the fullest log that two different people agree on is restored (within 30 minutes of the start, `CHAT_RESTORE_WINDOW_MS`). **Reset all notes and chat** clears it.
+
+### Past notes
+
+**Past notes** (`/recall.html`) opens a saved show, or a notes `.json` file chosen or dropped from your device, with the same search, filters and playback link as live notes. It is read-only; the open show and its filters are in the URL.
+
 ### Notes, backup and reset
 
 Notes are kept in server memory and saved to `backups/` about a second after every change (one file per minute at most), every minute, and when the server stops or crashes. A browser also keeps each note it has sent until the server confirms it, and sends it again after a reload or reconnect.
@@ -224,6 +242,17 @@ Notes, comments, chat and pickers show each person's photo from the BTS website,
 The mapping assumes the website and Keycloak usernames stay aligned: the website can link an existing account by email or allow an administrative username change without evident synchronisation, so this is an integration assumption, not an identity guarantee. An authoritative photo claim or API would remove it. The shared wire field `emailPrefix` carries only that username; full addresses are not added to notes, chat, user broadcasts or exports.
 
 The browser loads the image directly: the URL is a fixed HTTPS path on the website (with `referrerpolicy="no-referrer"`), there is no arbitrary URL input, server-side fetch, proxy or upload endpoint, and the CSP allows only that image origin. DOMPurify sanitizes markup, not image bytes, and the website sees the requesting browser's IP and photo path. This covers our side of the integration, not a security audit of the separate website.
+
+### OBS overlays
+
+Two pages for an OBS browser source, linked from the Config & Status page: `/overlay.html` shows the timecode (in the chosen mode) and LX cue, and `/overlay-cast.html` shows the time of day and [scene](#scene-labels). They open without login when loaded from the server's own computer, and are read-only. Adjust them with URL options, e.g. `/overlay.html?layout=left&size=large&theme=dark`:
+
+| Option | Values (default first) |
+|---|---|
+| `layout` | `center`, `left`, `right`, `spaced` |
+| `size` | `normal`, `small`, `large` |
+| `theme` | `default`, `dark`, `light`, `minimal` |
+| `display` | `/overlay.html`: `all`, `timecode-only`, `lx-only`, `realtime-only`. `/overlay-cast.html`: all, `realtime-only`, `act-only` |
 
 ## Testing
 
