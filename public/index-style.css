@@ -174,6 +174,25 @@
 .tag-option[aria-checked="true"] .check, .tag-option[aria-selected="true"] .check { visibility: visible; }
 .tag-option[aria-disabled="true"] { cursor: default; }
 .tag-option[aria-disabled="true"] .check { color: var(--text-3); }
+.tag-match {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    padding: 4px 4px 8px;
+    margin-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+}
+.tag-match-option {
+    padding: 6px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+}
+.tag-match-option[aria-checked="true"] {
+    color: var(--text);
+    border-color: var(--border-strong);
+    background: var(--hover);
+}
 .filter-popover { min-width: 180px; max-height: 320px; overflow-y: auto; }
 
 /* --- Page --- */

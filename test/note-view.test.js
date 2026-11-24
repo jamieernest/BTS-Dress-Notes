@@ -151,10 +151,16 @@ test('search and filters match the same way on both notes pages', () => {
     assert.ok(NoteView.noteMatches(note, { ...all, search: 'fixed' }, tagById), 'replies are searched');
     assert.ok(!NoteView.noteMatches(note, { ...all, act: 'Act 1' }, tagById));
     assert.ok(!NoteView.noteMatches(note, { ...all, tag: 'snd' }, tagById));
+    assert.ok(NoteView.noteMatches(note, { ...all, tag: ['lx', 'snd'] }, tagById), 'multiple tags match any selected tag');
+    assert.ok(!NoteView.noteMatches(note, { ...all, tag: ['snd', 'video'] }, tagById));
+    assert.ok(NoteView.noteMatches({ ...note, tags: ['lx', 'snd'] }, { ...all, tag: ['lx', 'snd'], tagMode: 'all' }, tagById), 'multiple tags match all selected tags');
+    assert.ok(!NoteView.noteMatches(note, { ...all, tag: ['lx', 'snd'], tagMode: 'all' }, tagById));
     assert.ok(NoteView.noteMatches({ ...note, act: undefined }, { ...all, act: 'Preshow' }, tagById));
     assert.strictEqual(NoteView.filtersActive(all), false);
     assert.strictEqual(NoteView.filtersActive({ ...all, search: 'x' }), true);
     assert.deepStrictEqual(NoteView.tagOptions([{ id: 'lx', name: 'Lighting', color: '#fff' }])[0], { value: 'all', label: 'All tags', color: '' });
+    assert.deepStrictEqual(NoteView.reconcileTagFilter(['lx', 'gone'], [{ id: 'lx', name: 'Lighting', color: '#fff' }]), ['lx']);
+    assert.deepStrictEqual(NoteView.reconcileTagFilter(['gone'], [{ id: 'lx', name: 'Lighting', color: '#fff' }]), []);
 });
 
 test('author filtering uses exact stable accounts, composed with every other filter', () => {
@@ -183,9 +189,10 @@ test('offline authors deduplicate by identity, keep name aliases and distinguish
 
 test('filter URL round trips preserve other parameters and opaque author IDs', () => {
     const params = new URLSearchParams('show=rehearsal&note=n1');
-    const filters = { act: 'Act 2', tag: 'snd', search: 'sound', author: 'sub/a & b', mentionedUserId: 'sub-mention' };
+    const filters = { act: 'Act 2', tag: ['snd', 'lx'], tagMode: 'all', search: 'sound', author: 'sub/a & b', mentionedUserId: 'sub-mention' };
     NoteView.writeFilters(params, filters, 'Sound');
-    assert.deepEqual(NoteView.readFilters(new URLSearchParams(params.toString())), filters);
+    const roundTrip = NoteView.readFilters(new URLSearchParams(params.toString()));
+    assert.deepEqual(roundTrip, filters);
     assert.equal(params.get('show'), 'rehearsal');
     assert.equal(params.get('note'), 'n1');
     NoteView.writeFilters(params, { act: 'all', tag: 'all', author: '' }, '');

@@ -122,7 +122,23 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     const actDropdown = filterDropdown(actFilter, actFilterPopover, 'act', updateActFilter);
-    const tagDropdown = filterDropdown(tagFilter, tagFilterPopover, 'tag', updateFilterTags);
+    const tagDropdown = NoteView.createMultiDropdown({
+        button: tagFilter,
+        popover: tagFilterPopover,
+        mode: filters.tagMode,
+        beforeOpen: () => closePopovers(),
+        onChange: (values, mode) => {
+            filters.tag = values;
+            filters.tagMode = mode;
+            updateFilterTags();
+            filterNotes();
+        },
+        onModeChange: (mode) => {
+            filters.tagMode = mode;
+            updateFilterTags();
+            filterNotes();
+        }
+    });
     const authorSearch = NoteView.createAuthorSearch({ input: searchInput, chip: $('authorFilter'), mentionChip: $('mentionedFilter'),
         getCurrentUserId: () => currentUser.sub, getCurrentUserName: () => currentUser.name,
         popover: $('authorSuggestions'), filters, getNotes: () => allNotes.filter(n => !deletedNotes.has(n.id)),
@@ -201,8 +217,13 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     function updateFilterTags() {
-        tagDropdown.render(NoteView.tagOptions(availableTags), filters.tag);
+        const before = JSON.stringify(filters.tag);
+        const valid = NoteView.reconcileTagFilter(filters.tag, availableTags);
+        filters.tag = valid.length ? valid : 'all';
+        const changed = before !== JSON.stringify(filters.tag);
+        tagDropdown.render(NoteView.tagOptions(availableTags), filters.tag, filters.tagMode);
         tagFilter.hidden = availableTags.length === 0;
+        return changed;
     }
 
     // --- Filtering ---
@@ -293,6 +314,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     function clearFilters() {
         filters.tag = 'all';
+        filters.tagMode = 'any';
         filters.act = 'all';
         filters.search = '';
         filters.author = '';
@@ -1348,6 +1370,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // A page kept in the back/forward cache (e.g. after visiting the recall
     // page) must not keep its socket, or the server would count it as open.
     window.addEventListener('pagehide', (e) => {
+        // Leaving does not undo a delete. Flush it before a bfcache disconnect
+        // can discard the final Socket.IO packet.
+        for (const key of [...pendingDeletes.keys()]) finishDelete(key);
         if (!loggingOut) {
             saveDraft();
             saveNotesSnapshot();
@@ -1452,8 +1477,9 @@ document.addEventListener('DOMContentLoaded', function() {
         saveTagsToStorage();
         if (selectedTags.length) updateTagsDisplay();
         else applyRememberedTags();
-        updateFilterTags();
+        const filterChanged = updateFilterTags();
         rebuildFullNotesList();
+        if (filterChanged) filterNotes();
     });
 
     window.socket.on('system-status', (data) => {
@@ -2038,11 +2064,6 @@ document.addEventListener('DOMContentLoaded', function() {
             unhide();
         });
     }
-
-    // Leaving the page doesn't undo a delete.
-    window.addEventListener('pagehide', () => {
-        for (const key of [...pendingDeletes.keys()]) finishDelete(key);
-    });
 
     function deleteNote(note) {
         const showNote = (hidden) => {
