@@ -73,15 +73,19 @@ const cueSchema = z.union([z.string(), z.number()]).transform(String)
     .refine((s) => s.trim() !== '').transform((s) => s.slice(0, MAX_CUE_LENGTH));
 
 const colourSchema = z.string().regex(HEX_COLOUR);
-const tagCommandSchema = z.string().transform((s) => s.trim().replace(/^\/+/, '').toLowerCase())
-    .pipe(z.string().regex(/^[a-z0-9][a-z0-9_-]*$/).max(MAX_TAG_COMMAND_LENGTH));
+const tagCommandSchema = z.string().transform((s) => s.trim().split(',').map(value =>
+    value.trim().replace(/^\/+/, '').toLowerCase()).filter(Boolean))
+    .refine((commands) => commands.length > 0 && commands.length <= 10)
+    .refine((commands) => commands.every((command) =>
+        /^[a-z0-9][a-z0-9_-]*$/.test(command) && command.length <= MAX_TAG_COMMAND_LENGTH))
+    .transform((commands) => [...new Set(commands)].join(', '));
 
 // A tag from the tag editor: { id, name, color, command } with a #rgb/#rrggbb colour.
 const tagSchema = z.object({
     id: idSchema.nullable().catch(null).default(null),
     name: z.string().transform((s) => s.trim().slice(0, MAX_TAG_NAME_LENGTH)).pipe(z.string().min(1)),
     color: colourSchema.nullable().catch(null).default(null),
-    command: tagCommandSchema.optional().catch(undefined)
+    command: tagCommandSchema.optional()
 });
 
 // Notes and comments as stored, for a backup imported from the config page or
@@ -145,7 +149,11 @@ function cleanFrameRate(value) { return parse(frameRateSchema, value); }
 // Null when it is not a timecode, so the caller falls back to the server's current one.
 function cleanTimecode(value) { return parse(timecodeSchema, value); }
 function cleanCue(value) { return parse(cueSchema, value); }
-function cleanTag(value) { return parse(tagSchema, value); }
+function cleanTag(value) {
+    const cleaned = parse(tagSchema, value);
+    if (cleaned && cleaned.command === undefined) delete cleaned.command;
+    return cleaned;
+}
 
 // The notes of a backup that has passed checkBackup() (notes-backup.js),
 // rebuilt field by field; a note that cannot be rebuilt is left out. Put in

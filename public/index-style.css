@@ -218,8 +218,12 @@ button.chip[data-tooltip]::after {
 }
 button.chip[data-tooltip]:is(:hover, :focus-visible)::after {
     opacity: 1;
-    transform: translate(-50%, 0);
+    transform: translate(calc(-50% + var(--tooltip-shift-x, 0px)), 0);
     visibility: visible;
+}
+button.chip[data-tooltip].tooltip-above::after {
+    bottom: auto;
+    top: calc(100% + 6px);
 }
 .has-tooltip { position: relative; }
 .has-tooltip::after {

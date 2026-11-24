@@ -39,6 +39,9 @@ test('frame rates are numbers of frames per second or ms', () => {
 test('a tag needs a name; a colour that is not hex is dropped', () => {
     assert.deepStrictEqual(input.cleanTag({ id: 'lx', name: ' LX ', color: '#FF6B6B' }), { id: 'lx', name: 'LX', color: '#FF6B6B' });
     assert.deepStrictEqual(input.cleanTag({ name: 'Sound', color: 'red;background:url(x)' }), { id: null, name: 'Sound', color: null });
+    assert.deepStrictEqual(input.cleanTag({ name: 'Lighting', color: '#00B4D8', command: 'lighting, lx, lamps' }),
+        { id: null, name: 'Lighting', color: '#00B4D8', command: 'lighting, lx, lamps' });
+    assert.strictEqual(input.cleanTag({ name: 'Lighting', command: 'lighting, bad alias' }), null);
     for (const bad of [null, 'LX', {}, { name: '  ' }, { name: 5 }]) assert.strictEqual(input.cleanTag(bad), null);
 });
 

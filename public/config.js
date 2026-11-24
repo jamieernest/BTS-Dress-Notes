@@ -70,7 +70,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const { tag, name, colour, command, save, remove, help, deleteReason } = editor;
         const used = [...tagNotes.values()].some(ids => ids.includes(tag.id));
         const dirty = name.value !== tag.name || colour.value !== hexColour(tag.color)
-            || command.value !== (tag.command || tagCommands.suggestTagCommand(tag.name));
+            || command.value !== (tag.command || tagCommands.firstTagCommand(tag));
         save.disabled = editor.saving || editor.deleted || !dirty || !name.value.trim();
         editor.deleteBlocked = !editor.deleted && (used || tagCount < 2);
         remove.disabled = editor.deleting;
@@ -95,8 +95,8 @@ document.addEventListener('DOMContentLoaded', function() {
         name.className = 'input'; name.maxLength = 60; name.required = true;
         const colour = document.createElement('input'); colour.type = 'color';
         const command = document.createElement('input');
-        command.className = 'input command-input'; command.maxLength = 40;
-        command.pattern = '[a-zA-Z0-9][a-zA-Z0-9_-]*'; command.placeholder = 'Slash command';
+        command.className = 'input command-input'; command.maxLength = 200;
+        command.placeholder = 'Slash commands (comma separated)';
         const save = document.createElement('button'); save.type = 'submit'; save.className = 'btn outline'; save.textContent = 'Save';
         const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'btn danger-outline';
         const help = document.createElement('span'); help.className = 'tag-usage'; help.id = 'tag-usage-' + (++tagHelpNumber);
@@ -108,9 +108,25 @@ document.addEventListener('DOMContentLoaded', function() {
         const showDeleteReason = () => {
             deleteControl.classList.remove('tooltip-dismissed', 'tooltip-above');
             deleteReason.style.transform = '';
-            if (editor.deleteBlocked && deleteReason.getBoundingClientRect().bottom > window.innerHeight - 8) deleteControl.classList.add('tooltip-above');
-            const bounds = deleteReason.getBoundingClientRect();
-            const shift = bounds.left < 8 ? 8 - bounds.left : Math.min(0, document.documentElement.clientWidth - 8 - bounds.right);
+            if (!editor.deleteBlocked) return;
+
+            const viewport = window.visualViewport;
+            const viewportLeft = viewport?.offsetLeft || 0;
+            const viewportTop = viewport?.offsetTop || 0;
+            const viewportRight = viewportLeft + (viewport?.width || window.innerWidth);
+            const viewportBottom = viewportTop + (viewport?.height || window.innerHeight);
+
+            let bounds = deleteReason.getBoundingClientRect();
+            if (bounds.bottom > viewportBottom - 8) deleteControl.classList.add('tooltip-above');
+            bounds = deleteReason.getBoundingClientRect();
+            if (bounds.top < viewportTop + 8 && deleteControl.classList.contains('tooltip-above')) {
+                deleteControl.classList.remove('tooltip-above');
+            }
+
+            bounds = deleteReason.getBoundingClientRect();
+            const shift = bounds.left < viewportLeft + 8
+                ? viewportLeft + 8 - bounds.left
+                : Math.min(0, viewportRight - 8 - bounds.right);
             if (shift) deleteReason.style.transform = `translateX(${shift}px)`;
         };
         deleteControl.addEventListener('pointerenter', showDeleteReason);
@@ -118,7 +134,7 @@ document.addEventListener('DOMContentLoaded', function() {
         deleteControl.addEventListener('keydown', event => {
             if (event.key === 'Escape') deleteControl.classList.add('tooltip-dismissed');
         });
-        name.value = tag.name; colour.value = hexColour(tag.color); command.value = tag.command || tagCommands.suggestTagCommand(tag.name);
+        name.value = tag.name; colour.value = hexColour(tag.color); command.value = tag.command || tagCommands.firstTagCommand(tag);
         form.addEventListener('input', () => refreshTagEditor(editor));
         form.addEventListener('submit', event => {
             event.preventDefault();
@@ -135,7 +151,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     // anything typed while the save was in flight.
                     if (name.value === submittedName) name.value = reply.tag.name;
                     if (colour.value === submittedColour) colour.value = hexColour(reply.tag.color);
-                    if (command.value === submittedCommand) command.value = reply.tag.command || tagCommands.suggestTagCommand(reply.tag.name);
+                    if (command.value === submittedCommand) command.value = reply.tag.command || tagCommands.firstTagCommand(reply.tag);
                     editor.tag = reply.tag;
                 }, () => { editor.saving = false; refreshTagEditor(editor); });
         });
@@ -172,7 +188,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 // Update untouched fields while preserving local edits and focus.
                 if (editor.name.value === editor.tag.name) editor.name.value = tag.name;
                 if (editor.colour.value === hexColour(editor.tag.color)) editor.colour.value = hexColour(tag.color);
-                if (editor.command.value === (editor.tag.command || tagCommands.suggestTagCommand(editor.tag.name))) editor.command.value = tag.command || tagCommands.suggestTagCommand(tag.name);
+                if (editor.command.value === (editor.tag.command || tagCommands.firstTagCommand(editor.tag))) editor.command.value = tag.command || tagCommands.firstTagCommand(tag);
                 editor.tag = tag; editor.deleted = false;
             }
             editor.name.setAttribute('aria-label', 'Tag name: ' + tag.name);
@@ -185,7 +201,7 @@ document.addEventListener('DOMContentLoaded', function() {
         for (const [id, editor] of tagEditors) {
             if (present.has(id)) continue;
             const dirty = editor.name.value !== editor.tag.name || editor.colour.value !== hexColour(editor.tag.color)
-                || editor.command.value !== (editor.tag.command || tagCommands.suggestTagCommand(editor.tag.name));
+                || editor.command.value !== (editor.tag.command || tagCommands.firstTagCommand(editor.tag));
             if (dirty && !editor.deleting) { editor.deleted = true; refreshTagEditor(editor); }
             else { editor.form.remove(); tagEditors.delete(id); }
         }

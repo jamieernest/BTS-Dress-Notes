@@ -4,12 +4,13 @@
       "id": "safety",
       "name": "Safety/Show Critical",
       "color": "#e63946",
-      "command": "safety"
+      "command": "critical"
     },
     {
       "id": "lighting",
       "name": "Lighting",
-      "color": "#00B4D8"
+      "color": "#00b4d8",
+      "command": "lighting, state"
     },
     {
       "id": "sound",
@@ -32,10 +33,10 @@
       "color": "#FF6F91"
     },
     {
-      "id": "0b42711c-0465-48eb-90bd-e2e85af40d21",
-      "name": "general",
+      "id": "crit",
+      "name": "crit",
       "color": "#ff40ff",
-      "command": "general"
+      "command": "crit"
     }
   ]
 }

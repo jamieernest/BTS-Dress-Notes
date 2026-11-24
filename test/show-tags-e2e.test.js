@@ -24,7 +24,10 @@ test('show tags validate, persist, export/import and survive resets', async t =>
         assert.ok((await ack('create-tag', data)).error);
     }
     const { tag: crew } = await ack('create-tag', { name: 'Crew', color: '#9966cc' });
+    assert.equal(crew.id, 'crew');
     assert.ok(disk().some(tag => tag.id === crew.id));
+    const duplicateSlug = await ack('create-tag', { name: 'Crew!', color: '#123456', command: 'other-crew' });
+    assert.equal(duplicateSlug.tag.id, 'crew-2');
     const updated = await ack('create-tag', { ...crew, name: 'Running Crew', color: '#123456' });
     assert.equal(updated.tag.id, crew.id);
     alice.note('Synthetic crew entrance', { tags: [crew.id] });

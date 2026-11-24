@@ -10,20 +10,29 @@
         return normalize(name).replace(/\s+/g, '-');
     }
 
+    function tagCommandKeys(tag) {
+        const command = String(tag && (tag.command || suggestTagCommand(tag.name) || tag.id) || '');
+        return command.split(/[,]/).map(value => normalize(value.replace(/^\/+/, '')).replace(/\s+/g, '-')).filter(Boolean);
+    }
+
+    function firstTagCommand(tag) {
+        return tagCommandKeys(tag)[0] || '';
+    }
+
     function tagMatchesCommand(tag, command) {
         const commandKey = normalize(command);
         if (!commandKey) return false;
-        return commandKey === normalize(tag.command || suggestTagCommand(tag.name) || tag.id);
+        return tagCommandKeys(tag).includes(commandKey.replace(/\s+/g, '-'));
     }
 
     function consumeTagCommand(value, tags, cursor = String(value || '').length) {
         const text = String(value || '');
-        const commandPattern = /(^|\s)\/([a-z0-9][a-z0-9_-]*)(?=\s|$)/gi;
+        const commandPattern = /(^|\s)\/([a-z0-9][a-z0-9_-]*)(?=\s)/gi;
         let match;
         while ((match = commandPattern.exec(text))) {
             const tokenStart = match.index + match[1].length;
             const tokenEnd = tokenStart + match[0].length - match[1].length;
-            if (tokenEnd > cursor) continue;
+            if (text[tokenEnd] !== ' ' || cursor < tokenEnd + 1) continue;
             const tag = (Array.isArray(tags) ? tags : []).find(candidate => tagMatchesCommand(candidate, match[2]));
             if (!tag) continue;
             const before = text.slice(0, tokenStart);
@@ -64,5 +73,5 @@
         };
     }
 
-    return { suggestTagCommand, consumeTagCommand, consumeShitpostCommand, consumeShitpostCommandAt };
+    return { suggestTagCommand, firstTagCommand, tagCommandKeys, tagMatchesCommand, consumeTagCommand, consumeShitpostCommand, consumeShitpostCommandAt };
 }));

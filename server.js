@@ -1434,10 +1434,15 @@ io.on('connection', (socket) => {
             return respond({ error: 'A tag with that name already exists.' });
         }
         const command = tag.command || tag.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, '-');
-        if (globalState.tags.some(t => t.id !== tag.id && (t.command || t.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, '-')) === command)) {
+        const commandKeys = value => String(value || '').split(',').map(part => part.trim().replace(/^\/+/, '').toLowerCase().replace(/\s+/g, '-')).filter(Boolean);
+        const newCommands = commandKeys(command);
+        const duplicate = globalState.tags.some(t => t.id !== tag.id &&
+            commandKeys(t.command || t.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, '-'))
+                .some(value => newCommands.includes(value)));
+        if (duplicate) {
             return respond({ error: 'A tag with that slash command already exists.' });
         }
-        const newTag = { id: existing ? existing.id : generateId(), name: tag.name,
+        const newTag = { id: existing ? existing.id : generateTagId(tag.name), name: tag.name,
             color: tag.color || (existing && existing.color) || getRandomColor(), command };
         const next = existing ? globalState.tags.map(t => t.id === existing.id ? newTag : t) : [...globalState.tags, newTag];
         if (!saveTagsToFile(next)) return respond({ error: 'The tags could not be changed. Try again.' });
@@ -1485,12 +1490,13 @@ io.on('connection', (socket) => {
         const commands = new Set();
         for (const tag of imported) {
             const command = tag.command || tag.name.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, '-');
-            if (ids.has(tag.id) || names.has(tag.name.toLowerCase()) || commands.has(command)) {
+            const aliases = String(command).split(',').map(part => part.trim().replace(/^\/+/, '').toLowerCase()).filter(Boolean);
+            if (ids.has(tag.id) || names.has(tag.name.toLowerCase()) || aliases.some(alias => commands.has(alias))) {
                 return respond({ error: 'The tag file contains duplicate ids, names or slash commands.' });
             }
             ids.add(tag.id);
             names.add(tag.name.toLowerCase());
-            commands.add(command);
+            aliases.forEach(alias => commands.add(alias));
         }
         if (globalState.notes.some(note => note.tags.some(id => !ids.has(id)))) {
             return respond({ error: 'The tag file would remove a tag used by live notes.' });
@@ -2043,6 +2049,21 @@ function isListed(userId) {
 // Helper functions for tags
 function generateId() {
     return crypto.randomUUID();
+}
+
+function generateTagId(name) {
+    const base = String(name || '')
+        .toLowerCase()
+        .normalize('NFKD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 100) || 'tag';
+    let id = base;
+    let suffix = 2;
+    const used = new Set(globalState.tags.map(tag => tag.id));
+    while (used.has(id)) id = `${base}-${suffix++}`;
+    return id;
 }
 
 function getRandomColor() {

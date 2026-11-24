@@ -31,6 +31,7 @@
         <section class="section" id="tags" aria-labelledby="tagsTitle">
             <h2 id="tagsTitle">Show tags</h2>
             <p class="section-note">Add tags such as Crew for this show. Resets preserve the current tags. You can move tag definitions between shows as a JSON file.</p>
+            <p class="section-note">Slash commands can have multiple names separated by commas, for example <strong>lighting, lx, lamps</strong>. Add a space after the command in a note to apply the tag.</p>
             <div class="rows" id="tagRows"></div>
             <form id="addTagForm" class="rows tag-add" aria-labelledby="newTagTitle">
                 <div class="row tag-add-heading"><span id="newTagTitle">New tag</span></div>
@@ -40,7 +41,7 @@
                     <label class="sr-only" for="newTagColour">New tag colour</label>
                     <input id="newTagColour" type="color" value="#9966cc" aria-label="New tag colour">
                     <label class="sr-only" for="newTagCommand">New tag slash command</label>
-                    <input id="newTagCommand" class="input command-input" placeholder="Slash command" maxlength="40" pattern="[a-zA-Z0-9][a-zA-Z0-9_-]*">
+                    <input id="newTagCommand" class="input command-input" placeholder="Slash commands (comma separated)" maxlength="200">
                     <button type="submit" class="btn outline">Add tag</button>
                 </div>
             </form>

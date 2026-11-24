@@ -162,3 +162,23 @@ recordings/
 
 # Notes kept for a few days after a reset
 reset-notes/
+.gitignore
+stickers/0be52e1f73249bf3a69d4c644701ea05.gif
+stickers/1e62b127941177c3e1f4b8238dc75b05.gif
+stickers/2cc8ddba541048b717cbeae6bdd3f4dc.png
+stickers/3e4ce32f2487a36208b2a609ce5fbed2.gif
+stickers/6d3a49bbf582f89f804e3c50da20a4cc.gif
+stickers/21ae3ea2fb6ac6142c84be2c09a8e0b8.gif
+stickers/47d8cb4db4da557ddacf51fde8850aef.png
+stickers/89a88eb55b80df6340fc3aa3752cbc9f.gif
+stickers/901a73963cb5cb4a97d0eab731f31eb0.gif
+stickers/908c2fd40a3ba2428a1f93a31d2b5ed9.gif
+stickers/4928fcf38f453a46d84c95b44d9a4213.png
+stickers/40973ac7139d479cdc5b728b84c693be.gif
+stickers/10859251d4db6f453abfc235701f56f4.png
+stickers/099478502f5bb6e7f8e1f01db5911964.png
+stickers/a04ae36f039fdf1b64f60a50cede20c9.webp
+stickers/b624b24b7f01aad489fc775afe6abc69.png
+stickers/bd69d35957e5a970a261e5a849cf1a1c.webp
+stickers/stickers.json
+.gitignore

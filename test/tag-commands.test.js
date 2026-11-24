@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert');
-const { suggestTagCommand, consumeTagCommand, consumeShitpostCommand, consumeShitpostCommandAt } = require('../public/tag-commands');
+const { suggestTagCommand, firstTagCommand, tagCommandKeys, consumeTagCommand, consumeShitpostCommand, consumeShitpostCommandAt } = require('../public/tag-commands');
 
 const tags = [
     { id: 'safety', name: 'Safety/Show Critical' },
@@ -13,20 +13,32 @@ test('suggests dashed commands from tag names', () => {
 });
 
 test('selects a tag by its dashed name command', () => {
-    assert.deepEqual(consumeTagCommand('/safety-show-critical', tags), { tagId: 'safety', value: '', cursor: 0 });
+    assert.deepEqual(consumeTagCommand('/safety-show-critical ', tags), { tagId: 'safety', value: '', cursor: 0 });
+    assert.equal(consumeTagCommand('/safety-show-critical', tags), null);
+    assert.equal(consumeTagCommand('/setup ', [{ id: 'set', name: 'Set' }]), null);
     assert.equal(consumeTagCommand('/critical', tags), null);
 });
 
 test('uses a configured command instead of the tag name', () => {
     const configured = [{ id: 'safety', name: 'Safety/Show Critical', command: 'urgent' }];
-    assert.deepEqual(consumeTagCommand('/urgent', configured), { tagId: 'safety', value: '', cursor: 0 });
-    assert.equal(consumeTagCommand('/safety-show-critical', configured), null);
+    assert.deepEqual(consumeTagCommand('/urgent ', configured), { tagId: 'safety', value: '', cursor: 0 });
+    assert.equal(consumeTagCommand('/urgent', configured), null);
+    assert.equal(consumeTagCommand('/safety-show-critical ', configured), null);
 });
 
 test('selects a tag without disturbing the note', () => {
     assert.deepEqual(consumeTagCommand('Check this /lighting now', tags, 25), {
         tagId: 'lighting', value: 'Check this now', cursor: 15
     });
+});
+
+test('supports comma-separated slash command aliases', () => {
+    const configured = [{ id: 'lighting', name: 'Lighting', command: 'lighting, lx, lamps' }];
+    assert.deepEqual(tagCommandKeys(configured[0]), ['lighting', 'lx', 'lamps']);
+    assert.equal(firstTagCommand(configured[0]), 'lighting');
+    assert.deepEqual(consumeTagCommand('/lx ', configured), { tagId: 'lighting', value: '', cursor: 0 });
+    assert.deepEqual(consumeTagCommand('/lighting text', configured, 15), { tagId: 'lighting', value: 'text', cursor: 5 });
+    assert.equal(consumeTagCommand('/l ', configured), null);
 });
 
 test('routes a standalone shitpost command to chat text', () => {

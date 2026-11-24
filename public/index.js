@@ -196,9 +196,33 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateTagsDisplay() {
         selectedTags = selectedTags.filter(id => availableTags.some(t => t.id === id));
         setHtml(tagsContainer, availableTags.map(tag => {
-            const command = tag.command || tagCommands.suggestTagCommand(tag.name);
-            return NoteView.tagChipHTML(tag, `type="button" data-tag="${esc(tag.id)}" aria-pressed="${selectedTags.includes(tag.id)}" data-tooltip="Type /${esc(command)} to select, or click to toggle"`);
+            const commands = tagCommands.tagCommandKeys(tag);
+            const commandHint = commands.map(command => `/${esc(command)}`).join(', ');
+            return NoteView.tagChipHTML(tag, `type="button" data-tag="${esc(tag.id)}" aria-pressed="${selectedTags.includes(tag.id)}" data-tooltip="Type ${esc(commandHint)} followed by a space, or click to toggle"`);
         }).join(''));
+        tagsContainer.querySelectorAll('button.chip[data-tooltip]').forEach(chip => {
+            const placeTooltip = () => {
+                chip.style.removeProperty('--tooltip-shift-x');
+                chip.classList.remove('tooltip-above');
+                const bounds = chip.getBoundingClientRect();
+                const viewport = window.visualViewport;
+                const left = viewport?.offsetLeft || 0;
+                const top = viewport?.offsetTop || 0;
+                const right = left + (viewport?.width || window.innerWidth);
+                const bottom = top + (viewport?.height || window.innerHeight);
+                const tooltipHalfWidth = Math.min(130, right - left - 16);
+                const center = bounds.left + bounds.width / 2;
+                const shift = center - tooltipHalfWidth < left + 8
+                    ? left + 8 - (center - tooltipHalfWidth)
+                    : center + tooltipHalfWidth > right - 8
+                        ? right - 8 - (center + tooltipHalfWidth)
+                        : 0;
+                chip.style.setProperty('--tooltip-shift-x', `${shift}px`);
+                if (bounds.top < top + 130 && bounds.bottom + 130 < bottom) chip.classList.add('tooltip-above');
+            };
+            chip.addEventListener('pointerenter', placeTooltip);
+            chip.addEventListener('focus', placeTooltip);
+        });
     }
 
     function updateFilterTags() {
